@@ -236,6 +236,14 @@ def triage(v):
     sy = (v.get("complaint") or "").lower()
     num = lambda k: v.get(k) if isinstance(v.get(k), (int, float)) else None
     spo2, pulse, sbp, temp, sugar = num("spo2"), num("pulse"), num("bp_sys"), num("temp"), num("sugar")
+    rr, gcs = num("resp_rate"), num("gcs")
+    if v.get("emergency"): s += 6; why.append("brought as emergency")
+    if rr is not None:
+        if rr < 10 or rr > 30: s += 4; why.append(f"RR {rr}")
+        elif rr > 24: s += 1; why.append(f"RR {rr}")
+    if gcs is not None:
+        if gcs <= 8: s += 6; why.append(f"GCS {gcs}")
+        elif gcs < 15: s += 3; why.append(f"GCS {gcs}")
     if spo2 is not None and spo2 < 92: s += 4; why.append(f"SpO2 {spo2}%")
     if pulse is not None:
         if pulse > 120 or pulse < 45: s += 3; why.append(f"pulse {pulse}")

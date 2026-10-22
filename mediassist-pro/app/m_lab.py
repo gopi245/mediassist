@@ -154,8 +154,13 @@ def api_results(h, c, b, q, oid):
     d = order_detail(c, o["id"])
     if d["critical"] and b.get("submit"):
         from .notify import notify_staff
-        notify_staff(c, d["doctor_id"], f"CRITICAL lab result for {d['pname']} ({d['code']}), LAB{o['id']}: " +
-                     ", ".join(f"{p['name']} {p['value']} {p['unit'] or ''}" for t in d["tests"] for p in t["params"] if p["flag"] in ("LL", "HH")))
+        from .m_alerts import branch_doctors
+        text = (f"CRITICAL lab result for {d['pname']} ({d['code']}), LAB{o['id']}: " +
+                ", ".join(f"{p['name']} {p['value']} {p['unit'] or ''}" for t in d["tests"] for p in t["params"] if p["flag"] in ("LL", "HH")) +
+                ". Acknowledge it in the app (Dashboard > Critical results).")
+        for uid in ([d["doctor_id"]] if d["doctor_id"] else branch_doctors(c, o["branch_id"])):  # a walk-in order has no doctor: every doctor here is told
+            notify_staff(c, uid, text)
+        c.execute("UPDATE lab_orders SET crit_ack_at=NULL, crit_ack_by=NULL WHERE id=?", (o["id"],))
     return dict(out, critical=d["critical"])
 
 
@@ -169,7 +174,7 @@ def api_verify(h, c, b, q, oid):
     sent = None
     if b.get("send_patient", True) and d["whatsapp_ok"]:
         from .notify import send_patient
-        lines = [f"{d['bname']}: lab report for {d['pname']} ({d['code']}), LAB{d['id']}"]
+        lines = [f"{d['bname']}: {'AMENDED ' if d['amended_at'] else ''}lab report for {d['pname']} ({d['code']}), LAB{d['id']}"]
         for t in d["tests"]:
             lines.append(f"\n{t['name']}")
             for p in t["params"]:

@@ -221,7 +221,8 @@ def lab_pdf(c, oid):
     need(o["status"] == "verified", "The report isn't verified yet", 409)
     p, br = _pt(c, o["patient_id"]), _br(c, o["branch_id"])
     pdf = Pdf(f"Lab report LAB{o['id']} - {o['pname']}")
-    letterhead(pdf, c, br, "LABORATORY REPORT", [f"Lab no. LAB{o['id']}", f"Reported {_dt(o['verified_at'])}"])
+    letterhead(pdf, c, br, "AMENDED LABORATORY REPORT" if o["amended_at"] else "LABORATORY REPORT", [f"Lab no. LAB{o['id']}", f"Reported {_dt(o['verified_at'])}"]
+               + ([f"Amended {_dt(o['amended_at'])}: {o['amend_reason']}"] if o["amended_at"] else []))
     pdf.kv_box([("Patient", o["pname"]), ("Patient ID", o["code"]), ("Age / Gender", _age(p)), ("Referred by", o["dname"] or "Self"),
                 ("Sample collected", _dt(o["collected_at"])), ("Report verified", _dt(o["verified_at"]))])
     for t in o["tests"]:
@@ -317,6 +318,10 @@ def rx_pdf(c, vid):
         pdf.para("Vitals: " + ", ".join(x for x in vit if x), 9, color=MUTED)
     if v["complaint"]:
         pdf.para("Complaint: " + v["complaint"], 10)
+    if v["history"]:
+        pdf.para("History: " + v["history"], 9.5)
+    if v["examination"]:
+        pdf.para("Examination: " + v["examination"], 9.5)
     pdf.para("Diagnosis: " + (v["diagnosis"] or "-") + (f" ({v['icd']})" if v["icd"] else ""), 10.5, True)
     pdf.text(pdf.M, pdf.y - 18, "Rx", 18, True, TEAL)
     pdf.y -= 26
@@ -352,8 +357,40 @@ def _totals(pdf, lines):
     pdf.y -= 10
 
 
-MAKERS = {"lab": lab_pdf, "bill": bill_pdf, "invoice": invoice_pdf, "rx": rx_pdf}
-TABLES = {"lab": "lab_orders", "bill": "bills", "invoice": "invoices", "rx": "visits"}
+def referral_pdf(c, rid):
+    import json as _json
+    r = one(c, "SELECT r.*, u.name by_name, u.reg_no by_reg FROM referrals r LEFT JOIN users u ON u.id=r.by_user WHERE r.id=?", (rid,))
+    need(r, "Referral not found", 404)
+    br, p = _br(c, r["branch_id"]), _pt(c, r["patient_id"])
+    pdf = Pdf(f"Referral - {p['name']}")
+    letterhead(pdf, c, br, "REFERRAL LETTER", [f"Ref. REF{r['id']}", _dt(r["at"]), r["urgency"].upper()])
+    pdf.kv_box([("Patient", p["name"]), ("Patient ID", pcode(p["id"])), ("Age / Gender", _age(p)), ("Phone", p["phone"] or ""),
+                ("Referred to", r["to_facility"] + (f", {r['to_doctor']}" if r["to_doctor"] else "")), ("Specialty", r["specialty"] or "-"),
+                ("Allergies", p["allergies"] or "None recorded"), ("Known conditions", p["conditions"] or "-")])
+    pdf.para("Reason for referral: " + r["reason"], 10.5, True)
+    if r["summary"]:
+        pdf.para("Clinical summary: " + r["summary"], 10)
+    if r["treatment_given"]:
+        pdf.para("Treatment given so far: " + r["treatment_given"], 10)
+    if r["vitals"]:
+        v = _json.loads(r["vitals"])
+        bits = [f"BP {v['bp_sys']}/{v['bp_dia']}" if v.get("bp_sys") else "", f"Pulse {v['pulse']}" if v.get("pulse") else "", f"RR {v['resp_rate']}" if v.get("resp_rate") else "",
+                f"SpO2 {v['spo2']}%" if v.get("spo2") else "", f"Temp {v['temp']} C" if v.get("temp") else "", f"GCS {v['gcs']}" if v.get("gcs") else "", f"Sugar {v['sugar']}" if v.get("sugar") else ""]
+        if any(bits):
+            pdf.para("Vitals at referral: " + ", ".join(x for x in bits if x), 9.5, color=MUTED)
+    if r["transport"]:
+        pdf.para("Transport: " + r["transport"], 9.5, color=MUTED)
+    pdf.need_space(60)
+    pdf.y -= 30
+    pdf.line(pdf.W - pdf.M - 180, pdf.y, pdf.W - pdf.M, pdf.y, INK)
+    pdf.text(pdf.W - pdf.M, pdf.y - 12, r["by_name"] or "", 10, True, INK, "right")
+    if r["by_reg"]:
+        pdf.text(pdf.W - pdf.M, pdf.y - 24, "Reg. " + r["by_reg"], 8, False, MUTED, "right")
+    return pdf.bytes(f"{br['name']} - referral for {p['name']}"), f"Referral-{pcode(p['id'])}-{r['at'][:10]}.pdf", r
+
+
+MAKERS = {"lab": lab_pdf, "bill": bill_pdf, "invoice": invoice_pdf, "rx": rx_pdf, "referral": referral_pdf}
+TABLES = {"lab": "lab_orders", "bill": "bills", "invoice": "invoices", "rx": "visits", "referral": "referrals"}
 
 
 def make(c, kind, rid):
@@ -363,7 +400,7 @@ def make(c, kind, rid):
 
 
 # ---------------------------------------------------------------- staff download
-@route("GET", r"/api/pdf/(lab|bill|invoice|rx)/(\d+)", "patients_read")
+@route("GET", r"/api/pdf/(lab|bill|invoice|rx|referral)/(\d+)", "patients_read")
 def api_pdf(h, c, b, q, kind, rid):
     row = one(c, f"SELECT branch_id FROM {TABLES[kind]} WHERE id=?", (int(rid),))
     need(row, "Not found", 404)

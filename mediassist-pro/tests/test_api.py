@@ -749,3 +749,132 @@ class T08AdminDocs(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+def pdf_text(data):
+    """Inflate the content streams of a small PDF so its text can be searched."""
+    import re as _re
+    import zlib
+    return b"".join(zlib.decompress(m) for m in _re.findall(rb"stream\n(.*?)\nendstream", data, _re.S))
+
+
+class T20CareRecords(unittest.TestCase):
+    def test_emergency_note_referral_imaging_procedure_anc(self):
+        rec, doc = Client("reception.ch"), Client("dr.rao")
+        p = rec.ok("/api/patients", {"name": "Care Test", "phone": "9000022222", "age": 30, "gender": "Female", "consent": True, "force": True})
+        v = rec.ok("/api/visits", {"patient_id": p["id"], "complaint": "fall from height", "emergency": True, "mlc": True, "mlc_no": "PS-12/24", "arrival": "ambulance",
+                                   "pulse": 88, "bp_sys": 120, "bp_dia": 80, "resp_rate": 18, "gcs": 14, "pain": 7, "height": 160, "weight": 55, "temp": 98.6})
+        self.assertEqual(v["triage"], "critical")
+        self.assertIn("emergency", v["reasons"])
+        self.assertEqual(rec.post("/api/visits", {"patient_id": p["id"], "gcs": 20})[0], 400, "GCS range checked")
+        q = [x for x in rec.ok("/api/visits?status=waiting") if x["id"] == v["id"]][0]
+        self.assertEqual((q["mlc"], q["mlc_no"], q["arrival"], q["temp"]), (1, "PS-12/24", "ambulance", 37.0))
+        doc.ok(f"/api/visits/{v['id']}/start", {})
+        doc.ok(f"/api/visits/{v['id']}/complete", {"diagnosis": "Fracture shaft of femur", "complaint": "fall from 2nd floor", "history": "Fell at 9 am, no LOC",
+                                                    "examination": "Deformed right thigh, distal pulses present", "items": [], "lab_tests": []})
+        vd = doc.ok(f"/api/visits/{v['id']}")["visit"]
+        self.assertEqual((vd["history"], vd["complaint"]), ("Fell at 9 am, no LOC", "fall from 2nd floor"))
+        self.assertIn(b"Examination:", pdf_text(doc.get(f"/api/pdf/rx/{v['id']}")[1]))
+        # imaging: order, report, shows on the profile
+        im = rec.ok(f"/api/patients/{p['id']}/imaging", {"modality": "X-ray", "study": "Right femur AP/lat", "indication": "fracture?", "visit_id": v["id"]})
+        self.assertEqual(rec.post(f"/api/patients/{p['id']}/imaging", {"modality": "PET", "study": "x"})[0], 400)
+        self.assertEqual(len(rec.ok("/api/imaging?status=ordered")), 1)
+        doc.ok(f"/api/imaging/{im['id']}/report", {"findings": "Transverse fracture mid-shaft", "impression": "Fracture shaft femur"})
+        prof = doc.ok(f"/api/patients/{p['id']}")
+        self.assertEqual(prof["imaging"][0]["status"], "reported")
+        # referral with a letter
+        self.assertEqual(doc.post(f"/api/patients/{p['id']}/referrals", {"to_facility": "GH", "reason": ""})[0], 400)
+        ref = doc.ok(f"/api/patients/{p['id']}/referrals", {"to_facility": "Government General Hospital", "to_doctor": "Ortho OPD", "urgency": "urgent",
+                                                             "reason": "Needs intramedullary nailing", "summary": "Closed fracture, stable", "transport": "ambulance", "visit_id": v["id"]})
+        st, pdf = doc.get(f"/api/pdf/referral/{ref['id']}")
+        self.assertEqual(st, 200)
+        self.assertTrue(pdf.startswith(b"%PDF"))
+        doc.ok(f"/api/referrals/{ref['id']}/outcome", {"status": "seen", "outcome": "Operated on day 2"})
+        self.assertEqual(doc.ok(f"/api/patients/{p['id']}/referrals")[0]["status"], "seen")
+        # procedure needs consent
+        self.assertEqual(doc.post(f"/api/patients/{p['id']}/procedures", {"name": "Splint", "consent_by": "self"})[0], 400, "relation + explained needed")
+        pr = doc.ok(f"/api/patients/{p['id']}/procedures", {"name": "Thomas splint application", "kind": "minor", "anaesthesia": "none", "consent_by": "Care Test",
+                                                             "consent_relation": "self", "consent_explained": True, "findings": "Reduced, splinted"})
+        self.assertEqual(doc.ok(f"/api/patients/{p['id']}/procedures")[0]["id"], pr["id"])
+        # antenatal: risk flags from BP and Hb
+        rec.ok(f"/api/patients/{p['id']}", {"name": "Care Test", "phone": "9000022222", "age": 30, "gender": "Female", "lmp": core.add_days(core.today(), -140), "gravida": 2, "para": 1})
+        a = rec.ok(f"/api/patients/{p['id']}/anc", {"weight": 58, "bp_sys": 150, "bp_dia": 95, "urine_albumin": "2+", "hb": 9.2, "fhr": 140, "fundal_cm": 20})
+        self.assertIn("pre-eclampsia", a["risk"])
+        self.assertIn("anaemia", a["risk"])
+        anc = rec.ok(f"/api/patients/{p['id']}/anc")
+        self.assertEqual(anc[0]["ga_weeks"], 20)
+        self.assertEqual(rec.ok(f"/api/patients/{p['id']}")["gravida"], 2)
+        g = rec.ok(f"/api/patients/{p['id']}/growth")
+        self.assertTrue(g["reference"])
+
+    def test_lab_reject_amend_ack(self):
+        rec, lab, doc = Client("reception.ch"), Client("lab.ch"), Client("dr.rao")
+        tests = {t["code"]: t for t in lab.ok("/api/lab/tests")}
+        o = rec.ok("/api/lab/orders", {"patient_id": 7, "tests": [tests["CBC"]["id"]], "priority": "urgent"})  # walk-in: no doctor
+        lab.ok(f"/api/lab/orders/{o['id']}/collect", {})
+        self.assertEqual(lab.post(f"/api/lab/orders/{o['id']}/reject", {})[0], 400, "reason needed")
+        lab.ok(f"/api/lab/orders/{o['id']}/reject", {"reason": "Haemolysed"})
+        d = lab.ok(f"/api/lab/orders/{o['id']}")
+        self.assertEqual((d["status"], d["rejections"]), ("ordered", 1))
+        self.assertIn("Haemolysed", d["reject_note"])
+        lab.ok(f"/api/lab/orders/{o['id']}/collect", {})
+        d = lab.ok(f"/api/lab/orders/{o['id']}")
+        vals = {f"{t['item_id']}:{p['id']}": ("5.5" if p["name"] == "Haemoglobin" else "8") for t in d["tests"] for p in t["params"]}
+        self.assertTrue(lab.ok(f"/api/lab/orders/{o['id']}/results", {"values": vals, "submit": True})["critical"])
+        crit = doc.ok("/api/lab/critical")
+        mine = [x for x in crit if x["id"] == o["id"]]
+        self.assertTrue(mine and not mine[0]["assigned"], "unassigned critical result is shown to every doctor in the branch")
+        self.assertTrue(any("CRITICAL" in a["body"] and f"LAB{o['id']}" in a["body"] for a in doc.ok("/api/alerts")), "doctor alerted although no doctor ordered it")
+        doc.ok(f"/api/lab/orders/{o['id']}/ack", {"action": "patient called"})
+        self.assertFalse([x for x in doc.ok("/api/lab/critical") if x["id"] == o["id"]])
+        self.assertEqual(doc.post(f"/api/lab/orders/{o['id']}/ack", {})[0], 400)
+        doc.ok(f"/api/lab/orders/{o['id']}/verify", {})
+        self.assertEqual(doc.post(f"/api/lab/orders/{o['id']}/amend", {})[0], 400)
+        doc.ok(f"/api/lab/orders/{o['id']}/amend", {"reason": "Hb transcription error"})
+        d = doc.ok(f"/api/lab/orders/{o['id']}")
+        self.assertEqual(d["status"], "resulted")
+        vals = {k: ("11.5" if v == "5.5" else v) for k, v in vals.items()}
+        lab.ok(f"/api/lab/orders/{o['id']}/results", {"values": vals, "submit": True})
+        doc.ok(f"/api/lab/orders/{o['id']}/verify", {})
+        self.assertIn(b"AMENDED", pdf_text(doc.get(f"/api/pdf/lab/{o['id']}")[1]))
+
+    def test_discharge_rx_and_credit_bills(self):
+        rec, doc, ph = Client("reception.ch"), Client("dr.rao"), Client("pharma.ch")
+        beds = [b for b in rec.ok("/api/beds") if b["status"] == "free"]
+        a = doc.ok("/api/admissions", {"patient_id": 8, "bed_id": beds[0]["id"], "reason": "Pneumonia", "diagnosis": "Pneumonia", "icd": "J18.9", "deposit": 2000})
+        meds = {m["name"]: m for m in ph.ok("/api/medicines")}
+        # pharmacy sells on credit to the inpatient
+        cb = ph.ok("/api/bills", {"patient_id": 8, "admission_id": a["id"], "pay_mode": "credit", "items": [{"medicine_id": meds["Dolo 650"]["id"], "qty": 4, "unit": "unit"}]})
+        credit_total = cb["total"]
+        self.assertTrue(credit_total > 0)
+        self.assertEqual(doc.ok(f"/api/admissions/{a['id']}")["bill"]["pharmacy_credit"], credit_total)
+        items = [{"medicine_id": meds["Azithral 500"]["id"], "dose": "1", "freq": "OD", "days": 3}]
+        d = doc.ok(f"/api/admissions/{a['id']}/discharge", {"final_diagnosis": "Community-acquired pneumonia", "icd": "J18.9", "course": "Improved on antibiotics", "items": items,
+                                                             "followup": core.add_days(core.today(), 5)})
+        inv = rec.ok(f"/api/invoices/{d['invoice_id']}")
+        names = " ".join(x["name"] for x in inv["items"])
+        self.assertIn("Pharmacy bill", names, "credit bill is on the final invoice")
+        self.assertIn("(credit)", names)
+        adm = doc.ok(f"/api/admissions/{a['id']}")
+        self.assertEqual(adm["rx"][0]["name"], "Azithral 500")
+        self.assertIn("Azithral", adm["summary"]["medications"])
+        # the discharge prescription is pending at any pharmacy and can be dispensed against
+        pend = [x for x in ph.ok("/api/rx/pending?patient_id=8") if x.get("admission_id") == a["id"]]
+        self.assertEqual(len(pend), 1)
+        it = pend[0]["items"][0]
+        ph.ok("/api/bills", {"patient_id": 8, "rx_admission_id": a["id"], "pay_mode": "cash", "items": [{"medicine_id": it["medicine_id"], "qty": it["remaining"], "unit": "unit", "rx_item_id": it["id"]}]})
+        self.assertFalse([x for x in ph.ok("/api/rx/pending?patient_id=8") if x.get("admission_id") == a["id"]], "fully dispensed")
+        self.assertEqual(ph.post("/api/bills", {"patient_id": 7, "rx_admission_id": a["id"], "pay_mode": "cash", "items": [{"medicine_id": it["medicine_id"], "qty": 1, "unit": "unit", "rx_item_id": it["id"]}]})[0], 400, "other patient's prescription")
+        # OPD credit bill: shows as a due, settled at the hospital desk, counted as collected
+        cb2 = ph.ok("/api/bills", {"patient_id": 7, "pay_mode": "credit", "items": [{"medicine_id": meds["Dolo 650"]["id"], "qty": 2, "unit": "unit"}]})
+        u = rec.ok("/api/patients/7/unbilled")
+        self.assertTrue(any(x["bill_id"] == cb2["id"] for x in u["credit_bills"]))
+        before = rec.ok("/api/dashboard")["report"]
+        self.assertEqual(rec.post(f"/api/bills/{cb2['id']}/settle", {"mode": "upi"})[0], 400, "reference needed")
+        s = rec.ok(f"/api/bills/{cb2['id']}/settle", {"mode": "cash"})
+        self.assertEqual(s["amount"], cb2["total"])
+        self.assertEqual(rec.post(f"/api/bills/{cb2['id']}/settle", {"mode": "cash"})[0], 400, "not twice")
+        after = rec.ok("/api/dashboard")["report"]
+        self.assertAlmostEqual(after["collected"] - before["collected"], cb2["total"], places=2)
+        self.assertAlmostEqual(before["dues"] - after["dues"], cb2["total"], places=2)
+        self.assertFalse(any(x["bill_id"] == cb2["id"] for x in rec.ok("/api/patients/7/unbilled")["credit_bills"]))

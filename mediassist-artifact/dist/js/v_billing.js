@@ -47,6 +47,7 @@ on("hbPat", async el => {
   const u = await api(`/api/patients/${pid}/unbilled`); App.cache.unb = u;
   const cons = svcByName("OPD consultation, general");
   $("#hUnb").innerHTML = (u.dues.length ? alertRow("", `<b>Previous dues:</b> ${u.dues.map(d => `<a href="#hbilling/inv/${d.id}">${d.inv_no}</a> ${money(d.due)}`).join(", ")}`) : "") +
+    (u.credit_bills || []).map(cb => alertRow("", `<b>Pharmacy credit bill</b> ${cb.bill_no} · ${cb.date} · <b>${money(cb.due)}</b> <button class="btn sm" data-act="settleBill" data-id="${cb.bill_id}" data-no="${cb.bill_no}" data-amt="${cb.due}">Collect now</button>`)).join("") +
     u.visits.map(v => alertRow("info", `<b>Consultation</b> ${v.completed_at} · ${esc(v.dname || "")} · ${esc(v.diagnosis || "")} <button class="btn sm" data-act="hVisit" data-id="${v.id}" data-doc="${v.doctor_id || ""}">Add consultation fee</button>`)).join("") +
     (u.labs.length ? alertRow("info", `<b>Lab tests not billed:</b> ${u.labs.map(l => `LAB${l.id} ${esc(l.name)}`).join(", ")} <button class="btn sm" data-act="hLabs">Add lab tests</button>`) : "");
   App.cache.consSvc = cons;

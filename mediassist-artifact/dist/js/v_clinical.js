@@ -19,7 +19,8 @@ function patientForm(p, act) {
     <div class="span2"><label>ABHA number (14 digits)</label><input name="abha" inputmode="numeric" value="${esc(p.abha)}"></div><div class="span2"><label>Address</label><input name="address" value="${esc(p.address)}"></div>
     <div class="span2"><label>Allergies</label><input name="allergies" value="${esc(p.allergies)}" placeholder="penicillin, sulfa, nsaid"></div>
     <div class="span2"><label>Conditions</label><input name="conditions" value="${esc(p.conditions)}" placeholder="asthma, kidney disease, ulcer, heart failure"></div>
-    <div><label>LMP (if pregnant)</label><input name="lmp" type="date" value="${esc(p.lmp)}"></div></div>
+    <div><label>LMP (if pregnant)</label><input name="lmp" type="date" value="${esc(p.lmp)}"></div>
+    <div><label>Gravida / Para</label><div style="display:flex;gap:6px"><input name="gravida" type="number" min="0" max="20" value="${p.gravida ?? ""}" placeholder="G"><input name="para" type="number" min="0" max="20" value="${p.para ?? ""}" placeholder="P"></div></div></div>
     ${p.id ? "" : `<label class="check"><input type="checkbox" name="consent"> Patient agrees to their health data being stored and used for treatment and billing</label>
     <label class="check"><input type="checkbox" name="whatsapp_ok" checked> Send reports and reminders on WhatsApp</label>`}
     <div class="btns"><button class="btn">${p.id ? "Save changes" : "Register patient"}</button></div></form>`;
@@ -46,7 +47,9 @@ async function openPatient(id, tab = "summary") {
   const p = await api("/api/patients/" + id); App.cache.patient = p;
   const box = $("#pProfile"); if (!box) return;
   const tabs = [["summary", "Summary"], ["visits", `Visits (${p.visits.length})`], ["vitals", "Vitals"], ["labs", `Labs (${p.labs.length})`], ["vacc", "Vaccinations"],
-    ["ipd", `Admissions (${p.admissions.length})`], ["money", "Bills"], ["docs", `Documents (${p.documents.length})`]];
+    ["ipd", `Admissions (${p.admissions.length})`], ["care", `Imaging & referrals (${p.imaging.length + p.referrals.length + p.procedures.length})`],
+    ...((p.gender || "").toLowerCase().startsWith("f") && (p.pregnancy || p.anc.length) ? [["anc", `Antenatal (${p.anc.length})`]] : []),
+    ...(p.age != null && p.age < 18 ? [["growth", "Growth"]] : []), ["money", "Bills"], ["docs", `Documents (${p.documents.length})`]];
   box.innerHTML = `<div class="phead"><div class="avatar">${initials(p.name)}</div><div style="flex:1;min-width:0"><h2>${esc(p.name)}</h2>
     <div class="small muted"><span class="mono">${p.code}</span> · ${p.age ?? "?"} yrs · ${esc(p.gender || "")} · <span class="mono">${esc(p.phone)}</span>${p.abha ? ` · ABHA <span class="mono">${esc(p.abha)}</span>` : ""}${p.blood_group ? " · " + esc(p.blood_group) : ""}</div></div></div>
     ${p.allergies ? `<div class="banner" style="margin-top:10px">Allergic to ${esc(p.allergies)}</div>` : ""}
@@ -79,7 +82,7 @@ function renderPTab(tab) {
     el.innerHTML = `<div class="g2">${card("Blood pressure (systolic)", `${sys.length} readings`, sys.length > 1 ? `<div class="chart" id="vBp"></div>` : '<p class="empty">Not enough readings.</p>')}
       ${card("Weight", `${wt.length} readings`, wt.length > 1 ? `<div class="chart" id="vWt"></div>` : '<p class="empty">Not enough readings.</p>')}</div>
       ${sg.length > 1 ? card("Blood sugar", "", `<div class="chart" id="vSg"></div>`) : ""}
-      ${tbl(["When", "Temp", "Pulse", "BP", "SpO₂", "Weight", "Sugar"], p.vitals.slice(0, 30).map(v => `<tr><td class="mono">${v.at}</td><td>${v.temp ?? "–"}</td><td>${v.pulse ?? "–"}</td><td>${v.bp_sys ?? "–"}/${v.bp_dia ?? "–"}</td><td>${v.spo2 ?? "–"}</td><td>${v.weight ?? "–"}</td><td>${v.sugar ?? "–"}</td></tr>`).join(""))}`;
+      ${tbl(["When", "Temp", "Pulse", "BP", "RR", "SpO₂", "GCS", "Pain", "Weight", "Height", "Sugar"], p.vitals.slice(0, 30).map(v => `<tr><td class="mono">${v.at}</td><td>${v.temp ?? "–"}</td><td>${v.pulse ?? "–"}</td><td>${v.bp_sys ?? "–"}/${v.bp_dia ?? "–"}</td><td>${v.resp_rate ?? "–"}</td><td>${v.spo2 ?? "–"}</td><td>${v.gcs ?? "–"}</td><td>${v.pain ?? "–"}</td><td>${v.weight ?? "–"}</td><td>${v.height ?? "–"}</td><td>${v.sugar ?? "–"}</td></tr>`).join(""))}`;
     const f = n => String(Math.round(n));
     if (sys.length > 1) lineChart($("#vBp"), sys.map(v => v.at), [{ name: "Systolic", color: "--s1", values: sys.map(v => v.bp_sys) }], f);
     if (wt.length > 1) lineChart($("#vWt"), wt.map(v => v.at), [{ name: "kg", color: "--s3", values: wt.map(v => v.weight) }], f);
@@ -101,6 +104,8 @@ function renderPTab(tab) {
       <h3 style="margin:12px 0 6px">Pharmacy bills</h3>${tbl(["Bill", "Date", "Branch", "Total"], p.bills.map(b => `<tr><td class="mono">${b.bill_no}</td><td class="mono">${b.created_at}</td><td>${b.bcode}</td><td class="num">${money(P2R(b.total_p - b.returned_p))}</td></tr>`).join(""))}`;
   } else if (tab === "docs") {
     el.innerHTML = docThumbs(p.documents) + (can("documents") ? `<div class="btns"><button class="btn sm" data-act="go" data-v="docs" data-p="up/patient/${p.id}">Upload a document</button></div>` : "");
+  } else if (CARE_TABS[tab]) {
+    CARE_TABS[tab](el, p);
   }
 }
 on("icdSearch", debounce(async el => { if (el.value.length < 2) return; const l = await api("/api/icd10?q=" + encodeURIComponent(el.value)); $("#icdOpts").innerHTML = l.map(x => `<option value="${x.code}">${esc(x.title)}</option>`).join(""); }, 250));
@@ -133,12 +138,16 @@ RENDER.opd = async (main, [mode, pid]) => {
       <div class="nm"><b>${esc(v.pname)}</b><span class="mono small muted">${v.token ? "T" + v.token + " · " : ""}${v.created_at.slice(11)}</span></div>
       <div class="small muted">${v.code} · ${v.age ?? "?"}${(v.gender || " ")[0]} · ${esc(v.complaint || "")}${v.dname ? " · " + esc(v.dname) : ""}</div>
       <div class="vit"><span class="${v.temp >= 38 ? "bad" : ""}">${v.temp ?? "–"}°C</span><span class="${v.pulse > 100 ? "bad" : ""}">P ${v.pulse ?? "–"}</span><span class="${v.bp_sys > 160 ? "bad" : ""}">BP ${v.bp_sys ?? "–"}/${v.bp_dia ?? "–"}</span><span class="${v.spo2 && v.spo2 < 92 ? "bad" : ""}">SpO₂ ${v.spo2 ?? "–"}</span>${v.sugar ? `<span>RBS ${v.sugar}</span>` : ""}</div>
-      ${v.allergies ? `<div class="allergy small">Allergic to ${esc(v.allergies)}</div>` : ""}${v.status === "in_consult" ? pill("With doctor", "p-info") : ""}
+      ${v.allergies ? `<div class="allergy small">Allergic to ${esc(v.allergies)}</div>` : ""}${v.emergency ? pill("Emergency", "p-crit") : ""}${v.mlc ? pill("MLC" + (v.mlc_no ? " " + esc(v.mlc_no) : ""), "p-warn") : ""}${v.status === "in_consult" ? pill("With doctor", "p-info") : ""}
       <div class="row-actions" style="margin-top:6px">${can("consult") ? `<button class="btn sm ${lvl === "critical" ? "danger" : ""}" data-act="go" data-v="consult" data-p="${v.id}">Consult</button>` : ""}${can("visit_create") ? `<button class="btn sm ghost" data-act="cancelVisit" data-id="${v.id}">Remove</button>` : ""}</div></div>`).join("") || '<p class="empty">Nobody here.</p>'}</div>`; };
   main.innerHTML = `<div class="g2">
     ${card("Walk-in arrival", "Vitals decide the triage level", `<form data-submit="walkin" class="stack"><div class="fields">${patInput("patient", mode === "walkin" ? pre : "")}<div class="span2"><label>Complaint</label><input name="complaint" placeholder="fever 3 days, cough"></div>
       <div><label>Doctor</label>${docSelect(docs)}</div><div><label>Temp °C</label><input name="temp" type="number" step=".1"></div><div><label>Pulse</label><input name="pulse" type="number"></div><div><label>BP systolic</label><input name="bp_sys" type="number"></div><div><label>BP diastolic</label><input name="bp_dia" type="number"></div>
-      <div><label>SpO₂ %</label><input name="spo2" type="number"></div><div><label>Sugar (RBS)</label><input name="sugar" type="number"></div><div><label>Weight kg</label><input name="weight" type="number" step=".1"></div></div><div class="btns"><button class="btn">Add to queue</button></div></form>`)}
+      <div><label>SpO₂ %</label><input name="spo2" type="number"></div><div><label>Sugar (RBS)</label><input name="sugar" type="number"></div><div><label>Weight kg</label><input name="weight" type="number" step=".1"></div>
+      <div><label>Resp. rate /min</label><input name="resp_rate" type="number"></div><div><label>GCS (3-15)</label><input name="gcs" type="number" min="3" max="15"></div><div><label>Pain (0-10)</label><input name="pain" type="number" min="0" max="10"></div><div><label>Height cm</label><input name="height" type="number"></div>
+      <div><label>Arrival</label><select name="arrival"><option value="">Walked in</option><option value="ambulance">Ambulance</option><option value="carried">Carried / stretcher</option><option value="wheelchair">Wheelchair</option><option value="police">Brought by police</option></select></div><div><label>Brought by</label><input name="brought_by" placeholder="relative, police, bystander"></div></div>
+      <div class="row-actions"><label class="check"><input type="checkbox" name="emergency" value="1"> <b>Emergency</b> (goes to the top of the queue)</label><label class="check"><input type="checkbox" name="mlc" value="1" data-change="mlcToggle"> Medico-legal case</label><input name="mlc_no" placeholder="MLC / police ref. no." style="width:auto" hidden></div>
+      <div class="btns"><button class="btn">Add to queue</button></div></form>`)}
     ${card("Book an appointment", "Patients can also book online at /book", `<form data-submit="book" class="stack"><div class="fields">${patInput("patient", mode === "book" ? pre : "")}<div><label>Doctor</label>${docSelect(docs, "doctor_id", "", "")}</div>
       <div><label>Day</label><input name="day" type="date" value="${localDay()}" data-change="loadSlots"></div><div class="span2"><label>Time</label><select name="slot" id="slotSel"><option value="">Pick doctor and day</option></select></div><div class="span2"><label>Note</label><input name="note"></div></div>
       <div class="btns"><button class="btn">Book</button></div></form>`)}
@@ -187,12 +196,18 @@ RENDER.consult = async (main, [vid]) => {
     <p class="small" style="margin:10px 0 0"><b>Complaint:</b> ${esc(v.complaint || "–")}${v.triage_reasons ? ` · <span class="muted">${esc(v.triage_reasons)}</span>` : ""}${d.creatinine ? ` · last creatinine <b>${d.creatinine}</b>` : ""}</p></div>
   <div class="g-form"><div class="stack">
     ${p.allergies ? `<div class="banner">Allergic to ${esc(p.allergies)}</div>` : ""}${p.pregnancy ? alertRow("info", `Pregnant · ${p.pregnancy.weeks} weeks · EDD ${p.pregnancy.edd}`) : ""}
-    ${card("Clinical context", "", `<p class="small" style="margin:0"><b>Conditions:</b> ${esc(p.conditions || "none")}<br><b>Problems:</b> ${p.problems.filter(x => x.status === "active").map(x => esc(x.title)).join(", ") || "none"}<br><b>Currently taking:</b> ${p.current_meds.map(m => esc(m.name)).join(", ") || "nothing"}</p>`)}
+    ${card("Clinical context", "", `<p class="small" style="margin:0"><b>Conditions:</b> ${esc(p.conditions || "none")}<br><b>Problems:</b> ${p.problems.filter(x => x.status === "active").map(x => esc(x.title)).join(", ") || "none"}<br><b>Currently taking:</b> ${p.current_meds.map(m => esc(m.name)).join(", ") || "nothing"}${v.mlc ? `<br><b class="allergy">Medico-legal case${v.mlc_no ? " " + esc(v.mlc_no) : ""}</b>` : ""}${v.arrival ? `<br><b>Arrival:</b> ${esc(v.arrival)}${v.brought_by ? ", brought by " + esc(v.brought_by) : ""}` : ""}</p>
+      ${p.imaging.length ? `<p class="small"><b>Imaging:</b> ${p.imaging.slice(0, 4).map(i => `${esc(i.modality)} ${esc(i.study)} (${i.status === "reported" ? esc(i.impression || "reported") : i.status})`).join("; ")}</p>` : ""}
+      <div class="row-actions" style="margin-top:8px"><button type="button" class="btn sm ghost" data-act="careRefer" data-pid="${p.id}" data-vid="${v.id}">Refer</button><button type="button" class="btn sm ghost" data-act="careImaging" data-pid="${p.id}" data-vid="${v.id}">Order imaging</button><button type="button" class="btn sm ghost" data-act="careProcedure" data-pid="${p.id}" data-vid="${v.id}">Procedure note</button></div>`)}
     ${card("History, all branches", "", `<div class="timeline">${p.visits.filter(x => x.id !== v.id && x.status === "done").slice(0, 8).map(x => `<div class="tl"><div class="when">${x.created_at.slice(0, 10)} · ${x.bcode} · ${esc(x.dname || "")}</div><b>${esc(x.diagnosis || "")}</b><div class="small muted">${x.rx.map(r => esc(r.name)).join(", ")}</div></div>`).join("") || '<p class="empty">First visit.</p>'}</div>
       ${p.labs.length ? `<p class="small"><b>Recent labs:</b> ${p.labs.slice(0, 4).map(o => `<a href="#lab/o/${o.id}">LAB${o.id}</a> ${esc(o.tests)} (${o.status})`).join("; ")}</p>` : ""}`)}
   </div>
   <div class="card"><div class="card-h"><div><h2>Consultation</h2><p>Warnings update as you prescribe</p></div><select data-change="applyTpl" style="width:auto"><option value="">Apply a template…</option>${tpl.map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join("")}</select></div>
     <form data-submit="saveConsult" id="cxForm" class="stack"><div class="fields">
+      <div class="span2"><label>Presenting complaint</label><input name="complaint" value="${esc(v.complaint || "")}"></div>
+      <div class="span2"><label>Vitals</label><div class="small muted" style="padding-top:8px">${v.temp ?? "–"}°C · P ${v.pulse ?? "–"} · BP ${v.bp_sys ?? "–"}/${v.bp_dia ?? "–"} · RR ${v.resp_rate ?? "–"} · SpO₂ ${v.spo2 ?? "–"} · GCS ${v.gcs ?? "–"} · pain ${v.pain ?? "–"}</div></div>
+      <div class="span2"><label>History</label><textarea name="history" rows="3" placeholder="Onset, duration, associated symptoms, past and drug history">${esc(v.history || "")}</textarea></div>
+      <div class="span2"><label>Examination</label><textarea name="examination" rows="3" placeholder="General, systemic findings">${esc(v.examination || "")}</textarea></div>
       <div class="span2"><label>Diagnosis</label><input name="diagnosis" value="${esc(v.diagnosis || "")}" required></div>
       <div><label>ICD-10</label><input name="icd" list="icdOpts" data-input="icdSearch" value="${esc(v.icd || "")}" placeholder="code"></div>
       <div><label>Weight kg (dose check)</label><input name="weight" type="number" step=".1" value="${p.weight ?? ""}" data-input="cxWeight"></div></div>
@@ -244,7 +259,7 @@ on("printRx", async el => {
   printHtml(`<div class="hdr"><div><h2>${esc(v.bname)}</h2><div>${esc(v.baddr || "")} · ${esc(v.bphone || "")}</div></div><div style="text-align:right"><b>${esc(v.dname || "")}</b><div>Reg. ${esc(v.dreg || "–")}</div><div>${esc((v.completed_at || v.created_at))}</div></div></div>
     <p><b>${esc(p.name)}</b> · ${p.code} · ${p.age ?? "?"} yrs · ${esc(p.gender || "")}${p.weight ? ` · ${p.weight} kg` : ""} · <b>Allergies:</b> ${esc(p.allergies || "none")}</p>
     <p><b>Vitals:</b> ${v.temp ?? "–"}°C, pulse ${v.pulse ?? "–"}, BP ${v.bp_sys ?? "–"}/${v.bp_dia ?? "–"}, SpO₂ ${v.spo2 ?? "–"}%</p>
-    <p><b>Complaint:</b> ${esc(v.complaint || "–")}<br><b>Diagnosis:</b> ${esc(v.diagnosis || "–")} ${v.icd ? "(" + esc(v.icd) + ")" : ""}</p>
+    <p><b>Complaint:</b> ${esc(v.complaint || "–")}${v.history ? `<br><b>History:</b> ${esc(v.history)}` : ""}${v.examination ? `<br><b>Examination:</b> ${esc(v.examination)}` : ""}<br><b>Diagnosis:</b> ${esc(v.diagnosis || "–")} ${v.icd ? "(" + esc(v.icd) + ")" : ""}</p>
     <h2 style="font-size:22px">℞</h2><table><tr><th>Medicine</th><th>Dose</th><th>Frequency</th><th>Days</th><th>Qty</th><th>Instructions</th></tr>${d.rx.map(r => `<tr><td>${esc(r.name)}<br><small>${esc(r.generic || "")}</small></td><td>${esc(r.dose || "1")}</td><td>${esc(r.freq)}</td><td>${r.days}</td><td>${r.qty}</td><td>${esc(r.instructions || "")}</td></tr>`).join("")}</table>
     ${d.labs.length ? `<p><b>Tests:</b> ${d.labs.map(l => esc(l.name)).join(", ")}</p>` : ""}<p>${esc(v.notes || "")}</p>${v.followup ? `<p><b>Follow-up:</b> ${v.followup}</p>` : ""}<br><br><p style="text-align:right">Signature ____________________</p>`);
 });

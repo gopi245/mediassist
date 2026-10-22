@@ -158,6 +158,9 @@ def api_admission(h, c, b, q, aid):
     a["labs"] = rows(c.execute("SELECT o.id, o.status, o.created_at, (SELECT group_concat(t.name, ', ') FROM lab_order_items i JOIN lab_tests t ON t.id=i.test_id WHERE i.order_id=o.id) tests "
                                "FROM lab_orders o WHERE admission_id=? ORDER BY o.id DESC", (a["id"],)))
     a["bill"] = running_bill(c, a)
+    a["procedures"] = rows(c.execute("SELECT pr.*, u.name surgeon FROM procedures pr LEFT JOIN users u ON u.id=pr.surgeon_id WHERE admission_id=? ORDER BY pr.id DESC", (a["id"],)))
+    a["imaging"] = rows(c.execute("SELECT * FROM imaging WHERE admission_id=? ORDER BY id DESC", (a["id"],)))
+    a["rx"] = rows(c.execute("SELECT r.*, m.name FROM rx_items r JOIN medicines m ON m.id=r.medicine_id WHERE r.admission_id=?", (a["id"],)))
     a["summary"] = json.loads(a["summary"]) if a["summary"] else None
     a["moves"] = rows(c.execute("SELECT bm.*, bd.ward, bd.number FROM bed_moves bm JOIN beds bd ON bd.id=bm.bed_id WHERE admission_id=? ORDER BY bm.id", (a["id"],)))
     return a
@@ -347,19 +350,46 @@ def api_discharge(h, c, b, q, aid):
     pending = c.execute("SELECT COUNT(*) FROM lab_orders WHERE admission_id=? AND status IN ('ordered','collected')", (a["id"],)).fetchone()[0]
     if dtype in ("normal", "referred"):
         need(not pending or b.get("ignore_pending"), f"{pending} lab order(s) still have no result. Wait for them, cancel them in the lab, or tick 'discharge anyway'.")
+    if dtype == "referred":
+        need(clean(b, "to_facility", 150) and clean(b, "referral_reason", 1000), "A referral needs the receiving facility and the reason")
+    # discharge medicines are a real prescription: safety-checked, dispensable at any pharmacy, visible as current medicines
+    from .m_clinical import check_items
+    from .safety import qty_for
+    p = one(c, "SELECT * FROM patients WHERE id=?", (a["patient_id"],))
+    raw = (b.get("items") or [])[:30]
+    items, warnings = check_items(c, p, raw)
+    if warnings and not b.get("override"):
+        raise ApiError(409, "Safety warnings: review before discharging", warnings=warnings)
+    reason = clean(b, "override_reason", 300)
 
     def run():
         end = now_str()
         c.execute("UPDATE bed_moves SET to_at=? WHERE admission_id=? AND to_at IS NULL", (end, a["id"]))
         a2 = dict(a, discharged_at=end)
         bill = running_bill(c, a2)
+        c.execute("UPDATE mar_orders SET active=0, stop_at=? WHERE admission_id=? AND active=1", (end, a["id"]))
+        c.execute("DELETE FROM rx_items WHERE admission_id=?", (a["id"],))
+        for it, rawi in zip(items, raw):
+            qty = opt_num(rawi.get("qty"), int, "qty") or qty_for(it["med"], it["freq"], it["days"], it["dose"])
+            c.execute("INSERT INTO rx_items(admission_id,medicine_id,dose,freq,days,qty,instructions) VALUES(?,?,?,?,?,?,?)",
+                      (a["id"], it["med"]["id"], it["dose"], it["freq"], it["days"], qty, clean(rawi, "instructions", 200)))
+        if items and not summary["medications"]:
+            summary["medications"] = "; ".join(f"{it['med']['name']} {it['dose']} {it['freq']} x {it['days']}d" for it in items)
+        # unsettled pharmacy credit bills from this stay go on the final invoice
+        for bl in rows(c.execute("SELECT * FROM bills WHERE admission_id=? AND pay_mode='credit' AND settled_at IS NULL AND total_p-returned_p>0", (a["id"],))):
+            bill["lines"].append({"service_id": None, "name": f"Pharmacy bill {bl['bill_no']} (credit)", "cat": "Pharmacy credit", "qty": 1, "rate_p": bl["total_p"] - bl["returned_p"], "ref": bl["bill_no"]})
         from .m_billing import create_invoice
         inv = create_invoice(c, h, a["patient_id"], [{"service_id": x.get("service_id"), "name": x["name"], "cat": x["cat"], "qty": x["qty"], "rate_p": x["rate_p"],
                                                       "disc_p": 0, "ref": x.get("ref")} for x in bill["lines"]],
                              doctor_id=a["doctor_id"], admission_id=a["id"], kind="ipd", notes=f"Inpatient bill {a['ip_no']}")
+        c.execute("UPDATE bills SET settled_at=?, settled_mode='invoice', settled_invoice_id=? WHERE admission_id=? AND pay_mode='credit' AND settled_at IS NULL", (end, inv["id"], a["id"]))
+        if dtype == "referred":
+            from .m_care import create_referral
+            create_referral(c, h, a["patient_id"], {"to_facility": b.get("to_facility"), "to_doctor": b.get("to_doctor"), "reason": b.get("referral_reason"),
+                                                     "urgency": b.get("referral_urgency") or "urgent", "summary": f"{summary['final_diagnosis']}. {summary['course'] or ''}",
+                                                     "treatment_given": summary["medications"], "transport": b.get("transport")}, admission_id=a["id"])
         c.execute("UPDATE payments SET invoice_id=?, kind='payment' WHERE admission_id=? AND kind='deposit'", (inv["id"], a["id"]))
         c.execute("UPDATE lab_orders SET invoice_id=? WHERE admission_id=? AND invoice_id IS NULL AND status<>'cancelled'", (inv["id"], a["id"]))
-        c.execute("UPDATE mar_orders SET active=0, stop_at=? WHERE admission_id=? AND active=1", (end, a["id"]))
         c.execute("UPDATE admissions SET status='discharged', discharged_at=?, discharge_type=?, summary=?, diagnosis=?, icd=?, invoice_id=? WHERE id=?",
                   (end, dtype, json.dumps(summary), summary["final_diagnosis"], summary["icd"] or a["icd"], inv["id"], a["id"]))
         c.execute("UPDATE beds SET status='cleaning' WHERE id=?", (a["bed_id"],))
@@ -368,7 +398,8 @@ def api_discharge(h, c, b, q, aid):
         if summary["followup"] and dtype != "death":
             c.execute("INSERT INTO visits(patient_id,branch_id,doctor_id,created_at,created_by,complaint,triage,diagnosis,followup,status,completed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                       (a["patient_id"], a["branch_id"], a["doctor_id"], end, h.user["id"], "Discharge", "normal", summary["final_diagnosis"], summary["followup"], "done", end))
-        audit(c, h, "ipd.discharge", f"{a['ip_no']} {dtype} invoice {inv['inv_no']} {rs(inv['total_p'])}")
+        audit(c, h, "ipd.discharge", f"{a['ip_no']} {dtype} invoice {inv['inv_no']} {rs(inv['total_p'])} rx={len(items)}"
+              + ((" OVERRIDE" + (f" ({reason})" if reason else "") + ": " + " ".join(w["text"] for w in warnings)) if warnings else ""))
         return inv
     inv = in_tx(c, run)
     from .m_portal import share

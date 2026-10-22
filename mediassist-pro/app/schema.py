@@ -180,6 +180,53 @@ CREATE INDEX ix_adm_branch ON admissions(branch_id, status);
 CREATE INDEX ix_cn ON credit_notes(invoice_id);
 CREATE INDEX ix_idem_at ON idempotency(at)
 """,
+# 7: structured notes and extra vitals, emergency/MLC, credit-bill settlement, lab rejection/amendment/acknowledgement,
+#    referrals, procedures with consent, imaging, antenatal visits
+r"""
+ALTER TABLE bills ADD COLUMN settled_at TEXT;
+ALTER TABLE bills ADD COLUMN settled_mode TEXT;
+ALTER TABLE bills ADD COLUMN settled_invoice_id INTEGER;
+ALTER TABLE visits ADD COLUMN history TEXT;
+ALTER TABLE visits ADD COLUMN examination TEXT;
+ALTER TABLE visits ADD COLUMN resp_rate INTEGER;
+ALTER TABLE visits ADD COLUMN gcs INTEGER;
+ALTER TABLE visits ADD COLUMN pain INTEGER;
+ALTER TABLE visits ADD COLUMN height REAL;
+ALTER TABLE visits ADD COLUMN emergency INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE visits ADD COLUMN mlc INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE visits ADD COLUMN mlc_no TEXT;
+ALTER TABLE visits ADD COLUMN arrival TEXT;
+ALTER TABLE visits ADD COLUMN brought_by TEXT;
+ALTER TABLE vitals ADD COLUMN resp_rate INTEGER;
+ALTER TABLE vitals ADD COLUMN gcs INTEGER;
+ALTER TABLE vitals ADD COLUMN pain INTEGER;
+ALTER TABLE vitals ADD COLUMN height REAL;
+ALTER TABLE lab_orders ADD COLUMN rejections INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE lab_orders ADD COLUMN reject_note TEXT;
+ALTER TABLE lab_orders ADD COLUMN amended_at TEXT;
+ALTER TABLE lab_orders ADD COLUMN amend_reason TEXT;
+ALTER TABLE lab_orders ADD COLUMN crit_ack_by INTEGER;
+ALTER TABLE lab_orders ADD COLUMN crit_ack_at TEXT;
+ALTER TABLE patients ADD COLUMN gravida INTEGER;
+ALTER TABLE patients ADD COLUMN para INTEGER;
+CREATE TABLE referrals(id INTEGER PRIMARY KEY, branch_id INTEGER NOT NULL, patient_id INTEGER NOT NULL REFERENCES patients(id), visit_id INTEGER, admission_id INTEGER,
+  at TEXT NOT NULL, by_user INTEGER, to_facility TEXT NOT NULL, to_doctor TEXT, specialty TEXT, urgency TEXT NOT NULL DEFAULT 'routine', reason TEXT NOT NULL,
+  summary TEXT, vitals TEXT, treatment_given TEXT, transport TEXT, status TEXT NOT NULL DEFAULT 'sent', outcome TEXT);
+CREATE INDEX ix_ref_pat ON referrals(patient_id);
+CREATE TABLE procedures(id INTEGER PRIMARY KEY, branch_id INTEGER NOT NULL, patient_id INTEGER NOT NULL REFERENCES patients(id), admission_id INTEGER, visit_id INTEGER,
+  name TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'minor', surgeon_id INTEGER, assistant TEXT, anaesthetist TEXT, anaesthesia TEXT, started_at TEXT, ended_at TEXT,
+  indication TEXT, findings TEXT, technique TEXT, implants TEXT, blood_loss TEXT, complications TEXT, post_op TEXT,
+  consent_by TEXT, consent_relation TEXT, consent_at TEXT, consent_text TEXT, consent_witness TEXT, created_by INTEGER, created_at TEXT NOT NULL);
+CREATE INDEX ix_proc_pat ON procedures(patient_id);
+CREATE TABLE imaging(id INTEGER PRIMARY KEY, branch_id INTEGER NOT NULL, patient_id INTEGER NOT NULL REFERENCES patients(id), visit_id INTEGER, admission_id INTEGER,
+  modality TEXT NOT NULL, study TEXT NOT NULL, ordered_by INTEGER, ordered_at TEXT NOT NULL, indication TEXT, status TEXT NOT NULL DEFAULT 'ordered',
+  findings TEXT, impression TEXT, reported_by TEXT, reported_at TEXT, document_id INTEGER);
+CREATE INDEX ix_img_pat ON imaging(patient_id);
+CREATE TABLE anc_visits(id INTEGER PRIMARY KEY, patient_id INTEGER NOT NULL REFERENCES patients(id), visit_id INTEGER, at TEXT NOT NULL, by_user INTEGER,
+  ga_weeks INTEGER, weight REAL, bp_sys INTEGER, bp_dia INTEGER, fundal_cm REAL, fhr INTEGER, presentation TEXT, urine_albumin TEXT, urine_sugar TEXT,
+  hb REAL, oedema INTEGER NOT NULL DEFAULT 0, complaints TEXT, risk TEXT, plan TEXT, next_visit TEXT);
+CREATE INDEX ix_anc_pat ON anc_visits(patient_id)
+""",
 ]
 
 

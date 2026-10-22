@@ -35,7 +35,8 @@ async function labOrder(main, id) {
   const o = await api("/api/lab/orders/" + id); App.cache.labOrder = o;
   const editable = can("lab") && (o.status === "collected" || o.status === "resulted");
   main.innerHTML = `<div class="card"><div class="card-h"><div><h2>LAB${o.id} · ${esc(o.pname)}</h2><p>${o.code} · ${o.age ?? "?"} yrs · ${esc(o.gender || "")} · ordered ${o.created_at}${o.dname ? " by " + esc(o.dname) : ""} · ${o.priority.toUpperCase()}</p></div>${pill(...LAB_ST[o.status])}</div>
-    ${o.critical ? alertRow("high", "<b>Critical value.</b> The ordering doctor has been alerted. Inform them by phone as well.") : ""}
+    ${o.critical ? alertRow("high", `<b>Critical value.</b> ${o.crit_ack_at ? `Acknowledged ${o.crit_ack_at}.` : "The doctor has been alerted and must acknowledge it. Inform them by phone as well."}`) : ""}
+    ${o.amended_at ? alertRow("", `<b>Amended report.</b> ${o.amended_at}: ${esc(o.amend_reason || "")}`) : ""}${o.rejections ? alertRow("", `<b>Sample rejected ${o.rejections} time(s).</b> ${esc(o.reject_note || "")}`) : ""}
     <form data-submit="labSave" class="resgrid">${o.tests.map(t_ => `<h3 style="margin:14px 0 6px">${esc(t_.name)} <span class="small muted">${esc(t_.sample || "")}</span></h3>
       ${tbl(["Test", "Result", "Unit", "Normal range", "Flag"], t_.params.map(p => `<tr><td>${esc(p.name)}</td><td>${editable ? `<input name="${t_.item_id}:${p.id}" value="${esc(p.value || "")}" data-input="labLive" data-p='${esc(JSON.stringify({ low: p.low, high: p.high, crit_low: p.crit_low, crit_high: p.crit_high, ref_text: p.ref_text }))}'>` : `<b>${esc(p.value || "–")}</b>`}</td><td>${esc(p.unit || "")}</td><td class="small">${esc(p.range || "")}</td><td class="flagcell"><span class="flag-${p.flag || ""}">${FLAG_TXT[p.flag] || ""}</span></td></tr>`).join(""))}`).join("")}
     <div class="btns">
@@ -43,6 +44,9 @@ async function labOrder(main, id) {
       ${editable ? `<button class="btn ghost" name="draft" value="1">Save draft</button><button type="button" class="btn" data-act="labSubmit">Submit results</button>` : ""}
       ${o.status === "resulted" && can("lab_verify") ? `<button type="button" class="btn" data-act="labVerify">Verify and send to patient</button>` : ""}
       ${["ordered", "collected"].includes(o.status) && can("lab") ? `<button type="button" class="btn ghost" data-act="labCancel">Cancel order</button>` : ""}
+      ${o.status === "collected" && can("lab") ? `<button type="button" class="btn ghost" data-act="labReject">Reject sample</button>` : ""}
+      ${o.status === "verified" && can("lab_verify") ? `<button type="button" class="btn ghost" data-act="labAmend">Amend report</button>` : ""}
+      ${o.critical && !o.crit_ack_at && can("consult") ? `<button type="button" class="btn danger" data-act="labAck" data-id="${o.id}">Acknowledge critical result</button>` : ""}
       ${o.status === "verified" ? `<button type="button" class="btn ghost" data-act="labPrint">Print report</button><button type="button" class="btn ghost" data-act="pdfDl" data-p="lab/${o.id}">PDF</button>` : ""}
       <button type="button" class="btn ghost" data-act="go" data-v="lab">Back to worklist</button></div></form>
     <p class="small muted">Collected: ${o.collected_at ? `${o.collected_at} by ${esc(o.collected_name)}` : "–"} · Resulted: ${o.resulted_at ? `${o.resulted_at} by ${esc(o.resulted_name)}` : "–"} · Verified: ${o.verified_at ? `${o.verified_at} by ${esc(o.verified_name)}` : "–"}</p></div>`;

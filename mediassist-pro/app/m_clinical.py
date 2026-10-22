@@ -29,6 +29,12 @@ def current_meds(c, pid, exclude_visit=None):
         if r["id"] not in seen:
             seen.add(r["id"])
             out.append(r)
+    for r in c.execute("SELECT m.*, a.discharged_at vdate, r.days FROM rx_items r JOIN admissions a ON a.id=r.admission_id JOIN medicines m ON m.id=r.medicine_id "
+                       "WHERE a.patient_id=? AND a.status='discharged'", (pid,)):
+        r = dict(r)
+        if r["vdate"] and add_days(r["vdate"][:10], r["days"] or 30) >= today() and r["id"] not in seen:
+            seen.add(r["id"])
+            out.append(r)
     return out
 
 
@@ -78,7 +84,8 @@ def patient_fields(b):
         age = date.today().year - d.year - ((date.today().month, date.today().day) < (d.month, d.day))
     return dict(name=name, age=age, dob=dob, gender=clean(b, "gender", 10), phone=phone, address=clean(b, "address"),
                 allergies=clean(b, "allergies"), conditions=clean(b, "conditions"), blood_group=clean(b, "blood_group", 5),
-                abha=abha or None, weight=opt_num(b.get("weight"), float, "weight"), lmp=lmp, lang=clean(b, "lang", 5) or None)
+                abha=abha or None, weight=opt_num(b.get("weight"), float, "weight"), lmp=lmp, lang=clean(b, "lang", 5) or None,
+                gravida=opt_num(b.get("gravida"), int, "gravida"), para=opt_num(b.get("para"), int, "para"))
 
 
 @route("GET", "/api/patients", "patients_read")
@@ -153,7 +160,11 @@ def profile(c, pid):
             "documents": rows(c.execute("SELECT id,doc_type,doc_date,note,mime,filename FROM documents WHERE patient_id=? ORDER BY id DESC", (pid,))),
             "appointments": rows(c.execute("SELECT a.*, u.name dname FROM appointments a LEFT JOIN users u ON u.id=a.doctor_id WHERE patient_id=? AND day>=? ORDER BY day, slot", (pid, today()))),
             "current_meds": [{"name": m["name"], "since": (m.get("vdate") or "")[:10], "days": m.get("days")} for m in current_meds(c, pid)],
-            "pregnancy": pregnancy_info(p)}
+            "pregnancy": pregnancy_info(p),
+            "imaging": rows(c.execute("SELECT im.*, u.name oname FROM imaging im LEFT JOIN users u ON u.id=im.ordered_by WHERE im.patient_id=? ORDER BY im.id DESC LIMIT 20", (pid,))),
+            "referrals": rows(c.execute("SELECT r.*, u.name by_name FROM referrals r LEFT JOIN users u ON u.id=r.by_user WHERE r.patient_id=? ORDER BY r.id DESC LIMIT 20", (pid,))),
+            "procedures": rows(c.execute("SELECT pr.*, u.name surgeon FROM procedures pr LEFT JOIN users u ON u.id=pr.surgeon_id WHERE pr.patient_id=? ORDER BY pr.id DESC LIMIT 20", (pid,))),
+            "anc": rows(c.execute("SELECT * FROM anc_visits WHERE patient_id=? ORDER BY id DESC LIMIT 20", (pid,)))}
 
 
 def pregnancy_info(p):
@@ -198,11 +209,22 @@ def api_problem_status(h, c, b, q, prid):
     return {"ok": True}
 
 
+def check_vitals(vals):
+    """Reject readings no monitor would give; GCS is 3-15, pain 0-10."""
+    lim = {"pulse": (20, 250), "bp_sys": (40, 300), "bp_dia": (20, 200), "spo2": (30, 100), "weight": (0.5, 400), "sugar": (10, 1500),
+           "resp_rate": (4, 80), "gcs": (3, 15), "pain": (0, 10), "height": (30, 250)}
+    for k, (lo, hi) in lim.items():
+        if vals.get(k) is not None:
+            need(lo <= vals[k] <= hi, f"{k.replace('_', ' ')} must be between {lo:g} and {hi:g}")
+    return vals
+
+
 def add_vitals(c, h, pid, b, source, ref):
-    vals = {k: opt_num(b.get(k), int if k in ("pulse", "bp_sys", "bp_dia", "spo2") else float, k) for k in ("temp", "pulse", "bp_sys", "bp_dia", "spo2", "weight", "sugar")}
+    vals = {k: opt_num(b.get(k), int if k in ("pulse", "bp_sys", "bp_dia", "spo2", "resp_rate", "gcs", "pain") else float, k) for k in ("temp", "pulse", "bp_sys", "bp_dia", "spo2", "weight", "sugar", "resp_rate", "gcs", "pain", "height")}
     vals["temp"] = norm_temp(vals["temp"])
+    check_vitals(vals)
     if any(v is not None for v in vals.values()):
-        c.execute("INSERT INTO vitals(patient_id,at,source,ref_id,temp,pulse,bp_sys,bp_dia,spo2,weight,sugar,recorded_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+        c.execute("INSERT INTO vitals(patient_id,at,source,ref_id,temp,pulse,bp_sys,bp_dia,spo2,weight,sugar,resp_rate,gcs,pain,height,recorded_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                   (pid, now_str(), source, ref, *vals.values(), h.user["id"]))
         if vals["weight"]:
             c.execute("UPDATE patients SET weight=? WHERE id=?", (vals["weight"], pid))
@@ -265,16 +287,22 @@ def create_visit(c, h, pid, b, appointment_id=None, doctor_id=None):
     patient_or_404(c, pid)
     need(not one(c, "SELECT 1 FROM visits WHERE patient_id=? AND branch_id=? AND status IN ('waiting','in_consult')", (pid, br["id"])),
          "This patient is already in today's queue")
-    v = {k: opt_num(b.get(k), int if k in ("pulse", "bp_sys", "bp_dia", "spo2") else float, k) for k in ("temp", "pulse", "bp_sys", "bp_dia", "spo2", "weight", "sugar")}
+    v = {k: opt_num(b.get(k), int if k in ("pulse", "bp_sys", "bp_dia", "spo2", "resp_rate", "gcs", "pain") else float, k) for k in ("temp", "pulse", "bp_sys", "bp_dia", "spo2", "weight", "sugar", "resp_rate", "gcs", "pain", "height")}
     v["temp"] = norm_temp(v["temp"])
+    check_vitals(v)
     v["complaint"] = clean(b, "complaint", 500)
+    v["emergency"] = 1 if b.get("emergency") else 0
+    mlc = 1 if b.get("mlc") else 0
+    arrival = clean(b, "arrival", 20)
+    need(arrival in ("", "walked", "ambulance", "carried", "police", "wheelchair"), "Unknown arrival mode")
     level, why = triage(v)
-    cur = c.execute("INSERT INTO visits(patient_id,branch_id,doctor_id,appointment_id,created_at,created_by,complaint,temp,pulse,bp_sys,bp_dia,spo2,weight,sugar,triage,triage_reasons) "
-                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    cur = c.execute("INSERT INTO visits(patient_id,branch_id,doctor_id,appointment_id,created_at,created_by,complaint,temp,pulse,bp_sys,bp_dia,spo2,weight,sugar,"
+                    "resp_rate,gcs,pain,height,emergency,mlc,mlc_no,arrival,brought_by,triage,triage_reasons) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (pid, br["id"], doctor_id or opt_num(b.get("doctor_id"), int), appointment_id, now_str(), h.user["id"], v["complaint"], v["temp"], v["pulse"],
-                     v["bp_sys"], v["bp_dia"], v["spo2"], v["weight"], v["sugar"], level, why))
+                     v["bp_sys"], v["bp_dia"], v["spo2"], v["weight"], v["sugar"], v["resp_rate"], v["gcs"], v["pain"], v["height"], v["emergency"], mlc,
+                     clean(b, "mlc_no", 40) or None, arrival or None, clean(b, "brought_by", 100) or None, level, why))
     add_vitals(c, h, pid, b, "opd", cur.lastrowid)
-    audit(c, h, "visit.create", f"visit {cur.lastrowid} {pcode(pid)} triage={level}")
+    audit(c, h, "visit.create", f"visit {cur.lastrowid} {pcode(pid)} triage={level}" + (" EMERGENCY" if v["emergency"] else "") + (" MLC" if mlc else ""))
     return cur.lastrowid, level, why
 
 
@@ -345,6 +373,8 @@ def api_complete(h, c, b, q, vid):
     need(not one(c, "SELECT 1 FROM rx_items WHERE visit_id=? AND dispensed>0", (v["id"],)), "The pharmacy already dispensed this prescription, so it can't be changed")
     diagnosis, icd = clean(b, "diagnosis", 300), clean(b, "icd", 10).upper()
     need(diagnosis, "Enter a diagnosis")
+    history, exam = clean(b, "history", 4000), clean(b, "examination", 4000)
+    complaint = clean(b, "complaint", 500)
     if icd:
         need(one(c, "SELECT 1 FROM icd10 WHERE code=?", (icd,)), "Unknown ICD-10 code")
     followup = clean(b, "followup", 10)
@@ -368,8 +398,9 @@ def api_complete(h, c, b, q, vid):
             qty = opt_num(rawi.get("qty"), int) or qty_for(it["med"], it["freq"], it["days"], it["dose"])
             c.execute("INSERT INTO rx_items(visit_id,medicine_id,dose,freq,days,qty,instructions) VALUES(?,?,?,?,?,?,?)",
                       (v["id"], it["med"]["id"], it["dose"], it["freq"], it["days"], qty, clean(rawi, "instructions", 200)))
-        c.execute("UPDATE visits SET diagnosis=?, icd=?, notes=?, followup=?, doctor_id=?, status='done', completed_at=? WHERE id=?",
-                  (diagnosis, icd or None, clean(b, "notes", 3000), followup or None, h.user["id"], v["completed_at"] or now_str(), v["id"]))
+        c.execute("UPDATE visits SET diagnosis=?, icd=?, notes=?, followup=?, doctor_id=?, status='done', completed_at=?, history=?, examination=?, complaint=COALESCE(?, complaint) WHERE id=?",
+                  (diagnosis, icd or None, clean(b, "notes", 3000), followup or None, h.user["id"], v["completed_at"] or now_str(), history or None, exam or None,
+                   complaint or None, v["id"]))
         c.execute("UPDATE appointments SET status='done' WHERE id=?", (v["appointment_id"],))
         if icd and b.get("add_problem") and not one(c, "SELECT 1 FROM problems WHERE patient_id=? AND icd=? AND status='active'", (p["id"], icd)):
             c.execute("INSERT INTO problems(patient_id,icd,title,since,status,created_at,created_by) VALUES(?,?,?,?,?,?,?)",
@@ -418,6 +449,13 @@ def api_rx_pending(h, c, b, q):
         if items:
             out.append({"visit_id": v["id"], "date": v["completed_at"], "doctor": v["dname"], "branch": v["bname"], "diagnosis": v["diagnosis"],
                         "items": [dict(i, remaining=i["qty"] - i["dispensed"]) for i in items]})
+    for a in rows(c.execute("SELECT a.*, u.name dname, br.name bname FROM admissions a LEFT JOIN users u ON u.id=a.doctor_id JOIN branches br ON br.id=a.branch_id "
+                            "WHERE a.patient_id=? AND a.status='discharged' AND a.discharged_at>=? ORDER BY a.id DESC", (pid, add_days(today(), -30)))):
+        items = rows(c.execute("SELECT r.*, m.name, m.schedule, m.pack_size FROM rx_items r JOIN medicines m ON m.id=r.medicine_id WHERE admission_id=? AND dispensed<qty", (a["id"],)))
+        if items:
+            out.append({"admission_id": a["id"], "date": a["discharged_at"], "doctor": a["dname"], "branch": a["bname"], "diagnosis": f"Discharge {a['ip_no']}: {a['diagnosis'] or ''}",
+                        "items": [dict(i, remaining=i["qty"] - i["dispensed"]) for i in items]})
+    out.sort(key=lambda x: x["date"] or "", reverse=True)
     return out
 
 

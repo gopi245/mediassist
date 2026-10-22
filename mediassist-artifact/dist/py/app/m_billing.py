@@ -115,7 +115,9 @@ def api_unbilled(h, c, b, q, pid):
         st = inv_state(c, inv)
         if st["patient_due_p"]:
             dues.append({"id": inv["id"], "inv_no": inv["inv_no"], "due": R(st["patient_due_p"])})
-    return {"visits": visits, "labs": labs, "dues": dues}
+    credit = [{"bill_id": bl["id"], "bill_no": bl["bill_no"], "due": R(bl["total_p"] - bl["returned_p"]), "date": bl["created_at"][:10]} for bl in
+              rows(c.execute("SELECT * FROM bills WHERE patient_id=? AND pay_mode='credit' AND settled_at IS NULL AND total_p-returned_p>0", (pid,)))]
+    return {"visits": visits, "labs": labs, "dues": dues, "credit_bills": credit}
 
 
 # ---------------------------------------------------------------- invoices

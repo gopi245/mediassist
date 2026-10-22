@@ -26,6 +26,7 @@ RENDER.dashboard = async main => {
     ${H ? card("Follow-up calls today", "", d.followups.map(f => `<p>${esc(f.name)} · <span class="mono">${esc(f.phone)}</span> · ${esc(f.diagnosis || "")}</p>`).join("") || '<p class="empty">None due.</p>') : ""}</div>
     ${MONEY ? card("Today's report so far", "Sent automatically in the evening", `<pre class="rep">${esc(r.text.replace(/\*/g, ""))}</pre>`) : ""}</div>`;
   if (can("audit")) watchCard(main);
+  if (can("consult") && H) criticalCard(main);
   if (App.me.role === "doctor" || App.me.all_access || App.me.role === "manager") briefingCard(main);
 };
 on("openBranch", async el => { await api("/api/branch", { branch_id: +el.dataset.id }); App.cache = {}; await start(); });

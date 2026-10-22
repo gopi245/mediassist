@@ -630,8 +630,13 @@ def create_bill(c, h, b):
         visit = one(c, "SELECT v.*, u.name dname, u.reg_no dreg FROM visits v LEFT JOIN users u ON u.id=v.doctor_id WHERE v.id=?", (as_int(b["visit_id"], "prescription"),))
         need(visit and patient and visit["patient_id"] == patient["id"], "Prescription does not belong to this patient")
     need(pay != "credit" or patient, "Credit bills need a registered patient")
-    doc_name = visit["dname"] if visit else clean(b, "doctor_name", 100)
-    doc_reg = visit["dreg"] if visit else clean(b, "doctor_reg", 40)
+    adm = None
+    if b.get("rx_admission_id"):  # a discharge prescription
+        adm = one(c, "SELECT a.*, u.name dname, u.reg_no dreg FROM admissions a LEFT JOIN users u ON u.id=a.doctor_id WHERE a.id=?", (as_int(b["rx_admission_id"], "prescription"),))
+        need(adm and patient and adm["patient_id"] == patient["id"], "Prescription does not belong to this patient")
+    src = visit or adm
+    doc_name = src["dname"] if src else clean(b, "doctor_name", 100)
+    doc_reg = src["dreg"] if src else clean(b, "doctor_reg", 40)
 
     def run():
         if key:  # same check under the write lock: a retried offline bill must never deduct stock twice
@@ -647,13 +652,13 @@ def create_bill(c, h, b):
             rx = None
             if it.get("rx_item_id"):
                 rx = one(c, "SELECT * FROM rx_items WHERE id=?", (as_int(it["rx_item_id"], "rx item"),))
-                need(rx and visit and rx["visit_id"] == visit["id"] and rx["medicine_id"] == m["id"], f"{m['name']} is not on this prescription")
+                need(rx and rx["medicine_id"] == m["id"] and ((visit and rx["visit_id"] == visit["id"]) or (adm and rx["admission_id"] == adm["id"])), f"{m['name']} is not on this prescription")
                 need(qty <= rx["qty"] - rx["dispensed"], f"{m['name']}: only {rx['qty'] - rx['dispensed']} left to dispense on this prescription")
             lines.append((m, qty, rx))
         for m, _, _ in lines:
             need(m["schedule"] != "X", f"{m['name']} is Schedule X. Sell it through the narcotics register, not here.")
             if m["schedule"] in ("H", "H1"):
-                need(visit or (doc_name and doc_reg), f"{m['name']} is Schedule {m['schedule']}. Link the patient's prescription, or enter the prescribing doctor's name and registration number.")
+                need(src or (doc_name and doc_reg), f"{m['name']} is Schedule {m['schedule']}. Link the patient's prescription, or enter the prescribing doctor's name and registration number.")
             if m["schedule"] == "H1":
                 need(patient, f"{m['name']} is Schedule H1. Register the patient for the H1 register.")
         warnings = []

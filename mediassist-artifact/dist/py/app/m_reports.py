@@ -36,10 +36,14 @@ def day_numbers(c, bids, day):
     seen = c.execute(f"SELECT COUNT(*) FROM visits WHERE branch_id IN ({p}) AND status='done' AND completed_at LIKE ? AND complaint IS NOT 'Discharge'", (*bids, day + "%")).fetchone()[0]
     new = c.execute(f"SELECT COUNT(*) FROM patients WHERE branch_id IN ({p}) AND created_at LIKE ?", (*bids, day + "%")).fetchone()[0]
     hosp = c.execute(f"SELECT COALESCE(SUM(total_p),0), COUNT(*) FROM invoices WHERE branch_id IN ({p}) AND cancelled_at IS NULL AND created_at LIKE ?", (*bids, day + "%")).fetchone()
+    # pharmacy credit bills settled through an inpatient invoice are already counted as pharmacy revenue on the day of sale
+    credit_lines = c.execute(f"SELECT COALESCE(SUM(ii.amount_p),0) FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id WHERE i.branch_id IN ({p}) AND i.cancelled_at IS NULL "
+                             f"AND i.created_at LIKE ? AND ii.cat='Pharmacy credit'", (*bids, day + "%")).fetchone()[0]
     pharm = c.execute(f"SELECT COALESCE(SUM(total_p-returned_p),0), COUNT(*) FROM bills WHERE branch_id IN ({p}) AND created_at LIKE ?", (*bids, day + "%")).fetchone()
     coll = c.execute(f"SELECT COALESCE(SUM(amount_p),0) FROM payments WHERE branch_id IN ({p}) AND at LIKE ?", (*bids, day + "%")).fetchone()[0]
     pcoll = c.execute(f"SELECT COALESCE(SUM(total_p),0) FROM bills WHERE branch_id IN ({p}) AND created_at LIKE ? AND pay_mode<>'credit'", (*bids, day + "%")).fetchone()[0]
-    return {"seen": seen, "new": new, "hosp_p": hosp[0], "invoices": hosp[1], "pharm_p": pharm[0], "bills": pharm[1], "collected_p": coll + pcoll}
+    settled = c.execute(f"SELECT COALESCE(SUM(total_p-returned_p),0) FROM bills WHERE branch_id IN ({p}) AND settled_at LIKE ? AND settled_invoice_id IS NULL", (*bids, day + "%")).fetchone()[0]
+    return {"seen": seen, "new": new, "hosp_p": hosp[0] - credit_lines, "invoices": hosp[1], "pharm_p": pharm[0], "bills": pharm[1], "collected_p": coll + pcoll + settled}
 
 
 def collections(c, bids, day, n):
@@ -80,6 +84,7 @@ def daily_report(c, bids, day, label):
     labs = c.execute(f"SELECT COUNT(*) FROM lab_orders WHERE branch_id IN ({p}) AND created_at LIKE ?", (*bids, day + "%")).fetchone()[0]
     dept = {r[0]: r[1] for r in c.execute(f"SELECT ii.cat, SUM(ii.amount_p) FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id WHERE i.branch_id IN ({p}) "
                                           f"AND i.cancelled_at IS NULL AND i.created_at LIKE ? GROUP BY ii.cat", (*bids, day + "%"))}
+    dept.pop("Pharmacy credit", None)
     if n["pharm_p"]:
         dept["Pharmacy"] = n["pharm_p"]
     modes = {}
@@ -94,6 +99,7 @@ def daily_report(c, bids, day, label):
     # one aggregate instead of three queries per invoice: same arithmetic as inv_state (refunds are negative payments)
     dues = c.execute(f"SELECT COALESCE(SUM(MAX(0, i.total_p - COALESCE((SELECT SUM(amount_p) FROM payments WHERE invoice_id=i.id), 0))), 0) "
                      f"FROM invoices i WHERE i.branch_id IN ({p}) AND i.cancelled_at IS NULL", bids).fetchone()[0]
+    dues += c.execute(f"SELECT COALESCE(SUM(total_p-returned_p),0) FROM bills WHERE branch_id IN ({p}) AND pay_mode='credit' AND settled_at IS NULL", bids).fetchone()[0]
     alerts = branch_alerts(c, bids, day)
     col = collections(c, bids, day, n)
     total = n["hosp_p"] + n["pharm_p"]

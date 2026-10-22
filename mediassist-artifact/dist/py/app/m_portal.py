@@ -10,7 +10,7 @@ import secrets
 
 from .core import (UPLOAD_DIR, R, add_days, audit, get_settings, need, now_str, one, pcode, qget, route, rows, today)
 
-KIND_LABEL = {"rx": "Prescription", "lab": "Lab report", "bill": "Pharmacy bill", "invoice": "Hospital bill", "discharge": "Discharge summary", "doc": "Document"}
+KIND_LABEL = {"rx": "Prescription", "lab": "Lab report", "bill": "Pharmacy bill", "invoice": "Hospital bill", "discharge": "Discharge summary", "doc": "Document", "referral": "Referral letter"}
 
 
 def _days(c):

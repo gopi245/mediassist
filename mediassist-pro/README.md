@@ -28,6 +28,7 @@ Run the automated tests: double-click **RUN-TESTS.bat** (end-to-end tests of the
 | Hospital billing | Invoices, part payments and dues, refunds, insurance claims (pre-auth → query → approved → settled/rejected), day-end cash closing, service rates |
 | Documents | Photos/PDFs linked to patient, doctor, bill, invoice, admission, lab order, claim or stock; optional AI reader |
 | Accounts | Profit and loss by branch, expenses, doctor payouts, GSTR-1 working file, Tally XML export |
+| Care records | Referrals with a printed letter, procedure and operation notes with informed consent, imaging orders and reports, antenatal visits with risk flags, growth record for children, critical-result acknowledgement, lab sample rejection and amended reports, emergency and medico-legal flags at arrival |
 | Reports | Daily report (patients, revenue, collections, dues, alerts), doctor summary, analytics (busy hours, top diagnoses, repeat patients, no-shows, ratings), feedback, message log; sent automatically every evening |
 | Admin | Branches, staff and roles, settings, CSV import of patients and stock, daily backups, audit trail, error log |
 
