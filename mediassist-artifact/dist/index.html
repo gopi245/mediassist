@@ -1,0 +1,73 @@
+<title>MediAssist Pro</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="app.css">
+
+<div id="login" class="login" hidden>
+  <form class="card login-card" data-submit="login" autocomplete="on">
+    <div class="brand dark"><div class="mark"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8 2h4v6h6v4h-6v6H8v-6H2V8h6z"/></svg></div><div><b>MediAssist</b><span>Hospitals, clinics and pharmacies</span></div></div>
+    <div id="loginStep1">
+      <label for="lu">Username</label><input id="lu" name="username" autocomplete="username" required>
+      <label for="lp">Password</label><input id="lp" name="password" type="password" autocomplete="current-password" required>
+    </div>
+    <div id="loginStep2" hidden>
+      <p class="small">Open your authenticator app and enter the 6-digit code for MediAssist.</p>
+      <label for="lc">Sign-in code</label><input id="lc" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
+    </div>
+    <button class="btn wide" type="submit">Sign in</button>
+    <div id="lmsg" class="msg-err" role="alert"></div>
+  </form>
+</div>
+
+<div class="app" id="app" hidden>
+  <aside class="side">
+    <div class="brand"><div class="mark"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8 2h4v6h6v4h-6v6H8v-6H2V8h6z"/></svg></div><div><b>MediAssist</b><span id="orgName"></span></div></div>
+    <nav id="nav" aria-label="Sections"></nav>
+    <div class="who">
+      <div class="av"><div class="avatar" id="whoAv"></div><div><b id="whoName"></b><span id="whoRole"></span></div></div>
+      <div><label for="branchSel" data-i18n="Branch">Branch</label><select id="branchSel" data-change="switchBranch"></select></div>
+      <div class="who-actions"><button class="linkbtn" data-act="go" data-v="me" data-i18n="My account">My account</button><button class="linkbtn" data-act="logout" data-i18n="Sign out">Sign out</button></div>
+    </div>
+  </aside>
+  <div class="mainwrap">
+    <div class="topbar">
+      <div><div class="crumb" id="crumb"></div><h1 id="pageTitle"></h1></div>
+      <div class="top-r">
+        <span class="chip warnchip" id="syncChip" hidden></span>
+        <div class="lookup"><input id="gLook" list="medOpts" placeholder="Find a medicine: stock and rack" aria-label="Find a medicine" data-input="gLook"><div id="gLookBox" class="lookpop" hidden></div></div>
+        <button class="chip" id="alertChip" data-act="go" data-v="me" hidden></button>
+      </div>
+    </div>
+    <main id="view"></main>
+  </div>
+</div>
+
+<datalist id="patOpts"></datalist><datalist id="medOpts"></datalist><datalist id="svcOpts"></datalist><datalist id="icdOpts"></datalist>
+<div id="overlay" hidden><div class="card" role="dialog" aria-modal="true" aria-labelledby="mTitle"><h2 id="mTitle"></h2><div id="mBody"></div><div class="btns"><button class="btn" id="mOk"></button><button class="btn ghost" id="mCancel">Cancel</button></div></div></div>
+<div id="toast" hidden role="status"></div>
+<div id="printArea"></div>
+<script src="js/bridge.js"></script>
+<script src="js/core.js"></script>
+<script src="js/shell.js"></script>
+<script src="js/v_clinical.js"></script>
+<script src="js/v_tracker.js"></script>
+<script src="js/v_lab.js"></script>
+<script src="js/v_ipd.js"></script>
+<script src="js/v_pharmacy.js"></script>
+<script src="js/v_stockedit.js"></script>
+<script src="js/portal.js"></script>
+<script src="js/v_portal.js"></script>
+<script src="js/vendor/qrcode.js"></script>
+<script src="js/v_weekly.js"></script>
+<script src="js/v_billing.js"></script>
+<script src="js/v_docs.js"></script>
+<script src="js/v_accounts.js"></script>
+<script src="js/v_reports.js"></script>
+<script src="js/v_watch.js"></script>
+<script src="js/v_alerts.js"></script>
+<script src="js/v_assistant.js"></script>
+<script src="js/v_admin.js"></script>
+<script src="js/demo.js"></script>
+<script src="js/boot.js"></script>

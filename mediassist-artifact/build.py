@@ -6,7 +6,7 @@ import shutil
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(os.path.dirname(HERE), "mediassist-pro")
-PYO = os.environ.get("PYODIDE_DIR", r"C:\Users\AMMU\AppData\Local\Temp\claude\pyo")
+PYO = os.environ.get("PYODIDE_DIR", os.path.join(HERE, "pyodide-runtime"))  # Pyodide 0.26.4 core + sqlite3
 OUT = os.path.join(HERE, "dist")
 
 shutil.rmtree(OUT, ignore_errors=True)

@@ -1,4 +1,4 @@
-# patient data, logins and secrets never go to git
+# patient data, logins and secrets stay off GitHub
 mediassist-pro/data/
 data/
 *.db
@@ -7,13 +7,6 @@ data/
 FIRST-LOGIN.txt
 mediassist-pro/backups/
 
-# build output (regenerate with: python mediassist-artifact/build.py)
-mediassist-artifact/dist/
-
-# not code
-pdf-samples/
-hextgen-tracking/
-.claude/
-
+# Python's temporary files
 __pycache__/
 *.pyc
