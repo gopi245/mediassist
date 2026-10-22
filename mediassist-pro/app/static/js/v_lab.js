@@ -23,10 +23,11 @@ on("labNew", async f => {
   const r = await api("/api/lab/orders", { patient_id: pid, tests, priority: v.priority }); toast(`Order LAB${r.id} created. Bill it in Hospital billing.`); go("lab", ["o", r.id]);
 });
 
+const NORMAL_WORDS = new Set(["negative", "neg", "-ve", "absent", "not seen", "nil", "none", "non-reactive", "nonreactive", "non reactive", "normal", "not detected", "nad", "within normal limits", "wnl", "clear"]);
 function liveFlag(p, v) {
   if (v === "") return "";
   const n = Number(v);
-  if (isNaN(n)) return p.ref_text && !p.ref_text.toLowerCase().includes(v.toLowerCase()) ? "A" : "N";
+  if (isNaN(n)) { if (!p.ref_text) return "N"; const nm = s => s.toLowerCase().replace(/_/g, " ").trim().split(/\s+/).join(" "), ref = nm(p.ref_text), val = nm(v); return val === ref || (NORMAL_WORDS.has(ref) && NORMAL_WORDS.has(val)) ? "N" : "A"; }
   if (p.crit_low != null && n < p.crit_low) return "LL"; if (p.crit_high != null && n > p.crit_high) return "HH";
   if (p.low != null && n < p.low) return "L"; if (p.high != null && n > p.high) return "H"; return "N";
 }

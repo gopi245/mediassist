@@ -198,7 +198,7 @@ RENDER.consult = async (main, [vid]) => {
       <div><label>Weight kg (dose check)</label><input name="weight" type="number" step=".1" value="${p.weight ?? ""}" data-input="cxWeight"></div></div>
       <div><label>Advice and notes</label><textarea name="notes">${esc(v.notes || "")}</textarea></div>
       <h3>Prescription</h3>
-      <div class="fields"><div class="span2"><input id="cxMed" list="medOpts" placeholder="Medicine" data-input="cxLook"></div><div><input id="cxDose" value="1" placeholder="Dose (1, 1/2)"></div><div><input id="cxFreq" value="1-0-1" placeholder="1-0-1 / OD / BD"></div><div><input id="cxDays" type="number" min="1" value="5" placeholder="Days"></div><div class="span2"><input id="cxIns" placeholder="Instructions, e.g. after food"></div><div><button type="button" class="btn ghost" data-act="cxAdd">Add</button></div></div>
+      <div class="fields"><div class="span2"><input id="cxMed" list="medOpts" placeholder="Medicine" data-input="cxLook"></div><div><input id="cxDose" value="1" placeholder="Dose (1, 1/2, 250 mg, 5 ml)" title="Tablets or capsules as a count; syrups in mg or ml. Doses in mg are checked against the limits."></div><div><input id="cxFreq" value="1-0-1" placeholder="1-0-1 / OD / BD"></div><div><input id="cxDays" type="number" min="1" value="5" placeholder="Days"></div><div class="span2"><input id="cxIns" placeholder="Instructions, e.g. after food"></div><div><button type="button" class="btn ghost" data-act="cxAdd">Add</button></div></div>
       <div id="cxInfo"></div><div id="cxRx"></div><div id="cxWarn"></div>
       <h3>Lab tests</h3><div class="row-actions">${tests.map(t_ => `<label class="check" style="margin:0 10px 0 0"><input type="checkbox" data-change="cxLab" value="${t_.id}"> ${esc(t_.name)}</label>`).join("")}</div>
       <div class="fields"><div><label>Lab priority</label><select name="lab_priority"><option value="routine">Routine</option><option value="urgent">Urgent</option><option value="stat">STAT</option></select></div><div><label>Follow-up</label><input name="followup" type="date" value="${esc(v.followup || "")}"></div></div>
@@ -232,7 +232,7 @@ on("applyTpl", el => {
 on("saveConsult", async f => {
   const v = vals(f);
   const body = { ...v, items: CX.items, lab_tests: [...CX.labs] };
-  const r = await withOverride(ov => api(`/api/visits/${CX.vid}/complete`, { ...body, override: ov }));
+  const r = await withOverride((ov, reason) => api(`/api/visits/${CX.vid}/complete`, { ...body, override: ov, override_reason: reason }));
   if (!r) return;
   const vid = CX.vid;
   const p = await dialog("Consultation saved", `<p>${r.lab_order_id ? `Lab order <b>LAB${r.lab_order_id}</b> was sent to the lab. ` : ""}Any pharmacy in the group can now fill this prescription.</p>`, { ok: "Print prescription", cancel: "Done" });

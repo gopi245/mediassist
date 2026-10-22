@@ -13,7 +13,7 @@ inpatients, pharmacy, hospital billing with insurance, documents, accounts and r
 Optional: `pip install anthropic` and add an Anthropic API key in Admin › Settings to let
 the AI read photos of bills and supplier invoices.
 
-Run the automated tests: double-click **RUN-TESTS.bat** (15 end-to-end tests).
+Run the automated tests: double-click **RUN-TESTS.bat** (end-to-end tests of the API).
 
 ## Modules
 | Area | What it does |

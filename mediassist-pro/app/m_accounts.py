@@ -88,6 +88,7 @@ def api_pay_doctor(h, c, b, q):
     mode = clean(b, "mode", 10) or "bank"
 
     def run():
+        need(not one(c, "SELECT 1 FROM payouts WHERE doctor_id=? AND period=?", (did, period)), "This month's payout is already recorded")
         c.execute("INSERT INTO payouts(doctor_id,period,amount_p,paid_at,mode,note,user_id) VALUES(?,?,?,?,?,?,?)", (did, period, amt, now_str(), mode, clean(b, "note", 200), h.user["id"]))
         c.execute("INSERT INTO expenses(branch_id,day,category,amount_p,mode,vendor,note,user_id,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
                   (br["id"], today(), "Doctor payout", amt, mode, row["name"], f"Payout {period} ({row['pct']:g}% of {rs(round(row['billed'] * 100))})", h.user["id"], now_str()))

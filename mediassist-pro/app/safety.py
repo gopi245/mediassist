@@ -26,6 +26,8 @@ GROUPS = {
     "azole": ["fluconazole", "ketoconazole", "itraconazole"], "metronidazole": ["metronidazole"], "lithium": ["lithium"],
     "diuretic": ["furosemide", "hydrochlorothiazide", "torsemide"], "beta_blocker": ["propranolol", "atenolol", "metoprolol", "carvedilol"],
     "metformin": ["metformin"], "ppi_cyp": ["omeprazole", "esomeprazole"], "clopidogrel": ["clopidogrel"], "insulin": ["insulin"],
+    "steroid": ["prednisolone", "dexamethasone", "methylprednisolone", "hydrocortisone"], "paracetamol": ["paracetamol", "acetaminophen"],
+    "g6pd_risk": ALLERGY_CLASSES["sulfa"] + ["nitrofurantoin", "primaquine", "dapsone"],
 }
 INTERACTIONS = [
     ("anticoagulant", "antiplatelet", "high", "major bleeding risk"), ("anticoagulant", "nsaid", "high", "major bleeding risk"),
@@ -39,12 +41,41 @@ INTERACTIONS = [
     ("antiplatelet", "nsaid", "moderate", "stomach bleeding risk"), ("clopidogrel", "ppi_cyp", "moderate", "omeprazole weakens clopidogrel"),
     ("insulin", "beta_blocker", "moderate", "can mask low-sugar warning signs"),
 ]
+# condition keywords (any synonym, matched in the free-text conditions field) -> drug group
+KIDNEY_WORDS = ("kidney", "renal", "ckd", "nephro", "dialysis")
+HEART_FAILURE_WORDS = ("heart failure", "cardiac failure", "chf", "ccf", "lvf")
+LIVER_WORDS = ("liver", "hepat", "cirrhosis", "jaundice")
 CONDITION_RULES = [
-    ("asthma", "nsaid", "moderate", "NSAIDs can trigger asthma attacks"), ("asthma", "beta_blocker", "high", "non-selective beta blockers cause bronchospasm"),
-    ("ulcer", "nsaid", "high", "NSAIDs worsen ulcers and bleeding"), ("kidney", "nsaid", "high", "NSAIDs worsen kidney function"),
-    ("ckd", "nsaid", "high", "NSAIDs worsen kidney function"), ("heart failure", "nsaid", "high", "NSAIDs worsen heart failure"),
-    ("liver", "metronidazole", "moderate", "reduce dose in liver disease"),
+    (("asthma",), "nsaid", "moderate", "NSAIDs can trigger asthma attacks"),
+    (("asthma", "copd", "bronchitis"), "beta_blocker", "high", "non-selective beta blockers cause bronchospasm"),
+    (("ulcer", "gastritis", "gi bleed"), "nsaid", "high", "NSAIDs worsen ulcers and bleeding"),
+    (KIDNEY_WORDS, "nsaid", "high", "NSAIDs worsen kidney function"), (KIDNEY_WORDS, "metformin", "high", "metformin accumulates in kidney failure"),
+    (HEART_FAILURE_WORDS, "nsaid", "high", "NSAIDs worsen heart failure"),
+    (LIVER_WORDS, "metronidazole", "moderate", "reduce dose in liver disease"),
+    (LIVER_WORDS, "paracetamol", "moderate", "limit paracetamol to 2 g/day in liver disease"),
+    (LIVER_WORDS, "statin", "moderate", "statins need liver monitoring in liver disease"),
+    (("epilep", "seizure", "fits"), "tramadol", "high", "tramadol lowers the seizure threshold"),
+    (("g6pd",), "g6pd_risk", "high", "can cause haemolysis in G6PD deficiency"),
+    (("diabet", "dm"), "steroid", "moderate", "steroids raise blood sugar; monitor"),
 ]
+STOP_WORDS = {"acid", "sodium", "potassium", "hydrochloride", "hcl", "sulphate", "sulfate", "and", "with", "plus", "calcium", "maleate", "succinate"}
+
+
+def ingredients(m):
+    """Set of ingredient words in the generic name: 'tramadol paracetamol' -> {tramadol, paracetamol}."""
+    return {w for w in re.split(r"[\s+/,]+", (m.get("generic") or "").lower()) if len(w) > 3 and w not in STOP_WORDS}
+
+
+def matches(cond, words):
+    return any(w in cond for w in words)
+
+
+def egfr(creatinine, age, weight, gender):
+    """Cockcroft-Gault creatinine clearance, mL/min. None when any input is missing."""
+    if not creatinine or not age or not weight or creatinine <= 0:
+        return None
+    v = (140 - age) * weight / (72 * creatinine)
+    return round(v * (0.85 if (gender or "").lower().startswith("f") else 1), 0)
 
 
 def med_text(m):
@@ -77,21 +108,58 @@ def is_pregnant(p):
 
 
 def per_day(freq):
+    """Administrations per day: '1-0-1' -> 2, 'TDS' -> 3, 'Q6H' / 'every 6 hours' / '6 hourly' -> 4, 'SOS' -> 0."""
     f = (freq or "").strip().upper()
     nums = [float(x) for x in re.findall(r"\d+(?:\.\d+)?", f)]
     if "-" in f and nums:
         return sum(nums)
-    return {"OD": 1, "HS": 1, "BD": 2, "BID": 2, "TDS": 3, "TID": 3, "QID": 4, "QDS": 4, "SOS": 0, "STAT": 1}.get(f, 1)
+    m = re.match(r"^(?:Q(\d+)H|(?:EVERY|EV|E)\s*(\d+)\s*(?:H|HR|HRS|HOUR|HOURS|HOURLY)|(\d+)\s*(?:H|HR|HRS|HOURLY|HOUR|HOURS))$", f)
+    if m:
+        h = float(next(x for x in m.groups() if x))
+        return 24 / h if h else 1
+    return {"OD": 1, "ONCE": 1, "DAILY": 1, "HS": 1, "BD": 2, "BID": 2, "TWICE": 2, "TDS": 3, "TID": 3, "THRICE": 3, "QID": 4, "QDS": 4,
+            "SOS": 0, "PRN": 0, "STAT": 1, "WEEKLY": 1 / 7, "ALTERNATE": 0.5}.get(f, 1)
+
+
+DOSE_UNITS = {"mg": "mg", "g": "g", "gm": "g", "mcg": "mcg", "ug": "mcg", "ml": "ml", "tab": "", "tabs": "", "tablet": "", "tablets": "", "cap": "", "caps": "",
+              "capsule": "", "drop": "", "drops": "", "puff": "", "puffs": "", "unit": "", "units": "", "iu": ""}
+
+
+def dose_parse(dose):
+    """'1', '1/2', '2 tab' -> (units, ''); '500 mg' -> (500, 'mg'); '5 ml' -> (5, 'ml'); '1 g' -> (1000, 'mg').
+    Units of strength (tablets, capsules) carry ''; weights are normalised to mg."""
+    s = str(dose or "").strip().lower()
+    m = re.match(r"^(\d+)\s*/\s*(\d+)\s*([a-z]*)", s)
+    if m:
+        n, unit = int(m.group(1)) / int(m.group(2)), m.group(3)
+    else:
+        m = re.match(r"^(\d+(?:\.\d+)?)\s*([a-z]*)", s)
+        if not m:
+            return 1.0, ""
+        n, unit = float(m.group(1)), m.group(2)
+    unit = DOSE_UNITS.get(unit, "")
+    if unit == "g":
+        return n * 1000, "mg"
+    if unit == "mcg":
+        return n / 1000, "mg"
+    return n, unit
 
 
 def dose_units(dose):
-    """'1', '1/2', '0.5', '2 tab' -> units per administration (default 1)."""
-    s = str(dose or "").strip()
-    m = re.match(r"^(\d+)\s*/\s*(\d+)", s)
-    if m:
-        return int(m.group(1)) / int(m.group(2))
-    m = re.match(r"^(\d+(?:\.\d+)?)", s)
-    return float(m.group(1)) if m else 1.0
+    """Units of strength per administration (tablets etc.); 1 when the dose is given as a weight or volume."""
+    n, unit = dose_parse(dose)
+    return n if unit == "" else 1.0
+
+
+def daily_mg(m, dose, freq):
+    """Total mg/day, or None when it cannot be worked out (dose in ml, or in units with no strength)."""
+    n, unit = dose_parse(dose)
+    per = per_day(freq)
+    if unit == "mg":
+        return n * per
+    if unit == "" and m.get("strength_mg"):
+        return m["strength_mg"] * n * per
+    return None
 
 
 def safety_check(patient, new_items, current_meds=(), creatinine=None):
@@ -107,6 +175,8 @@ def safety_check(patient, new_items, current_meds=(), creatinine=None):
         allergies = [a.strip().lower() for a in re.split(r"[,;/]", patient.get("allergies") or "") if a.strip()]
         cond = (patient.get("conditions") or "").lower()
         age, wt, preg = age_of(patient), patient.get("weight"), is_pregnant(patient)
+        kidney = matches(cond, KIDNEY_WORDS)
+        crcl = egfr(creatinine, age, wt, patient.get("gender"))
         for it in new_items:
             m, t = it["med"], med_text(it["med"])
             for a in allergies:
@@ -116,27 +186,32 @@ def safety_check(patient, new_items, current_meds=(), creatinine=None):
                     add("high", f"Allergy: patient is allergic to {a}. {m['name']} contains {m.get('generic')}.")
                 elif key in CROSS_REACT and any(x in t for x in ALLERGY_CLASSES[CROSS_REACT[key]]):
                     add("moderate", f"{m['name']}: possible cross-reaction with the {a} allergy.")
-            for c, grp, sev, msg in CONDITION_RULES:
-                if c in cond and grp in groups_of(m):
+            for words, grp, sev, msg in CONDITION_RULES:
+                if matches(cond, words) and grp in groups_of(m):
                     add(sev, f"{m['name']}: {msg} (patient record: {patient.get('conditions')}).")
             if preg and m.get("pregnancy_avoid"):
                 add("high", f"{m['name']}: avoid in pregnancy. Choose a safer alternative.")
             if age is not None and age < 16 and "aspirin" in t:
                 add("high", f"{m['name']}: aspirin in children risks Reye's syndrome.")
-            if m.get("renal_caution") and (("kidney" in cond or "ckd" in cond) or (creatinine and creatinine > 1.5)):
-                add("moderate", f"{m['name']}: reduce dose or avoid in kidney impairment" + (f" (creatinine {creatinine})." if creatinine else "."))
-            # dose checks need strength
-            sm = m.get("strength_mg")
-            if sm and it.get("freq"):
-                daily = sm * dose_units(it.get("dose")) * per_day(it.get("freq"))
-                if age is not None and age < 12 and m.get("ped_mg_per_kg_day"):
+            if m.get("renal_caution") and (kidney or (crcl is not None and crcl < 60) or (crcl is None and creatinine and creatinine > 1.5)):
+                why = f" (creatinine {creatinine:g}, est. clearance {crcl:g} mL/min)." if crcl is not None else f" (creatinine {creatinine:g})." if creatinine else "."
+                add("moderate", f"{m['name']}: reduce dose or avoid in kidney impairment" + why)
+            child = age is not None and age < 16 and m.get("ped_mg_per_kg_day")
+            if it.get("freq") and per_day(it.get("freq")):
+                daily = daily_mg(m, it.get("dose"), it.get("freq"))
+                if daily is None:
+                    if child and (m.get("strength_mg") or dose_parse(it.get("dose"))[1] == "ml"):
+                        add("moderate", f"{m['name']}: enter the dose in mg (e.g. 250 mg) so the child's dose can be checked.")
+                elif child:
                     if wt:
                         lim = m["ped_mg_per_kg_day"] * wt
+                        if m.get("max_daily_mg"):
+                            lim = min(lim, m["max_daily_mg"])
                         if daily > lim * 1.05:
                             add("high", f"{m['name']}: {daily:g} mg/day is above the child limit of {lim:g} mg/day "
                                         f"({m['ped_mg_per_kg_day']:g} mg/kg/day for {wt:g} kg).")
                     else:
-                        add("moderate", f"{m['name']}: child under 12. Record the weight so the dose can be checked.")
+                        add("moderate", f"{m['name']}: child under 16. Record the weight so the dose can be checked.")
                 elif m.get("max_daily_mg") and daily > m["max_daily_mg"] * 1.0001:
                     add("high", f"{m['name']}: {daily:g} mg/day is above the usual maximum of {m['max_daily_mg']:g} mg/day.")
     pool = [(m, True) for m in meds] + [(m, False) for m in current_meds]
@@ -146,9 +221,9 @@ def safety_check(patient, new_items, current_meds=(), creatinine=None):
             if not (an or bn) or a["id"] == b["id"]:
                 continue
             src = "" if (an and bn) else " (already taking)"
-            ka = (a.get("generic") or "").lower().split()[:1]
-            if ka and ka == (b.get("generic") or "").lower().split()[:1]:
-                add("moderate", f"Duplicate: {a['name']} and {b['name']} both contain {ka[0]}{src}.")
+            shared = ingredients(a) & ingredients(b)
+            if shared:
+                add("moderate", f"Duplicate: {a['name']} and {b['name']} both contain {', '.join(sorted(shared))}{src}.")
             ga, gb = groups_of(a), groups_of(b)
             for x, y, sev, msg in INTERACTIONS:
                 if (x in ga and y in gb) or (y in ga and x in gb):

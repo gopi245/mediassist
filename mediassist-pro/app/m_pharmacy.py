@@ -385,9 +385,11 @@ def api_create_po(h, c, b, q):
 
 @route("POST", r"/api/purchase-orders/(\d+)/status", "stock")
 def api_po_status(h, c, b, q, poid):
+    br = need_branch(h, c, "pharmacy")
     st = clean(b, "status", 12)
     need(st in ("sent", "cancelled"), "Status must be sent or cancelled")
-    c.execute("UPDATE purchase_orders SET status=? WHERE id=? AND branch_id=? AND status IN ('draft','sent')", (st, int(poid), h.branch))
+    need(one(c, "SELECT 1 FROM purchase_orders WHERE id=? AND branch_id=? AND status IN ('draft','sent')", (int(poid), br["id"])), "Purchase order not found or already closed", 404)
+    c.execute("UPDATE purchase_orders SET status=? WHERE id=? AND branch_id=?", (st, int(poid), br["id"]))
     audit(c, h, "po.status", f"PO-{poid} {st}")
     return {"ok": True}
 
@@ -468,9 +470,11 @@ def api_return_create(h, c, b, q):
 
 @route("POST", r"/api/supplier-returns/(\d+)/credit", "stock")
 def api_return_credit(h, c, b, q, rid):
+    br = need_branch(h, c, "pharmacy")
     cn = clean(b, "credit_note_no", 40)
     need(cn, "Enter the supplier's credit note number")
-    c.execute("UPDATE supplier_returns SET credit_note_no=?, status='credited' WHERE id=? AND branch_id=?", (cn, int(rid), h.branch))
+    need(one(c, "SELECT 1 FROM supplier_returns WHERE id=? AND branch_id=?", (int(rid), br["id"])), "Supplier return not found", 404)
+    c.execute("UPDATE supplier_returns SET credit_note_no=?, status='credited' WHERE id=? AND branch_id=?", (cn, int(rid), br["id"]))
     audit(c, h, "supplier_return.credit", f"SR{rid} credit note {cn}")
     return {"ok": True}
 
@@ -630,6 +634,10 @@ def create_bill(c, h, b):
     doc_reg = visit["dreg"] if visit else clean(b, "doctor_reg", 40)
 
     def run():
+        if key:  # same check under the write lock: a retried offline bill must never deduct stock twice
+            prev = one(c, "SELECT id,bill_no,total_p FROM bills WHERE offline_key=?", (key,))
+            if prev:
+                return {"ok": True, "id": prev["id"], "bill_no": prev["bill_no"], "total": R(prev["total_p"]), "duplicate": True}
         lines = []
         for it in items:
             m = one(c, "SELECT * FROM medicines WHERE id=? AND active=1", (as_int(it.get("medicine_id"), "medicine"),))

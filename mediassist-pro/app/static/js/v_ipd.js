@@ -27,7 +27,7 @@ on("admit", async f => {
 });
 
 async function admission(main, id) {
-  const [a] = await Promise.all([api("/api/admissions/" + id), loadMeds(), loadServices()]); App.cache.adm = a;
+  const [a] = await Promise.all([api("/api/admissions/" + id + (App.cache.marDay ? "?mar_day=" + App.cache.marDay : "")), loadMeds(), loadServices()]); App.cache.adm = a;
   const tab = App.cache.admTab || "care", open = a.status === "admitted", isDoc = ["doctor", "owner"].includes(App.me.role);
   main.innerHTML = `<div class="card" style="margin-bottom:14px"><div class="phead"><div class="avatar">${initials(a.pname)}</div><div style="flex:1;min-width:0"><h2>${esc(a.pname)} <span class="mono small muted">${a.ip_no}</span></h2>
     <div class="small muted">${a.code} · ${a.age ?? "?"} yrs · ${esc(a.gender || "")}${a.weight ? ` · ${a.weight} kg` : ""} · ${esc(a.ward || "")} ${esc(a.bed || "")} · ${esc(a.dname || "")} · admitted ${a.admitted_at}</div></div>${open ? pill("Admitted", "p-info") : pill("Discharged " + (a.discharged_at || ""), "p-ok")}</div>
@@ -38,16 +38,18 @@ async function admission(main, id) {
   if (tab === "care") {
     body.innerHTML = `<div class="g-form">${open ? card("Add note", isDoc ? "Doctor's round (adds a visit charge)" : "Nursing note", `<form data-submit="admNote" class="stack"><textarea name="text" placeholder="${isDoc ? "Findings, plan" : "Condition, intake/output, care given"}"></textarea>
       <div class="fields"><div><label>Temp</label><input name="temp" type="number" step=".1"></div><div><label>Pulse</label><input name="pulse" type="number"></div><div><label>BP sys</label><input name="bp_sys" type="number"></div><div><label>BP dia</label><input name="bp_dia" type="number"></div><div><label>SpO₂</label><input name="spo2" type="number"></div><div><label>Sugar</label><input name="sugar" type="number"></div></div>
+      ${isDoc ? `<label class="check"><input type="checkbox" name="charge_visit" value="1" checked> Charge a doctor visit for this round</label>` : ""}
       <div class="btns"><button class="btn">Save note</button></div></form>`) : "<div></div>"}
       <div class="stack">${card("Vitals", "", tbl(["When", "Temp", "Pulse", "BP", "SpO₂", "Sugar"], a.vitals.map(v => `<tr><td class="mono">${v.at.slice(5)}</td><td>${v.temp ?? "–"}</td><td>${v.pulse ?? "–"}</td><td>${v.bp_sys ?? "–"}/${v.bp_dia ?? "–"}</td><td>${v.spo2 ?? "–"}</td><td>${v.sugar ?? "–"}</td></tr>`).join("")))}
       ${card("Notes", "", `<div class="timeline">${a.notes.map(n => `<div class="tl"><div class="when">${n.at} · ${esc(n.uname || "")} · ${n.kind}</div>${esc(n.text)}</div>`).join("") || '<p class="empty">No notes yet.</p>'}</div>`)}
       ${card("Lab tests", "", tbl(["Order", "Tests", "Status"], a.labs.map(l => `<tr class="click" data-act="go" data-v="lab" data-p="o/${l.id}"><td class="mono">LAB${l.id}</td><td>${esc(l.tests)}</td><td>${l.status}</td></tr>`).join(""), "None ordered.") + (open ? `<div class="btns"><button class="btn sm ghost" data-act="admLab">Order tests</button></div>` : ""))}</div></div>`;
   } else if (tab === "mar") {
     body.innerHTML = card("Medicines today", "Each dose given is taken from this branch's pharmacy stock and charged to the bill",
-      `<div class="tbl mar"><table><tr><th>Medicine</th><th>Dose</th><th>Route</th><th>Freq</th><th>Today</th><th></th></tr>${a.mar.map(m => `<tr><td><b>${esc(m.name)}</b><div class="small muted">by ${esc(m.oname || "")} · ${m.start_at.slice(5)}</div></td><td>${esc(m.dose)}</td><td>${esc(m.route)}</td><td class="mono">${esc(m.freq)}${m.times ? " " + esc(m.times) : ""}</td>
+      `<div class="tbl mar"><table><tr><th>Medicine</th><th>Dose</th><th>Route</th><th>Freq</th><th>${a.mar_day === localDay() ? "Today" : a.mar_day}</th><th></th></tr>${a.mar.map(m => `<tr><td><b>${esc(m.name)}</b><div class="small muted">by ${esc(m.oname || "")} · ${m.start_at.slice(5)}</div></td><td>${esc(m.dose)}</td><td>${esc(m.route)}</td><td class="mono">${esc(m.freq)}${m.times ? " " + esc(m.times) : ""}</td>
         <td>${m.active ? m.slots.map(s => `<span class="slot"><span class="mono">${s.due}</span>${s.record ? `<span class="${s.record.status === "given" ? "given" : "held"}">${s.record.status} ${s.record.at.slice(11)}</span>` : (can("ipd_nursing") && open ? `<span class="row-actions"><button class="btn sm" data-act="marGive" data-id="${m.id}" data-due="${s.due}">Give</button><button class="btn sm ghost" data-act="marHold" data-id="${m.id}" data-due="${s.due}">Hold</button></span>` : "due")}</span>`).join("") + m.extra.map(x => `<span class="slot">extra <span class="given">${x.status} ${x.at.slice(11)}</span></span>`).join("") : pill("Stopped", "p-plain")}</td>
         <td>${m.active && isDoc && open ? `<button class="btn sm ghost" data-act="marStop" data-id="${m.id}">Stop</button>` : ""}</td></tr>`).join("") || '<tr><td colspan="6" class="empty">No medicines ordered.</td></tr>'}</table></div>
-      ${isDoc && open ? `<h3 style="margin:14px 0 8px">Order a medicine</h3><form data-submit="marOrder" class="fields"><div class="span2"><input name="med" list="medOpts" placeholder="Medicine"></div><div><input name="dose" value="1" placeholder="Dose"></div><div><select name="route"><option>oral</option><option>IV</option><option>IM</option><option>SC</option><option>inhaled</option><option>topical</option></select></div><div><select name="freq"><option>OD</option><option>BD</option><option>TDS</option><option>QID</option><option>HS</option><option>SOS</option><option>STAT</option></select></div><div><input name="times" placeholder="Times, e.g. 08:00,20:00"></div><div><button class="btn sm">Order</button></div></form>` : ""}`);
+      ${isDoc && open ? `<h3 style="margin:14px 0 8px">Order a medicine</h3><form data-submit="marOrder" class="fields"><div class="span2"><input name="med" list="medOpts" placeholder="Medicine"></div><div><input name="dose" value="1" placeholder="Dose"></div><div><select name="route"><option>oral</option><option>IV</option><option>IM</option><option>SC</option><option>inhaled</option><option>topical</option></select></div><div><select name="freq"><option>OD</option><option>BD</option><option>TDS</option><option>QID</option><option>HS</option><option>SOS</option><option>STAT</option></select></div><div><input name="times" placeholder="Times, e.g. 08:00,20:00"></div><div><input name="days" type="number" min="1" max="90" placeholder="Days (blank = until stopped)"></div><div><button class="btn sm">Order</button></div></form>` : ""}`,
+      `<input type="date" value="${a.mar_day}" max="${localDay()}" data-change="marDay" style="width:auto" title="Show another day's chart">`);
   } else if (tab === "bill") {
     body.innerHTML = `<div class="g-main">${card("Running bill", `${a.bill.days} bed day(s) so far`, tbl(["Item", "Qty", "Rate", "Amount"], a.bill.lines.map(l => `<tr><td>${esc(l.name)}<div class="small muted">${esc(l.cat || "")}${l.at ? " · " + l.at.slice(5) : ""}</div></td><td class="num">${l.qty}</td><td class="num">${money(P2R(l.rate_p))}</td><td class="num">${money(P2R(l.amount_p))}</td></tr>`).join("")) +
       `<div class="totals"><div><span>Hospital charges</span><b>${money(a.bill.total)}</b></div><div><span>Pharmacy credit bills</span><b>${money(a.bill.pharmacy_credit)}</b></div><div><span>Deposits received</span><b>− ${money(a.bill.deposits)}</b></div><div class="grand"><span>${a.bill.balance < 0 ? "Advance left (refund at discharge)" : "Balance due"}</span><b>${money(Math.abs(a.bill.balance))}</b></div></div>`)}
@@ -60,16 +62,19 @@ async function admission(main, id) {
       <div class="span2"><label>Final diagnosis</label><input name="final_diagnosis" value="${esc(a.diagnosis || "")}" required></div><div><label>ICD-10</label><input name="icd" list="icdOpts" data-input="icdSearch" value="${esc(a.icd || "")}"></div>
       <div><label>Discharge type</label><select name="discharge_type"><option value="normal">Normal</option><option value="lama">Left against advice</option><option value="referred">Referred</option><option value="death">Death</option></select></div></div>
       ${[["history", "History and presenting complaint"], ["course", "Course in hospital"], ["procedures", "Procedures done"], ["investigations", "Key investigations"], ["condition", "Condition at discharge"], ["medications", "Medicines at discharge"], ["advice", "Advice"]].map(([k, l]) => `<div><label>${l}</label><textarea name="${k}"></textarea></div>`).join("")}
-      <div class="fields"><div><label>Follow-up date</label><input name="followup" type="date"></div></div><div class="btns"><button class="btn" ${isDoc ? "" : "disabled"}>Discharge and create invoice</button></div></form>`)
+      <div class="fields"><div><label>Follow-up date</label><input name="followup" type="date"></div></div>
+      ${a.labs.some(l => l.status === "ordered" || l.status === "collected") ? `<label class="check"><input type="checkbox" name="ignore_pending" value="1"> Discharge anyway: ${a.labs.filter(l => l.status === "ordered" || l.status === "collected").length} lab order(s) have no result yet</label>` : ""}
+      <div class="btns"><button class="btn" ${isDoc ? "" : "disabled"}>Discharge and create invoice</button></div></form>`)
       : card("Discharge summary", `${a.discharge_type || ""} · ${a.discharged_at}`, `${[["Final diagnosis", s.final_diagnosis + (s.icd ? ` (${s.icd})` : "")], ["History", s.history], ["Course in hospital", s.course], ["Procedures", s.procedures], ["Investigations", s.investigations], ["Condition at discharge", s.condition], ["Medicines", s.medications], ["Advice", s.advice], ["Follow-up", s.followup]].filter(x => x[1]).map(([l, v]) => `<p><b>${l}:</b><br>${esc(v)}</p>`).join("")}<button class="btn ghost" data-act="printDc">Print summary</button>`);
   }
 }
 on("admTab", el => { App.cache.admTab = el.dataset.k; go("ipd", ["a", App.cache.adm.id]); });
 const reAdm = () => go("ipd", ["a", App.cache.adm.id]);
-on("admNote", async f => { await api(`/api/admissions/${App.cache.adm.id}/notes`, vals(f)); toast("Saved"); reAdm(); });
+on("marDay", el => { App.cache.marDay = el.value; reAdm(); });
+on("admNote", async f => { const v = vals(f); if (f.charge_visit) v.charge_visit = f.charge_visit.checked; await api(`/api/admissions/${App.cache.adm.id}/notes`, v); toast("Saved"); reAdm(); });
 on("marOrder", async f => {
   const v = vals(f), m = medByName(v.med); if (!m) return toast("Choose a medicine from the list.");
-  const r = await withOverride(ov => api(`/api/admissions/${App.cache.adm.id}/mar`, { ...v, medicine_id: m.id, override: ov }));
+  const r = await withOverride((ov, reason) => api(`/api/admissions/${App.cache.adm.id}/mar`, { ...v, medicine_id: m.id, override: ov, override_reason: reason }));
   if (r) { toast("Ordered"); reAdm(); }
 });
 on("marGive", async el => { const r = await api(`/api/mar/${el.dataset.id}/give`, { due: el.dataset.due }); toast(r.warning || "Dose recorded and charged"); reAdm(); });
@@ -85,7 +90,8 @@ on("admLab", async () => {
 });
 on("discharge", async f => {
   if (!await dialog("Discharge now?", "<p>This closes the stay, creates the final invoice with all charges, applies the deposits and frees the bed.</p>", { ok: "Discharge" })) return;
-  const r = await api(`/api/admissions/${App.cache.adm.id}/discharge`, vals(f)); toast(`Discharged. Invoice ${r.inv_no}`); App.cache.admTab = "dc"; reAdm();
+  const v = vals(f); if (f.ignore_pending) v.ignore_pending = f.ignore_pending.checked;
+  const r = await api(`/api/admissions/${App.cache.adm.id}/discharge`, v); toast(`Discharged. Invoice ${r.inv_no}`); App.cache.admTab = "dc"; reAdm();
 });
 on("printDc", () => {
   const a = App.cache.adm, s = a.summary || {};

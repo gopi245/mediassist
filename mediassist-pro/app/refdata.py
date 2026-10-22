@@ -68,7 +68,7 @@ LAB_TESTS = [
     ("LIPID", "Lipid profile", "Serum", 650, 24, [("Total cholesterol", "mg/dL", 0, 200, None, None, ""), ("LDL", "mg/dL", 0, 100, None, None, ""),
         ("HDL", "mg/dL", 40, 100, None, None, ""), ("Triglycerides", "mg/dL", 0, 150, None, 1000, "")]),
     ("RFT", "Kidney function", "Serum", 500, 24, [("Creatinine", "mg/dL", 0.6, 1.2, None, 5, ""), ("Urea", "mg/dL", 15, 40, None, 150, ""),
-        ("Potassium", "mmol/L", 3.5, 5.1, 2.8, 6.2, "")]),
+        ("Sodium", "mmol/L", 135, 145, 120, 160, ""), ("Potassium", "mmol/L", 3.5, 5.1, 2.8, 6.2, "")]),
     ("LFT", "Liver function", "Serum", 600, 24, [("SGPT (ALT)", "U/L", 7, 56, None, 1000, ""), ("SGOT (AST)", "U/L", 10, 40, None, 1000, ""),
         ("Total bilirubin", "mg/dL", 0.1, 1.2, None, 15, "")]),
     ("TSH", "Thyroid stimulating hormone", "Serum", 400, 24, [("TSH", "uIU/mL", 0.4, 4.0, None, None, "")]),

@@ -22,7 +22,9 @@ care.example.com {
     }
 }
 ```
-Then start the app with `HOST=127.0.0.1 python server.py` so only Caddy can reach it, and
+Then start the app with `HOST=127.0.0.1 TRUST_PROXY=1 python server.py` so only Caddy can reach it
+(`TRUST_PROXY=1` makes the app believe Caddy's `X-Forwarded-For` / `X-Forwarded-Proto` headers; leave it
+unset when clients connect directly, or anyone could spoof their address), and
 set **Admin › Settings › Public address** to `https://care.example.com` (used in booking,
 follow-up and feedback links).
 

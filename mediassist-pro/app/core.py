@@ -3,6 +3,7 @@ auth helpers, roles, audit, settings and the route registry."""
 import base64
 import hashlib
 import hmac
+import math
 import json
 import os
 import re
@@ -115,8 +116,11 @@ def valid_day(s, field="date"):
 def P(x, field="amount"):
     """Rupees -> integer paise."""
     try:
-        v = int(round(float(x or 0) * 100))
-    except (TypeError, ValueError):
+        f = float(x or 0)
+        if not math.isfinite(f) or abs(f) > 1e9:
+            raise ValueError
+        v = int(round(f * 100))
+    except (TypeError, ValueError, OverflowError):
         raise ApiError(400, f"Invalid {field}")
     if v < 0:
         raise ApiError(400, f"{field} cannot be negative")
@@ -186,9 +190,20 @@ def totp(secret, at=None, step=30, digits=6):
     return str((struct.unpack(">I", h[o:o + 4])[0] & 0x7FFFFFFF) % 10 ** digits).zfill(digits)
 
 
-def totp_ok(secret, code):
+def totp_ok(secret, code, after_step=0):
+    """True when the code matches the current step or its neighbours. Returns the matched step (truthy) so the
+    caller can store it: a step at or before `after_step` was already used and is refused (replay guard)."""
     code = re.sub(r"\D", "", str(code or ""))
-    return any(hmac.compare_digest(totp(secret, time.time() + d * 30), code) for d in (-1, 0, 1))
+    for d in (-1, 0, 1):
+        step = int(time.time()) // 30 + d
+        if step > after_step and hmac.compare_digest(totp(secret, step * 30), code):
+            return step
+    return 0
+
+
+def like(term):
+    """Escape a search term for LIKE ... ESCAPE '\\' and wrap it in wildcards."""
+    return "%" + re.sub(r"([\\%_])", r"\\\1", term) + "%"
 
 
 # ------------------------------------------------------------------ settings & audit
