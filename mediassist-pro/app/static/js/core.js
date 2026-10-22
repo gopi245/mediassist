@@ -83,6 +83,14 @@ function renderSync() {
   el.hidden = !n && !off;
   el.textContent = off ? `${t("Offline")}${n ? ` · ${n} ${t("waiting to sync")}` : ""}` : `${n} ${t("waiting to sync")}`;
 }
+on("syncOpen", async () => {
+  const l = outbox.list();
+  const v = await dialog("Waiting to sync", (l.length ? l.map((it, i) => `<div class="alert ${it.error ? "high" : ""}"><span class="ic">${it.error ? "!" : "⟳"}</span><div class="t"><b>${esc(it.label)}</b> · ${esc(it.at.slice(0, 16).replace("T", " "))}${it.error ? `<br><span class="small">Server said: ${esc(it.error)}. Fix the bill at the counter and discard this copy, or retry.</span>` : "<br><span class='small muted'>Will be sent when the connection is back.</span>"}
+      <div class="row-actions" style="margin-top:4px"><button type="button" class="btn sm ghost" data-act="syncRetry" data-i="${i}">Retry now</button><button type="button" class="btn sm ghost" data-act="syncDrop" data-i="${i}">Discard</button></div></div></div>`).join("") : "<p class='empty'>Nothing waiting.</p>")
+    + `<p class="small muted">${navigator.onLine ? "Online" : "Offline"} · items are kept on this device only.</p>`, { ok: "", cancel: "Close" });
+});
+on("syncRetry", async el => { const l = outbox.list(), it = l[+el.dataset.i]; if (!it) return; try { await api(it.path, it.body, { key: it.key }); l.splice(+el.dataset.i, 1); outbox.save(l); toast("Synced"); } catch (e) { it.error = e.status === 0 ? it.error : e.message; outbox.save(l); toast(e.status === 0 ? "Still offline" : e.message); } $("#mCancel").click(); ACTIONS.syncOpen(); });
+on("syncDrop", async el => { const l = outbox.list(); const it = l[+el.dataset.i]; if (!it) return; $("#mCancel").click(); if (!await dialog("Discard this item?", `<p><b>${esc(it.label)}</b> from ${esc(it.at.slice(0, 16).replace("T", " "))} will not be sent to the server. Only do this if it was re-entered or should never have been saved.</p>`, { ok: "Discard", danger: true })) return ACTIONS.syncOpen(); l.splice(+el.dataset.i, 1); outbox.save(l); toast("Discarded"); ACTIONS.syncOpen(); });
 addEventListener("online", () => { renderSync(); flushOutbox(); });
 addEventListener("offline", renderSync);
 setInterval(flushOutbox, 30000);

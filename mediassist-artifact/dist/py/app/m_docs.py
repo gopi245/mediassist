@@ -78,6 +78,7 @@ def api_docs(h, c, b, q):
            "LEFT JOIN invoices i ON i.id=d.invoice_id LEFT JOIN admissions a ON a.id=d.admission_id LEFT JOIN medicines m ON m.id=d.medicine_id "
            "LEFT JOIN batches bt ON bt.id=d.batch_id LEFT JOIN branches br ON br.id=d.branch_id WHERE 1=1")
     args = []
+    sql += " AND d.deleted_at IS NOT NULL" if qget(q, "deleted") and h.user["role"] in ("owner", "manager") else " AND d.deleted_at IS NULL"
     if not all_access(h.user):
         sql += " AND (d.branch_id IS NULL OR d.branch_id=?)"
         args.append(h.user["branch_id"])
@@ -103,7 +104,7 @@ def api_docs(h, c, b, q):
 @route("GET", r"/api/documents/(\d+)/file", "documents")
 def api_doc_file(h, c, b, q, did):
     d = one(c, "SELECT * FROM documents WHERE id=?", (int(did),))
-    need(d and visible(h, d), "Document not found", 404)
+    need(d and visible(h, d) and (not d["deleted_at"] or h.user["role"] in ("owner", "manager")), "Document not found", 404)
     path = os.path.normpath(os.path.join(UPLOAD_DIR, d["path"]))
     need(path.startswith(os.path.normpath(UPLOAD_DIR)) and os.path.exists(path), "File missing on the server", 404)
     with open(path, "rb") as f:
@@ -136,11 +137,20 @@ def api_doc_delete(h, c, b, q, did):
     d = one(c, "SELECT * FROM documents WHERE id=?", (int(did),))
     need(d and visible(h, d), "Document not found", 404)
     need(d["user_id"] == h.user["id"] or h.user["role"] in ("owner", "manager"), "Only the uploader or a manager can delete a document", 403)
-    path = os.path.normpath(os.path.join(UPLOAD_DIR, d["path"]))
-    if path.startswith(os.path.normpath(UPLOAD_DIR)) and os.path.exists(path):
-        os.remove(path)
-    c.execute("DELETE FROM documents WHERE id=?", (d["id"],))
-    audit(c, h, "doc.delete", f"#{d['id']} {DOC_TYPES.get(d['doc_type'])}")
+    need(not d["deleted_at"], "Already deleted")
+    # clinical records are never hard-deleted: the row and file stay, hidden, and an owner or manager can restore them
+    c.execute("UPDATE documents SET deleted_at=?, deleted_by=?, shared_at=NULL WHERE id=?", (now_str(), h.user["id"], d["id"]))
+    audit(c, h, "doc.delete", f"#{d['id']} {DOC_TYPES.get(d['doc_type'])} {clean(b, 'reason', 200)}")
+    return {"ok": True}
+
+
+@route("POST", r"/api/documents/(\d+)/restore", "documents")
+def api_doc_restore(h, c, b, q, did):
+    d = one(c, "SELECT * FROM documents WHERE id=?", (int(did),))
+    need(d and visible(h, d) and d["deleted_at"], "Document not found", 404)
+    need(h.user["role"] in ("owner", "manager"), "Only a manager can restore a document", 403)
+    c.execute("UPDATE documents SET deleted_at=NULL, deleted_by=NULL WHERE id=?", (d["id"],))
+    audit(c, h, "doc.restore", f"#{d['id']}")
     return {"ok": True}
 
 
@@ -246,7 +256,8 @@ def best_match(c, name, table, col, extra=""):
 
 
 def match_all(c, out):
-    """Match what was read to our own records here, so patient names never go to the AI service."""
+    """Match what was read to our own records here. Note: the document image itself is sent to the AI service
+    (the patient's name may be printed on it); only the matching to our records happens locally."""
     p = best_match(c, out.get("patient_name"), "patients", "name", "AND erased_at IS NULL")
     d = best_match(c, out.get("doctor_name"), "users", "name", "AND role IN ('doctor','owner')")
     out["match"] = {"patient": {"id": p["id"], "name": p["n"], "code": pcode(p["id"])} if p else None, "doctor": {"id": d["id"], "name": d["n"]} if d else None,

@@ -441,6 +441,10 @@ def scheduler_tick():
         prune_backups(int(s.get("backup_keep_days") or 30))
         print(f"[{now_str()}] daily backup saved: {p}")
     c.execute("DELETE FROM idempotency WHERE at<?", (time.time() - 48 * 3600,))
+    # retention: error log 90 days, AI chats 90 days, message bodies 1 year (the log row and its result stay)
+    c.execute("DELETE FROM error_log WHERE at<?", (add_days(today(), -90),))
+    c.execute("DELETE FROM assistant_chats WHERE updated_at<?", (add_days(today(), -90),))
+    c.execute("UPDATE messages SET body='[expired]' WHERE at<? AND body<>'[expired]'", (add_days(today(), -365),))
 
 
 def scheduler_loop():

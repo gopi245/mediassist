@@ -2,6 +2,7 @@
 informed consent, imaging orders and reports, antenatal visits, critical-result acknowledgement, lab sample
 rejection and amended reports, and settlement of pharmacy credit bills."""
 import json
+import math
 
 from .core import (ApiError, R, all_access, as_int, audit, can, clean, in_tx, need, need_branch, now_str, one, opt_num, pcode, qget,
                    route, rows, rs, today, valid_day)
@@ -232,21 +233,111 @@ WHO_MEDIAN_WEIGHT = {  # years -> kg
 }
 
 
+def lms_at(table, months):
+    """Interpolate (L, M, S) at an age from a sorted list of (age_months, l, m, s)."""
+    if not table or months < table[0][0] or months > table[-1][0]:
+        return None
+    lo = table[0]
+    for row in table:
+        if row[0] == months:
+            return row[1:]
+        if row[0] > months:
+            f = (months - lo[0]) / (row[0] - lo[0])
+            return tuple(lo[i] + (row[i] - lo[i]) * f for i in (1, 2, 3))
+        lo = row
+    return None
+
+
+def zscore(value, lms):
+    l, m, s = lms
+    if l == 0:
+        return math.log(value / m) / s
+    return ((value / m) ** l - 1) / (l * s)
+
+
+def value_at(z, lms):
+    l, m, s = lms
+    return m * math.exp(s * z) if l == 0 else m * (1 + l * s * z) ** (1 / l)
+
+
+def zlabel(z):
+    if z is None:
+        return None
+    return "below -3 SD" if z < -3 else "below -2 SD" if z < -2 else "above +3 SD" if z > 3 else "above +2 SD" if z > 2 else "normal range"
+
+
+def growth_table(c, sex, kind):
+    return [tuple(r) for r in c.execute("SELECT age_months,l,m,s FROM growth_ref WHERE sex=? AND kind=? ORDER BY age_months", (sex, kind))]
+
+
 @route("GET", r"/api/patients/(\d+)/growth", "patients_read")
 def api_growth(h, c, b, q, pid):
+    """Weight/height/BMI over time. With WHO LMS tables loaded (Admin > Import data) each point gets a z-score and
+    the chart shows the -2 SD, median and +2 SD curves; without them a rounded WHO median is drawn as a guide."""
     p = patient_ok(c, h, int(pid))
     sex = "F" if (p["gender"] or "").lower().startswith("f") else "M"
+    wfa, hfa = growth_table(c, sex, "wfa"), growth_table(c, sex, "hfa")
     pts = rows(c.execute("SELECT at, weight, height FROM vitals WHERE patient_id=? AND (weight IS NOT NULL OR height IS NOT NULL) ORDER BY at", (p["id"],)))
     out = []
+    from datetime import date
     for r in pts:
-        age = None
+        age = months = None
         if p["dob"]:
-            from datetime import date
-            age = round((date.fromisoformat(r["at"][:10]) - date.fromisoformat(p["dob"])).days / 365.25, 2)
+            days = (date.fromisoformat(r["at"][:10]) - date.fromisoformat(p["dob"])).days
+            age, months = round(days / 365.25, 2), days / 30.4375
         bmi = round(r["weight"] / (r["height"] / 100) ** 2, 1) if r["weight"] and r["height"] else None
-        out.append({"at": r["at"], "age": age, "weight": r["weight"], "height": r["height"], "bmi": bmi})
-    return {"points": out, "reference": [{"age": a, "weight": w} for a, w in sorted(WHO_MEDIAN_WEIGHT[sex].items())], "sex": sex,
-            "note": "Reference line is the WHO median weight-for-age (approximate). Use a printed growth chart for percentiles."}
+        zw = zh = None
+        if months is not None:
+            lw, lh = lms_at(wfa, months), lms_at(hfa, months)
+            zw = round(zscore(r["weight"], lw), 2) if r["weight"] and lw else None
+            zh = round(zscore(r["height"], lh), 2) if r["height"] and lh else None
+        out.append({"at": r["at"], "age": age, "weight": r["weight"], "height": r["height"], "bmi": bmi, "z_weight": zw, "z_height": zh,
+                    "flag": zlabel(zw) if zw is not None else None})
+    res = {"points": out, "sex": sex, "has_who": bool(wfa)}
+    if wfa:
+        curves = []
+        m = wfa[0][0]
+        while m <= wfa[-1][0]:
+            lms = lms_at(wfa, m)
+            curves.append({"months": round(m, 1), "age": round(m / 12, 2), "p3": round(value_at(-1.881, lms), 2), "p50": round(lms[1], 2), "p97": round(value_at(1.881, lms), 2)})
+            m += 1 if wfa[-1][0] <= 60 else 3
+        res["curves"] = curves
+        res["note"] = "WHO growth standards (LMS tables loaded by the administrator): 3rd, 50th and 97th percentile weight-for-age."
+    else:
+        res["reference"] = [{"age": a, "weight": w} for a, w in sorted(WHO_MEDIAN_WEIGHT[sex].items())]
+        res["note"] = "Reference line is a rounded WHO median weight-for-age. Load the WHO LMS tables in Admin > Import data for real percentiles and z-scores."
+    return res
+
+
+@route("POST", "/api/import/growth", "admin")
+def api_import_growth(h, c, b, q):
+    """Load a WHO growth-standard table (CSV from who.int: columns Month or Day, L, M, S) for one sex and measure."""
+    import csv
+    import io
+    sex, kind = clean(b, "sex", 1).upper(), clean(b, "kind", 3).lower()
+    need(sex in ("M", "F"), "Sex must be M or F")
+    need(kind in ("wfa", "hfa"), "Kind must be wfa (weight-for-age) or hfa (height-for-age)")
+    text = str(b.get("csv") or "").lstrip("\ufeff")
+    rd = csv.DictReader(io.StringIO(text), delimiter="\t" if "\t" in text.splitlines()[0] else ",")
+    need(rd.fieldnames, "The file has no header row")
+    cols = {(k or "").strip().lower(): k for k in rd.fieldnames}
+    age_col = next((cols[k] for k in ("month", "months", "age_months", "agemos", "day", "days", "age") if k in cols), None)
+    need(age_col and all(k in cols for k in ("l", "m", "s")), "Expected columns Month (or Day), L, M, S")
+    per_day = age_col.strip().lower() in ("day", "days")
+    rows_ = []
+    for r in rd:
+        try:
+            a = float(r[age_col])
+            rows_.append((sex, kind, round(a / 30.4375, 3) if per_day else a, float(r[cols["l"]]), float(r[cols["m"]]), float(r[cols["s"]])))
+        except (TypeError, ValueError):
+            continue
+    need(len(rows_) >= 12, "Fewer than 12 usable rows: is this a WHO LMS table?")
+
+    def run():
+        c.executemany("INSERT INTO growth_ref(sex,kind,age_months,l,m,s) VALUES(?,?,?,?,?,?) ON CONFLICT(sex,kind,age_months) DO UPDATE SET l=excluded.l, m=excluded.m, s=excluded.s", rows_)
+        audit(c, h, "import.growth", f"{sex} {kind} {len(rows_)} rows")
+        return len(rows_)
+    return {"ok": True, "rows": in_tx(c, run), "range_months": [rows_[0][2], rows_[-1][2]]}
 
 
 # ---------------------------------------------------------------- critical results: acknowledgement

@@ -227,6 +227,15 @@ CREATE TABLE anc_visits(id INTEGER PRIMARY KEY, patient_id INTEGER NOT NULL REFE
   hb REAL, oedema INTEGER NOT NULL DEFAULT 0, complaints TEXT, risk TEXT, plan TEXT, next_visit TEXT);
 CREATE INDEX ix_anc_pat ON anc_visits(patient_id)
 """,
+# 8: staff alerts addressed by user id; documents are never hard-deleted; WHO growth reference tables (LMS)
+r"""
+ALTER TABLE messages ADD COLUMN user_id INTEGER;
+CREATE INDEX ix_msg_user ON messages(user_id);
+ALTER TABLE documents ADD COLUMN deleted_at TEXT;
+ALTER TABLE documents ADD COLUMN deleted_by INTEGER;
+CREATE TABLE growth_ref(sex TEXT NOT NULL, kind TEXT NOT NULL, age_months REAL NOT NULL, l REAL NOT NULL, m REAL NOT NULL, s REAL NOT NULL,
+  PRIMARY KEY(sex, kind, age_months))
+""",
 ]
 
 

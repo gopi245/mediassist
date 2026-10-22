@@ -54,9 +54,15 @@ ADM.settings = async el => {
     <div class="btns"><button class="btn">Save settings</button></div></form>`;
 };
 on("setSave", async f => { await api("/api/settings", vals(f)); toast("Settings saved"); });
+on("impGrowth", async el => {
+  const f = $("#impG").files[0]; if (!f) return toast("Choose the CSV file first.");
+  const r = await withBusy(el, async () => api("/api/import/growth", { csv: await f.text(), sex: $("#gwSex").value, kind: $("#gwKind").value }));
+  $("#impGOut").innerHTML = alertRow("info", `Loaded ${r.rows} rows (${r.range_months[0]} to ${r.range_months[1]} months).`);
+});
 ADM.import = async el => {
   el.innerHTML = `<div class="g2">${card("Import patients", "CSV with a header row: name, phone, age, gender, dob, address, allergies, conditions, blood_group, abha", `<input type="file" accept=".csv,text/csv" id="impP"><div class="btns"><button class="btn" data-act="impRun" data-k="patients" data-f="impP">Import patients</button></div><div id="impPOut"></div>`)}
-    ${card("Import opening stock", `CSV: medicine, generic, form, schedule, pack_size, batch, expiry (YYYY-MM-DD), qty, mrp, cost, rack. Loads into ${App.me.branch ? esc(App.me.branch.name) : "the selected branch"}.`, `<input type="file" accept=".csv,text/csv" id="impS"><div class="btns"><button class="btn" data-act="impRun" data-k="stock" data-f="impS" ${App.me.branch ? "" : "disabled"}>Import stock</button></div><div id="impSOut"></div>`)}</div>`;
+    ${card("Import opening stock", `CSV: medicine, generic, form, schedule, pack_size, batch, expiry (YYYY-MM-DD), qty, mrp, cost, rack. Loads into ${App.me.branch ? esc(App.me.branch.name) : "the selected branch"}.`, `<input type="file" accept=".csv,text/csv" id="impS"><div class="btns"><button class="btn" data-act="impRun" data-k="stock" data-f="impS" ${App.me.branch ? "" : "disabled"}>Import stock</button></div><div id="impSOut"></div>`)}
+    ${card("WHO growth standards", "For percentiles and z-scores on the child growth chart. Download the LMS tables from who.int (Child growth standards > Weight-for-age > z-scores, 'expanded tables' CSV: columns Month/Day, L, M, S) and load one file per sex and measure.", `<div class="fields"><div><label>Sex</label><select id="gwSex"><option value="M">Boys</option><option value="F">Girls</option></select></div><div><label>Measure</label><select id="gwKind"><option value="wfa">Weight-for-age</option><option value="hfa">Height/length-for-age</option></select></div><div class="span2"><input type="file" accept=".csv,.txt,text/csv" id="impG"></div></div><div class="btns"><button class="btn" data-act="impGrowth">Load table</button></div><div id="impGOut"></div>`)}</div>`;
 };
 on("impRun", async el => {
   const f = $("#" + el.dataset.f).files[0]; if (!f) return toast("Choose a CSV file first.");

@@ -57,9 +57,34 @@ def default_branch(c, u):
     return r[0] if r else 0
 
 
+# ---------------------------------------------------------------- health and API reference
+@route("GET", "/api/health")
+def api_health(h, c, b, q):
+    """Liveness for monitors: database reachable, schema version, server time. No patient data."""
+    from .schema import MIGRATIONS
+    v = c.execute("SELECT v FROM schema_version").fetchone()[0]
+    return {"ok": v == len(MIGRATIONS), "schema": v, "expected": len(MIGRATIONS), "time": now_str()}
+
+
+@route("GET", "/api/docs", "any")
+def api_docs_list(h, c, b, q):
+    """Every API route with its permission and a one-line description, generated from the code."""
+    from .core import ROUTES
+    out = []
+    for method, rx, perm, fn in ROUTES:
+        path = rx.pattern[1:-1].replace("(\\d+)", "{id}").replace("\\d+", "{id}").replace("\\", "")
+        out.append({"method": method, "path": path, "permission": perm or "public", "module": fn.__module__.rsplit(".", 1)[-1],
+                    "summary": (fn.__doc__ or "").strip().splitlines()[0] if fn.__doc__ else ""})
+    out.sort(key=lambda r: (r["path"], r["method"]))
+    return out
+
+
 # ---------------------------------------------------------------- auth
 @route("POST", "/api/login")
 def api_login(h, c, b, q):
+    from .m_appointments import rate_limit
+    ip_key, ip_msg = f"login:{getattr(h, 'client_ip', '?')}", "Too many failed sign-ins from this address. Wait 15 minutes."
+    rate_limit(ip_key, 30, 900, ip_msg, count=False)  # only failures count, below
     u = one(c, "SELECT * FROM users WHERE username=? AND active=1", (clean(b, "username"),))
     if u and u["locked_until"] > time.time():
         raise ApiError(429, f"Too many wrong passwords. Try again after {datetime.fromtimestamp(u['locked_until']).strftime('%H:%M')}.")
@@ -69,6 +94,10 @@ def api_login(h, c, b, q):
             c.execute("UPDATE users SET failed_logins=?, locked_until=? WHERE id=?", (n if n < LOCK_AFTER else 0, time.time() + LOCK_SECONDS if n >= LOCK_AFTER else 0, u["id"]))
         c.execute("INSERT INTO audit(at,user_id,branch_id,action,detail) VALUES(?,?,?,?,?)",
                   (now_str(), u["id"] if u else None, None, "login.failed", f"{str(b.get('username') or '')[:40]} from {getattr(h, 'client_ip', '')}"))
+        try:
+            rate_limit(ip_key, 30, 900, ip_msg)
+        except ApiError:
+            pass  # the 30th failure is recorded; the next attempt is refused
         time.sleep(0.8)
         raise ApiError(401, "Wrong username or password")
     c.execute("UPDATE users SET failed_logins=0, locked_until=0 WHERE id=?", (u["id"],))
@@ -441,6 +470,14 @@ def api_patient_erase(h, c, b, q, pid):
     c.execute("UPDATE patients SET name=?, phone='0000000000', address=NULL, abha=NULL, dob=NULL, whatsapp_ok=0, erased_at=? WHERE id=?",
               (f"Erased {pcode(pid)}", now_str(), pid))
     c.execute("UPDATE bills SET customer=? WHERE patient_id=?", (f"Erased {pcode(pid)}", pid))
+    tag = f"Erased {pcode(pid)}"
+    c.execute("UPDATE messages SET to_addr='erased', body='[erased on patient request]' WHERE patient_id=?", (pid,))
+    c.execute("UPDATE feedback SET comment=NULL WHERE patient_id=?", (pid,))
+    c.execute("UPDATE appointments SET note=NULL WHERE patient_id=?", (pid,))
+    c.execute("UPDATE portal_links SET revoked_at=? WHERE patient_id=? AND revoked_at IS NULL", (now_str(), pid))
+    c.execute("UPDATE referrals SET to_doctor=NULL WHERE patient_id=?", (pid,))
+    c.execute("UPDATE procedures SET consent_by=?, consent_witness=NULL WHERE patient_id=?", (tag, pid))
+    c.execute("UPDATE documents SET filename=NULL, note=NULL WHERE patient_id=?", (pid,))
     c.execute("INSERT INTO data_requests(patient_id,kind,at,user_id,done_at,note) VALUES(?,?,?,?,?,?)",
               (pid, "erase", now_str(), h.user["id"], now_str(), clean(b, "reason", 200)))
     audit(c, h, "patient.erase", f"{pcode(pid)} {clean(b, 'reason', 200)}")

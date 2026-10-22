@@ -152,7 +152,7 @@ def records(c, pid):
                     "doctor": a["dname"], "admitted_at": a["admitted_at"], "diagnosis": a["diagnosis"],
                     "summary": {k: s.get(k) for k in ("final_diagnosis", "course", "procedures", "condition", "medications", "advice", "followup") if s.get(k)}})
     from .m_docs import DOC_TYPES
-    for d in rows(c.execute("SELECT d.*, br.name bname FROM documents d LEFT JOIN branches br ON br.id=d.branch_id WHERE d.patient_id=? AND d.shared_at IS NOT NULL ORDER BY d.shared_at DESC", (pid,))):
+    for d in rows(c.execute("SELECT d.*, br.name bname FROM documents d LEFT JOIN branches br ON br.id=d.branch_id WHERE d.patient_id=? AND d.shared_at IS NOT NULL AND d.deleted_at IS NULL ORDER BY d.shared_at DESC", (pid,))):
         out.append({"kind": "doc", "id": f"D{d['id']}", "doc_id": d["id"], "at": d["shared_at"], "branch": d["bname"], "title": DOC_TYPES.get(d["doc_type"], "Document"),
                     "note": d["note"], "doc_date": d["doc_date"], "mime": d["mime"]})
     out.sort(key=lambda x: x["at"] or "", reverse=True)
@@ -188,7 +188,7 @@ def api_portal_pdf(h, c, b, q, kind, rid):
 @route("GET", r"/api/portal/file/(\d+)")
 def api_portal_file(h, c, b, q, did):
     r = _link(c, h, q)
-    d = one(c, "SELECT * FROM documents WHERE id=? AND patient_id=? AND shared_at IS NOT NULL", (int(did), r["patient_id"]))
+    d = one(c, "SELECT * FROM documents WHERE id=? AND patient_id=? AND shared_at IS NOT NULL AND deleted_at IS NULL", (int(did), r["patient_id"]))
     need(d, "Document not found", 404)
     path = os.path.normpath(os.path.join(UPLOAD_DIR, d["path"]))
     need(path.startswith(os.path.normpath(UPLOAD_DIR)) and os.path.exists(path), "File missing", 404)

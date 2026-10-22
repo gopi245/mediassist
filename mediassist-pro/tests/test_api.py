@@ -878,3 +878,79 @@ class T20CareRecords(unittest.TestCase):
         self.assertAlmostEqual(after["collected"] - before["collected"], cb2["total"], places=2)
         self.assertAlmostEqual(before["dues"] - after["dues"], cb2["total"], places=2)
         self.assertFalse(any(x["bill_id"] == cb2["id"] for x in rec.ok("/api/patients/7/unbilled")["credit_bills"]))
+
+
+class T21Operations(unittest.TestCase):
+    def test_health_docs_and_alert_matching(self):
+        pub = Client()
+        st, hlt = pub.get("/api/health")
+        self.assertEqual(st, 200)
+        self.assertTrue(hlt["ok"] and hlt["schema"] == hlt["expected"])
+        self.assertEqual(pub.get("/api/docs")[0], 401)
+        doc = Client("dr.rao")
+        routes = doc.ok("/api/docs")
+        self.assertTrue(any(r["path"] == "/api/patients/{id}/referrals" and r["method"] == "POST" and r["permission"] == "consult" for r in routes))
+        self.assertTrue(any(r["path"] == "/api/health" and r["permission"] == "public" for r in routes))
+        # an alert is addressed by user id, so a namesake in another branch does not see it
+        own = Client("owner")
+        u = own.ok("/api/users", {"username": "dr.rao2", "name": "Dr. Rao", "role": "doctor", "branch_id": 2, "password": PW})
+        other = Client("dr.rao2")
+        before = len(other.ok("/api/alerts"))
+        rec = Client("reception.ch")
+        np_ = rec.ok("/api/patients", {"name": "Alert Case", "phone": "9000055555", "age": 50, "gender": "Male", "consent": True, "force": True})["id"]
+        rec.ok("/api/visits", {"patient_id": np_, "complaint": "chest pain", "doctor_id": 2, "spo2": 85})
+        self.assertTrue(any("CRITICAL" in a["body"] for a in doc.ok("/api/alerts")))
+        self.assertEqual(len(other.ok("/api/alerts")), before, "namesake doctor in another branch gets nothing")
+
+    def test_erase_scrubs_everything_and_documents_soft_delete(self):
+        own = Client("owner")
+        own.branch(1)
+        pid = own.ok("/api/patients", {"name": "Erase Me", "phone": "9000033333", "age": 40, "gender": "Male", "consent": True, "force": True})["id"]
+        own.ok(f"/api/patients/{pid}/portal", {})  # creates a records link and logs a message with the phone
+        png = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"0" * 200).decode()
+        d = own.ok("/api/documents", {"mime": "image/png", "data": png, "doc_type": "lab", "patient_id": pid, "filename": "secret-name.png"})
+        own.ok(f"/api/patients/{pid}/erase", {"confirm": f"P{pid:05d}", "reason": "Written request"})
+        self.assertEqual(own.ok("/api/patients?q=P%05d" % pid), [], "erased patients are not found by ID lookup")
+        self.assertEqual(own.post(f"/api/patients/{pid}", {"name": "Back", "phone": "9000033333"})[0], 400, "erased record can't be edited")
+        msgs = [m for m in own.ok("/api/messages") if m.get("patient_id") == pid]
+        self.assertTrue(msgs and all(m["to_addr"] == "erased" and "9000033333" not in (m["body"] or "") for m in msgs))
+        self.assertIsNone(own.ok("/api/documents?patient_id=%d" % pid)["rows"][0]["filename"])
+        # documents: delete hides, manager restores, nothing is removed from disk
+        own.ok(f"/api/documents/{d['id']}/delete", {"reason": "wrong patient"})
+        self.assertEqual(own.ok("/api/documents?patient_id=%d" % pid)["rows"], [])
+        self.assertEqual(len(own.ok("/api/documents?patient_id=%d&deleted=1" % pid)["rows"]), 1)
+        self.assertEqual(Client("nurse.ch").get(f"/api/documents/{d['id']}/file")[0], 404)
+        own.ok(f"/api/documents/{d['id']}/restore", {})
+        self.assertEqual(len(own.ok("/api/documents?patient_id=%d" % pid)["rows"]), 1)
+        self.assertTrue(own.get(f"/api/documents/{d['id']}/file")[1].startswith(b"\x89PNG"))
+
+    def test_growth_tables_and_zscores(self):
+        own = Client("owner")
+        # a small LMS table in the WHO layout (boys, weight-for-age, months 0-24, values close to the standard)
+        rows_ = [(0, 0.3487, 3.3464, 0.14602), (6, 0.1562, 7.934, 0.11727), (12, 0.0937, 9.6479, 0.10938), (24, -0.0128, 12.1515, 0.10868)]
+        csv_text = "Month,L,M,S\n" + "\n".join(f"{m},{l},{mm},{s}" for m, l, mm, s in rows_) + "\n"
+        self.assertEqual(own.post("/api/import/growth", {"csv": csv_text, "sex": "M", "kind": "wfa"})[0], 400, "too few rows")
+        full = "Month,L,M,S\n" + "\n".join(f"{m},{0.2},{3.3 + m * 0.37},{0.12}" for m in range(0, 25)) + "\n"
+        r = own.ok("/api/import/growth", {"csv": full, "sex": "M", "kind": "wfa"})
+        self.assertEqual(r["rows"], 25)
+        rec = Client("reception.ch")
+        dob = core.add_days(core.today(), -365)
+        pid = rec.ok("/api/patients", {"name": "Baby Growth", "phone": "9000044444", "dob": dob, "gender": "Male", "weight": 5.5, "consent": True, "force": True})["id"]
+        g = rec.ok(f"/api/patients/{pid}/growth")
+        self.assertTrue(g["has_who"] and g["curves"])
+        pt = g["points"][-1]
+        self.assertLess(pt["z_weight"], -2, "5.5 kg at 12 months is well under the median of this table")
+        self.assertEqual(pt["flag"], "below -2 SD" if pt["z_weight"] >= -3 else "below -3 SD")
+        p50 = [c_ for c_ in g["curves"] if c_["months"] == 12][0]
+        self.assertAlmostEqual(p50["p50"], 3.3 + 12 * 0.37, places=1)
+        self.assertLess(p50["p3"], p50["p50"])
+        self.assertGreater(p50["p97"], p50["p50"])
+
+    def test_late_offline_bill_after_cash_closing(self):
+        ph, rec = Client("pharma.ch"), Client("reception.ch")
+        meds = {m["name"]: m for m in ph.ok("/api/medicines")}
+        yday = core.add_days(core.today(), -1)
+        rec.ok("/api/closing", {"date": yday, "counted": 0})
+        b = ph.ok("/api/bills", {"pay_mode": "cash", "created_at": yday + " 18:30", "offline_key": "late-" + yday,
+                                 "items": [{"medicine_id": meds["Dolo 650"]["id"], "qty": 1, "unit": "unit"}]})
+        self.assertTrue(ph.ok(f"/api/bills/{b['id']}")["created_at"].startswith(core.today()), "a bill synced after the day was closed counts today")

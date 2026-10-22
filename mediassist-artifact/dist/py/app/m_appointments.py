@@ -151,13 +151,18 @@ _rate = {}
 _rate_lock = threading.Lock()
 
 
-def rate_limit(key, n=5, window=3600):
+def rate_limit(key, n=5, window=3600, msg="Too many bookings from this connection. Please call the hospital.", count=True):
+    """Refuse once `key` has had n hits in `window` seconds. count=False only checks; the caller records the hit later."""
     now = time.time()
     with _rate_lock:
+        if len(_rate) > 5000:  # forget quiet keys so the table can't grow without bound
+            for k in [k for k, v in _rate.items() if not v or now - v[-1] > window]:
+                del _rate[k]
         hits = [t for t in _rate.get(key, []) if now - t < window]
-        need(len(hits) < n, "Too many bookings from this connection. Please call the hospital.", 429)
-        hits.append(now)
-        _rate[key] = hits
+        need(len(hits) < n, msg, 429)
+        if count:
+            hits.append(now)
+            _rate[key] = hits
 
 
 @route("POST", "/api/public/book")

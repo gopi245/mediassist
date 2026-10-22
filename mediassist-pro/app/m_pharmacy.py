@@ -611,6 +611,14 @@ def offline_time(s):
     return s if -300 <= delta <= 72 * 3600 else now_str()
 
 
+def bill_time(c, bid, s):
+    """Offline bills keep their own time unless that day's cash has already been closed; then they count today."""
+    ts = offline_time(s)
+    if ts[:10] != today() and one(c, "SELECT 1 FROM closings WHERE branch_id=? AND day=?", (bid, ts[:10])):
+        return now_str()
+    return ts
+
+
 def create_bill(c, h, b):
     br = need_branch(h, c, "pharmacy")
     key = clean(b, "offline_key", 64) or None
@@ -689,7 +697,7 @@ def create_bill(c, h, b):
         bill_no = f"{br['code']}-{n:06d}"
         cur = c.execute("INSERT INTO bills(branch_id,bill_no,created_at,patient_id,customer,visit_id,admission_id,doctor_name,doctor_reg,subtotal_p,discount_p,total_p,pay_mode,user_id,offline_key) "
                         "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                        (br["id"], bill_no, offline_time(clean(b, "created_at", 16)), patient["id"] if patient else None,
+                        (br["id"], bill_no, bill_time(c, br["id"], clean(b, "created_at", 16)), patient["id"] if patient else None,
                          patient["name"] if patient else (clean(b, "customer", 100) or "Walk-in"), visit["id"] if visit else None, opt_num(b.get("admission_id"), int),
                          doc_name, doc_reg, sub, disc, sub - disc, pay, h.user["id"], key))
         bill_id, gst_total, dleft = cur.lastrowid, 0, disc

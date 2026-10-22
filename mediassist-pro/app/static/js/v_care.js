@@ -33,14 +33,22 @@ on("ancAdd", async f => { const v = vals(f); v.oedema = f.oedema.checked; const 
 CARE_TABS.growth = async (el, p) => {
   const g = await api(`/api/patients/${p.id}/growth`);
   const pts = g.points.filter(x => x.weight != null && x.age != null);
-  el.innerHTML = `${card("Weight for age", g.note, pts.length ? `<div class="chart" id="gChart"></div><div class="legend"><span><i style="background:var(--s1)"></i>${esc(p.name)}</span><span><i style="background:var(--s4)"></i>WHO median (${g.sex === "F" ? "girls" : "boys"})</span></div>` : '<p class="empty">Record the date of birth and weights to see the chart.</p>')}
-    ${tbl(["When", "Age (y)", "Weight", "Height", "BMI"], g.points.slice().reverse().map(x => `<tr><td class="mono">${x.at.slice(0, 10)}</td><td>${x.age ?? "–"}</td><td>${x.weight ?? "–"}</td><td>${x.height ?? "–"}</td><td>${x.bmi ?? "–"}</td></tr>`).join(""), "No weight or height recorded.")}`;
+  const zcls = z => z == null ? "" : z < -2 || z > 2 ? "allergy" : "";
+  el.innerHTML = `${card("Weight for age", g.note, pts.length ? `<div class="chart" id="gChart"></div><div class="legend"><span><i style="background:var(--s1)"></i>${esc(p.name)}</span>${g.has_who ? `<span><i style="background:var(--s4)"></i>WHO 50th</span><span><i style="background:var(--s2)"></i>3rd / 97th</span>` : `<span><i style="background:var(--s4)"></i>WHO median (${g.sex === "F" ? "girls" : "boys"})</span>`}</div>` : '<p class="empty">Record the date of birth and weights to see the chart.</p>')}
+    ${tbl(["When", "Age (y)", "Weight", "z (WFA)", "Height", "z (HFA)", "BMI"], g.points.slice().reverse().map(x => `<tr><td class="mono">${x.at.slice(0, 10)}</td><td>${x.age ?? "–"}</td><td>${x.weight ?? "–"}</td><td class="${zcls(x.z_weight)}">${x.z_weight ?? "–"}${x.flag && x.flag !== "normal range" ? ` <span class="small">${x.flag}</span>` : ""}</td><td>${x.height ?? "–"}</td><td class="${zcls(x.z_height)}">${x.z_height ?? "–"}</td><td>${x.bmi ?? "–"}</td></tr>`).join(""), "No weight or height recorded.")}`;
   if (!pts.length) return;
+  const f = n => String(Math.round(n));
+  if (g.has_who) {
+    const maxAge = Math.max(2, ...pts.map(x => x.age)), cur = g.curves.filter(c_ => c_.age <= maxAge + 0.5);
+    const near = a => { const n = pts.filter(x => Math.abs(x.age - a) <= (cur.length > 70 ? 0.05 : 0.15)); return n.length ? n[n.length - 1].weight : null; };
+    lineChart($("#gChart"), cur.map(c_ => c_.months <= 24 ? c_.months + "m" : c_.age.toFixed(1) + "y"), [{ name: "kg", color: "--s1", values: cur.map(c_ => near(c_.age) ?? 0) }, { name: "P50", color: "--s4", values: cur.map(c_ => c_.p50) }, { name: "P3", color: "--s2", values: cur.map(c_ => c_.p3) }, { name: "P97", color: "--s2", values: cur.map(c_ => c_.p97) }], f);
+    return;
+  }
   const maxAge = Math.max(10, ...pts.map(x => x.age)), ages = [];
   for (let a = 0; a <= Math.min(maxAge, 10); a += 0.5) ages.push(a);
   const ref = a => { const r = g.reference; let lo = r[0], hi = r[r.length - 1]; for (const q of r) { if (q.age <= a) lo = q; if (q.age >= a) { hi = q; break; } } return lo.age === hi.age ? lo.weight : lo.weight + (hi.weight - lo.weight) * (a - lo.age) / (hi.age - lo.age); };
-  const labels = ages.map(a => a + "y"), child = ages.map(a => { const near = pts.filter(x => Math.abs(x.age - a) <= 0.25); return near.length ? near[near.length - 1].weight : null; });
-  lineChart($("#gChart"), labels, [{ name: "kg", color: "--s1", values: child.map(v => v ?? 0) }, { name: "WHO", color: "--s4", values: ages.map(ref) }], n => String(Math.round(n)));
+  const labels = ages.map(a => a + "y"), child = ages.map(a => { const n = pts.filter(x => Math.abs(x.age - a) <= 0.25); return n.length ? n[n.length - 1].weight : null; });
+  lineChart($("#gChart"), labels, [{ name: "kg", color: "--s1", values: child.map(v => v ?? 0) }, { name: "WHO", color: "--s4", values: ages.map(ref) }], f);
 };
 
 /* ---------------- dialogs ---------------- */

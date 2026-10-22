@@ -58,12 +58,12 @@ def send_whatsapp(s, to, body, media_url=None):
         raise RuntimeError(f"No internet connection ({e.reason})")
 
 
-def log_message(c, kind, to, channel, body, ok, detail, patient_id=None):
-    c.execute("INSERT INTO messages(at,kind,to_addr,channel,body,ok,detail,patient_id) VALUES(?,?,?,?,?,?,?,?)",
-              (now_str(), kind, to, channel, body[:4000], 1 if ok else 0, detail[:500], patient_id))
+def log_message(c, kind, to, channel, body, ok, detail, patient_id=None, user_id=None):
+    c.execute("INSERT INTO messages(at,kind,to_addr,channel,body,ok,detail,patient_id,user_id) VALUES(?,?,?,?,?,?,?,?,?)",
+              (now_str(), kind, to, channel, body[:4000], 1 if ok else 0, detail[:500], patient_id, user_id))
 
 
-def deliver(c, kind, body, email=None, whatsapp=None, subject=None, attachments=(), patient_id=None, media_url=None):
+def deliver(c, kind, body, email=None, whatsapp=None, subject=None, attachments=(), patient_id=None, media_url=None, user_id=None):
     s, results = get_settings(c), []
     for ch, to in (("whatsapp", whatsapp), ("email", email)):
         if not to:
@@ -73,7 +73,7 @@ def deliver(c, kind, body, email=None, whatsapp=None, subject=None, attachments=
             ok = True
         except Exception as e:
             ok, detail = False, str(e)
-        log_message(c, kind, to, ch, body, ok, detail, patient_id)
+        log_message(c, kind, to, ch, body, ok, detail, patient_id, user_id)
         results.append({"channel": ch, "to": to, "ok": ok, "detail": detail,
                         "wa_link": f"https://wa.me/{wa_number(to)}?text={quote(body)}" if ch == "whatsapp" and not ok else None})
     return results
@@ -89,9 +89,9 @@ def send_patient(c, pid, kind, body, media_url=None):
 def notify_staff(c, user_id, body):
     u = one(c, "SELECT * FROM users WHERE id=?", (user_id,)) if user_id else None
     if not u or not (u["whatsapp"] or u["email"]):
-        log_message(c, "staff_alert", u["name"] if u else "-", "screen", body, True, "shown in the app only")
+        log_message(c, "staff_alert", u["name"] if u else "-", "screen", body, True, "shown in the app only", user_id=u["id"] if u else None)
         return []
-    return deliver(c, "staff_alert", body, email=u["email"], whatsapp=u["whatsapp"], subject="MediAssist alert")
+    return deliver(c, "staff_alert", body, email=u["email"], whatsapp=u["whatsapp"], subject="MediAssist alert", user_id=u["id"])
 
 
 @route("GET", "/api/messages", "reports")
@@ -111,5 +111,6 @@ def api_messages(h, c, b, q):
 @route("GET", "/api/alerts", "any")
 def api_alerts(h, c, b, q):
     """Staff alerts addressed to the signed-in user (e.g. critical lab values)."""
-    return rows(c.execute("SELECT * FROM messages WHERE kind='staff_alert' AND (to_addr=? OR to_addr=? OR to_addr=?) ORDER BY id DESC LIMIT 20",
-                          (h.user["name"], h.user["whatsapp"] or "-", h.user["email"] or "-")))
+    # matched by user id; rows written before the id column existed fall back to the address
+    return rows(c.execute("SELECT * FROM messages WHERE kind='staff_alert' AND (user_id=? OR (user_id IS NULL AND to_addr IN (?,?))) ORDER BY id DESC LIMIT 20",
+                          (h.user["id"], h.user["whatsapp"] or "-", h.user["email"] or "-")))

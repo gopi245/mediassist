@@ -65,3 +65,9 @@ Medscape) and load its interaction and dose data into the medicine master and
 ## 7. Scaling up
 SQLite with WAL handles a group of a few branches comfortably. For many busy branches,
 move to PostgreSQL: the SQL is plain and the schema is in `app/schema.py`.
+
+## Monitoring and API reference
+`GET /api/health` (no sign-in) returns `{"ok": true, "schema": N}` for an uptime monitor. `GET /api/docs` (signed in)
+lists every API route with its permission and a one-line description, generated from the code.
+Documents are never hard-deleted: "Delete" hides them and a manager can restore from Documents with `?deleted=1`.
+Retention jobs run nightly: error log and AI chats 90 days, message bodies one year, idempotency keys 48 hours.

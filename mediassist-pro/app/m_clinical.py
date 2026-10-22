@@ -93,7 +93,7 @@ def api_patients(h, c, b, q):
     term = qget(q, "q").strip()
     m = re.fullmatch(r"[Pp]0*(\d+)", term)
     if m:
-        return [dict(r, code=pcode(r["id"])) for r in rows(c.execute("SELECT * FROM patients WHERE id=?", (int(m.group(1)),)))]
+        return [dict(r, code=pcode(r["id"])) for r in rows(c.execute("SELECT * FROM patients WHERE id=? AND erased_at IS NULL", (int(m.group(1)),)))]
     lk = like(term)
     rs_ = rows(c.execute("SELECT * FROM patients WHERE erased_at IS NULL AND (name LIKE ? ESCAPE '\\' OR phone LIKE ? ESCAPE '\\' OR abha LIKE ? ESCAPE '\\') ORDER BY id DESC LIMIT 50",
                          (lk, lk, lk)))
@@ -134,7 +134,7 @@ def welcome(c, h, pid, name):
 
 @route("POST", r"/api/patients/(\d+)", "patients_write")
 def api_edit_patient(h, c, b, q, pid):
-    patient_or_404(c, int(pid))
+    need(not patient_or_404(c, int(pid))["erased_at"], "This record was erased at the patient's request and can't be edited")
     f = patient_fields(b)
     c.execute(f"UPDATE patients SET {','.join(k + '=?' for k in f)} WHERE id=?", (*f.values(), int(pid)))
     audit(c, h, "patient.update", f"{pcode(int(pid))} allergies={f['allergies'] or '-'} conditions={f['conditions'] or '-'}")
@@ -157,7 +157,7 @@ def profile(c, pid):
             "admissions": rows(c.execute("SELECT a.*, br.code bcode FROM admissions a JOIN branches br ON br.id=a.branch_id WHERE patient_id=? ORDER BY a.id DESC", (pid,))),
             "invoices": rows(c.execute("SELECT i.id,i.inv_no,i.created_at,i.total_p,i.cancelled_at,br.code bcode FROM invoices i JOIN branches br ON br.id=i.branch_id WHERE patient_id=? ORDER BY i.id DESC LIMIT 30", (pid,))),
             "bills": rows(c.execute("SELECT b.id,b.bill_no,b.created_at,b.total_p,b.returned_p,br.code bcode FROM bills b JOIN branches br ON br.id=b.branch_id WHERE patient_id=? ORDER BY b.id DESC LIMIT 30", (pid,))),
-            "documents": rows(c.execute("SELECT id,doc_type,doc_date,note,mime,filename FROM documents WHERE patient_id=? ORDER BY id DESC", (pid,))),
+            "documents": rows(c.execute("SELECT id,doc_type,doc_date,note,mime,filename FROM documents WHERE patient_id=? AND deleted_at IS NULL ORDER BY id DESC", (pid,))),
             "appointments": rows(c.execute("SELECT a.*, u.name dname FROM appointments a LEFT JOIN users u ON u.id=a.doctor_id WHERE patient_id=? AND day>=? ORDER BY day, slot", (pid, today()))),
             "current_meds": [{"name": m["name"], "since": (m.get("vdate") or "")[:10], "days": m.get("days")} for m in current_meds(c, pid)],
             "pregnancy": pregnancy_info(p),
