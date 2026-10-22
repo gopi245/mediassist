@@ -164,6 +164,22 @@ r"""
 CREATE TABLE assistant_chats(id TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
   messages TEXT NOT NULL, turns INTEGER NOT NULL DEFAULT 0)
 """,
+# 6: offline bills can never be inserted twice; last accepted TOTP step (replay guard); indexes for the dashboards and lookups
+r"""
+CREATE UNIQUE INDEX ix_bills_offline ON bills(offline_key) WHERE offline_key IS NOT NULL;
+ALTER TABLE users ADD COLUMN last_totp INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX ix_pay_inv ON payments(invoice_id);
+CREATE INDEX ix_pay_adm ON payments(admission_id);
+CREATE INDEX ix_rx_visit ON rx_items(visit_id);
+CREATE INDEX ix_bill_items ON bill_items(bill_id);
+CREATE INDEX ix_moves_batch ON stock_moves(batch_id);
+CREATE INDEX ix_audit_at ON audit(at);
+CREATE INDEX ix_msg_pat ON messages(patient_id);
+CREATE INDEX ix_lab_branch ON lab_orders(branch_id, status);
+CREATE INDEX ix_adm_branch ON admissions(branch_id, status);
+CREATE INDEX ix_cn ON credit_notes(invoice_id);
+CREATE INDEX ix_idem_at ON idempotency(at)
+""",
 ]
 
 

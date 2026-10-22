@@ -16,15 +16,15 @@ RENDER.dashboard = async main => {
     lineChart($("#orgChart"), d.trend.map(t_ => t_.day), series);
     return;
   }
-  const H = d.branch.kind.includes("hospital"), Ph = d.branch.kind.includes("pharmacy"), tr = d.trend;
-  main.innerHTML = `<div class="kpis">${H ? kpi("Patients seen", r.seen, `${d.appointments.arrived} of ${d.appointments.total} appointments arrived`, "", sparkline(tr.map(x => x.seen))) + kpi("Waiting now", d.critical.length ? `${d.critical.length} critical` : "–", "", d.critical.length ? "crit" : "") : ""}
+  const H = d.branch.kind.includes("hospital"), tr = d.trend, MONEY = can("reports") || can("hbilling") || can("billing");
+  main.innerHTML = `<div class="kpis">${H ? kpi("Patients seen", r.seen, `${d.appointments.arrived} of ${d.appointments.total} appointments arrived`, "", sparkline(tr.map(x => x.seen))) + kpi("Waiting now", d.waiting, d.critical.length ? `${d.critical.length} critical` : "no critical", d.critical.length ? "crit" : "") : ""}
     ${H && d.beds.total ? kpi("Beds", `${d.beds.occupied} / ${d.beds.total}`, "occupied") : ""}${H ? kpi("Lab", d.lab.ordered + d.lab.collected, `${d.lab.resulted} waiting for verification`, d.lab.resulted ? "warn" : "") : ""}
-    ${kpi("Revenue today", money(r.total), delta(r.total, r.prev_total), "", sparkline(tr.map(x => x.hosp + x.pharm)))}${kpi("Collected", money(r.collected), `dues ${money(r.dues)}`)}</div>
+    ${MONEY ? kpi("Revenue today", money(r.total), delta(r.total, r.prev_total), "", sparkline(tr.map(x => x.hosp + x.pharm))) + kpi("Collected", money(r.collected), `dues ${money(r.dues)}`) : ""}</div>
   <div class="g-main"><div class="stack">
     ${H ? card("Critical patients waiting", "", d.critical.map(v => alertRow("high", `<b>${esc(v.name)}</b> · ${esc(v.triage_reasons || "")} · since ${v.created_at.slice(11)} ${can("consult") ? `<button class="btn danger sm" data-act="go" data-v="consult" data-p="${v.id}">See now</button>` : ""}`)).join("") || '<p class="empty">None waiting.</p>') : ""}
     ${card("Needs attention", "", alerts)}
     ${H ? card("Follow-up calls today", "", d.followups.map(f => `<p>${esc(f.name)} · <span class="mono">${esc(f.phone)}</span> · ${esc(f.diagnosis || "")}</p>`).join("") || '<p class="empty">None due.</p>') : ""}</div>
-    ${card("Today's report so far", "Sent automatically in the evening", `<pre class="rep">${esc(r.text.replace(/\*/g, ""))}</pre>`)}</div>`;
+    ${MONEY ? card("Today's report so far", "Sent automatically in the evening", `<pre class="rep">${esc(r.text.replace(/\*/g, ""))}</pre>`) : ""}</div>`;
   if (can("audit")) watchCard(main);
   if (App.me.role === "doctor" || App.me.all_access || App.me.role === "manager") briefingCard(main);
 };

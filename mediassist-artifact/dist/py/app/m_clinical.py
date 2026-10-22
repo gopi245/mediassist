@@ -4,7 +4,7 @@ import json
 import re
 from datetime import date, timedelta
 
-from .core import (ApiError, add_days, all_access, as_int, audit, can, clean, in_tx, need, need_branch, now_str, one, opt_num,
+from .core import (ApiError, add_days, all_access, as_int, audit, can, clean, in_tx, like, need, need_branch, now_str, one, opt_num,
                    pcode, qget, route, rows, today, valid_day)
 from .safety import qty_for, safety_check, triage
 
@@ -32,11 +32,23 @@ def current_meds(c, pid, exclude_visit=None):
     return out
 
 
-def latest_creatinine(c, pid):
+def latest_creatinine(c, pid, max_days=90):
+    """Most recent submitted or verified creatinine from the last 90 days; drafts and old results don't count."""
     r = c.execute("SELECT lr.num FROM lab_results lr JOIN lab_params lp ON lp.id=lr.param_id JOIN lab_order_items oi ON oi.id=lr.order_item_id "
-                  "JOIN lab_orders o ON o.id=oi.order_id WHERE o.patient_id=? AND lp.name='Creatinine' AND lr.num IS NOT NULL ORDER BY o.id DESC LIMIT 1",
-                  (pid,)).fetchone()
+                  "JOIN lab_orders o ON o.id=oi.order_id WHERE o.patient_id=? AND lp.name='Creatinine' AND lr.num IS NOT NULL "
+                  "AND o.status IN ('resulted','verified') AND o.created_at>=? ORDER BY o.id DESC LIMIT 1",
+                  (pid, add_days(today(), -max_days))).fetchone()
     return r[0] if r else None
+
+
+def norm_temp(t):
+    """Temperatures above 50 were typed in Fahrenheit: store Celsius. Rejects values no thermometer gives."""
+    if t is None:
+        return None
+    if t > 50:
+        t = round((t - 32) * 5 / 9, 1)
+    need(30 <= t <= 45, "Temperature must be 30-45 C (or 86-113 F)")
+    return t
 
 
 def check_items(c, p, items, exclude_visit=None):
@@ -75,9 +87,9 @@ def api_patients(h, c, b, q):
     m = re.fullmatch(r"[Pp]0*(\d+)", term)
     if m:
         return [dict(r, code=pcode(r["id"])) for r in rows(c.execute("SELECT * FROM patients WHERE id=?", (int(m.group(1)),)))]
-    like = f"%{term}%"
-    rs_ = rows(c.execute("SELECT * FROM patients WHERE erased_at IS NULL AND (name LIKE ? OR phone LIKE ? OR abha LIKE ?) ORDER BY id DESC LIMIT 50",
-                         (like, like, like)))
+    lk = like(term)
+    rs_ = rows(c.execute("SELECT * FROM patients WHERE erased_at IS NULL AND (name LIKE ? ESCAPE '\\' OR phone LIKE ? ESCAPE '\\' OR abha LIKE ? ESCAPE '\\') ORDER BY id DESC LIMIT 50",
+                         (lk, lk, lk)))
     return [dict(r, code=pcode(r["id"])) for r in rs_]
 
 
@@ -179,12 +191,16 @@ def api_add_problem(h, c, b, q, pid):
 def api_problem_status(h, c, b, q, prid):
     st = clean(b, "status", 10)
     need(st in ("active", "resolved"), "Status must be active or resolved")
-    c.execute("UPDATE problems SET status=? WHERE id=?", (st, int(prid)))
+    pr = one(c, "SELECT * FROM problems WHERE id=?", (int(prid),))
+    need(pr, "Problem not found", 404)
+    c.execute("UPDATE problems SET status=? WHERE id=?", (st, pr["id"]))
+    audit(c, h, "problem.status", f"{pcode(pr['patient_id'])} {pr['title']} -> {st}")
     return {"ok": True}
 
 
 def add_vitals(c, h, pid, b, source, ref):
     vals = {k: opt_num(b.get(k), int if k in ("pulse", "bp_sys", "bp_dia", "spo2") else float, k) for k in ("temp", "pulse", "bp_sys", "bp_dia", "spo2", "weight", "sugar")}
+    vals["temp"] = norm_temp(vals["temp"])
     if any(v is not None for v in vals.values()):
         c.execute("INSERT INTO vitals(patient_id,at,source,ref_id,temp,pulse,bp_sys,bp_dia,spo2,weight,sugar,recorded_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                   (pid, now_str(), source, ref, *vals.values(), h.user["id"]))
@@ -217,8 +233,8 @@ def api_add_vaccine(h, c, b, q, pid):
 
 @route("GET", "/api/icd10", "patients_read")
 def api_icd(h, c, b, q):
-    t = f"%{qget(q, 'q').strip()}%"
-    return rows(c.execute("SELECT * FROM icd10 WHERE code LIKE ? OR title LIKE ? ORDER BY code LIMIT 30", (t, t)))
+    t = like(qget(q, "q").strip())
+    return rows(c.execute("SELECT * FROM icd10 WHERE code LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\' ORDER BY code LIMIT 30", (t, t)))
 
 
 @route("GET", "/api/templates", "patients_read")
@@ -250,6 +266,7 @@ def create_visit(c, h, pid, b, appointment_id=None, doctor_id=None):
     need(not one(c, "SELECT 1 FROM visits WHERE patient_id=? AND branch_id=? AND status IN ('waiting','in_consult')", (pid, br["id"])),
          "This patient is already in today's queue")
     v = {k: opt_num(b.get(k), int if k in ("pulse", "bp_sys", "bp_dia", "spo2") else float, k) for k in ("temp", "pulse", "bp_sys", "bp_dia", "spo2", "weight", "sugar")}
+    v["temp"] = norm_temp(v["temp"])
     v["complaint"] = clean(b, "complaint", 500)
     level, why = triage(v)
     cur = c.execute("INSERT INTO visits(patient_id,branch_id,doctor_id,appointment_id,created_at,created_by,complaint,temp,pulse,bp_sys,bp_dia,spo2,weight,sugar,triage,triage_reasons) "
@@ -303,17 +320,20 @@ def api_visit(h, c, b, q, vid):
 
 @route("POST", r"/api/visits/(\d+)/start", "consult")
 def api_start(h, c, b, q, vid):
-    c.execute("UPDATE visits SET status='in_consult', doctor_id=COALESCE(doctor_id, ?) WHERE id=? AND status='waiting'", (h.user["id"], int(vid)))
-    c.execute("UPDATE appointments SET status='in_consult' WHERE id=(SELECT appointment_id FROM visits WHERE id=?)", (int(vid),))
+    v = one(c, "SELECT * FROM visits WHERE id=?", (int(vid),))
+    need(v and (v["branch_id"] == h.branch or all_access(h.user)), "Visit not found", 404)
+    c.execute("UPDATE visits SET status='in_consult', doctor_id=COALESCE(doctor_id, ?) WHERE id=? AND status='waiting'", (h.user["id"], v["id"]))
+    c.execute("UPDATE appointments SET status='in_consult' WHERE id=?", (v["appointment_id"],))
     return {"ok": True}
 
 
 @route("POST", "/api/rx/check", "patients_read")
 def api_rx_check(h, c, b, q):
     p = one(c, "SELECT * FROM patients WHERE id=?", (as_int(b.get("patient_id"), "patient"),))
+    need(p, "Patient not found", 404)
     if b.get("weight"):
-        p = dict(p, weight=opt_num(b.get("weight"), float))
-    _, warnings = check_items(c, p, (b.get("items") or [])[:30], opt_num(b.get("visit_id"), int))
+        p = dict(p, weight=opt_num(b.get("weight"), float, "weight"))
+    _, warnings = check_items(c, p, (b.get("items") or [])[:30], opt_num(b.get("visit_id"), int, "visit"))
     return {"warnings": warnings}
 
 
@@ -330,12 +350,15 @@ def api_complete(h, c, b, q, vid):
     followup = clean(b, "followup", 10)
     if followup:
         valid_day(followup, "follow-up date")
-    p = one(c, "SELECT * FROM patients WHERE id=?", (v["patient_id"],))
-    if b.get("weight"):
-        p = dict(p, weight=opt_num(b.get("weight"), float))
+    p = p0 = one(c, "SELECT * FROM patients WHERE id=?", (v["patient_id"],))
+    weight = opt_num(b.get("weight"), float, "weight") if b.get("weight") else None
+    if weight:
+        need(0.5 <= weight <= 400, "Weight must be 0.5-400 kg")
+        p = dict(p, weight=weight)
     items, warnings = check_items(c, p, (b.get("items") or [])[:30], v["id"])
     if warnings and not b.get("override"):
         raise ApiError(409, "Safety warnings: review before saving", warnings=warnings)
+    reason = clean(b, "override_reason", 300)
     tests = [as_int(t, "test") for t in (b.get("lab_tests") or [])[:20]]
     raw = (b.get("items") or [])[:30]
 
@@ -351,12 +374,24 @@ def api_complete(h, c, b, q, vid):
         if icd and b.get("add_problem") and not one(c, "SELECT 1 FROM problems WHERE patient_id=? AND icd=? AND status='active'", (p["id"], icd)):
             c.execute("INSERT INTO problems(patient_id,icd,title,since,status,created_at,created_by) VALUES(?,?,?,?,?,?,?)",
                       (p["id"], icd, diagnosis, today(), "active", now_str(), h.user["id"]))
+        if weight and weight != p0["weight"]:  # the weight typed in the consultation is a measurement: keep it
+            c.execute("INSERT INTO vitals(patient_id,at,source,ref_id,weight,recorded_by) VALUES(?,?,?,?,?,?)", (p["id"], now_str(), "consult", v["id"], weight, h.user["id"]))
+            c.execute("UPDATE patients SET weight=? WHERE id=?", (weight, p["id"]))
         order_id = None
-        if tests and not one(c, "SELECT 1 FROM lab_orders WHERE visit_id=?", (v["id"],)):
+        if tests:
             from .m_lab import create_order
-            order_id = create_order(c, h, p["id"], tests, visit_id=v["id"], doctor_id=h.user["id"], priority=clean(b, "lab_priority", 10) or "routine")
+            already = {r[0] for r in c.execute("SELECT i.test_id FROM lab_order_items i JOIN lab_orders o ON o.id=i.order_id WHERE o.visit_id=? AND o.status<>'cancelled'", (v["id"],))}
+            new_tests = [t for t in tests if t not in already]
+            open_order = one(c, "SELECT id FROM lab_orders WHERE visit_id=? AND status='ordered' ORDER BY id DESC", (v["id"],))
+            if new_tests and open_order:  # sample not collected yet: add to the same order
+                for t in new_tests:
+                    need(one(c, "SELECT 1 FROM lab_tests WHERE id=? AND active=1", (t,)), "Unknown lab test", 404)
+                    c.execute("INSERT INTO lab_order_items(order_id,test_id) VALUES(?,?)", (open_order["id"], t))
+                order_id = open_order["id"]
+            elif new_tests:
+                order_id = create_order(c, h, p["id"], new_tests, visit_id=v["id"], doctor_id=h.user["id"], priority=clean(b, "lab_priority", 10) or "routine")
         audit(c, h, "visit.complete", f"visit {v['id']} {pcode(p['id'])} dx={diagnosis} {icd} rx={len(items)} labs={len(tests)}"
-              + (" OVERRIDE: " + " ".join(w["text"] for w in warnings) if warnings else ""))
+              + ((" OVERRIDE" + (f" ({reason})" if reason else "") + ": " + " ".join(w["text"] for w in warnings)) if warnings else ""))
         return order_id
     order_id = in_tx(c, run)
     if not v["completed_at"]:  # first save only; corrections don't message again

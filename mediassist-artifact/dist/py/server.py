@@ -23,6 +23,7 @@ from app.setup import init
 
 STATIC = os.path.join(BASE, "app", "static")
 PORT = int(os.environ.get("PORT", "8000"))
+TRUST_PROXY = os.environ.get("TRUST_PROXY", "") in ("1", "true", "yes")
 PUBLIC_PAGES = {"/my": "my.html", "/up": "up.html", "/book": "book.html", "/display": "display.html", "/feedback": "feedback.html"}
 BIG_BODY = ("/api/documents", "/api/ai/", "/api/import/", "/api/public/upload")
 CSP = ("default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
@@ -88,8 +89,14 @@ class Handler(BaseHTTPRequestHandler):
     def handle_any(self, method):
         url = urlparse(self.path)
         self.set_cookie, self.download, self.inline = None, None, False
-        self.https = self.headers.get("X-Forwarded-Proto", "") == "https"
-        self.client_ip = (self.headers.get("X-Forwarded-For", "").split(",")[0].strip() or self.client_address[0])
+        # X-Forwarded-* are only meaningful behind a reverse proxy that sets them (TRUST_PROXY=1 in DEPLOY.md);
+        # otherwise any client could spoof its IP (rate limits) or claim HTTPS.
+        if TRUST_PROXY:
+            self.https = self.headers.get("X-Forwarded-Proto", "") == "https"
+            self.client_ip = (self.headers.get("X-Forwarded-For", "").split(",")[-1].strip() or self.client_address[0])
+        else:
+            self.https = False
+            self.client_ip = self.client_address[0]
         try:
             if method in ("GET", "HEAD") and not url.path.startswith("/api/"):
                 if url.path in ("/", "/index.html"):

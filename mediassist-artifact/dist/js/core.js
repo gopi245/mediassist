@@ -139,9 +139,10 @@ async function withOverride(fn, title = "Review safety warnings") {
   try { return await fn(false); }
   catch (e) {
     if (e.status !== 409 || !e.data.warnings) throw e;
-    const ok = await dialog(title, warnHtml(e.data.warnings) + `<p class="small muted">Continuing records that you reviewed these warnings. It goes in the audit trail.</p>`, { ok: "Reviewed, continue", danger: true });
+    const ok = await dialog(title, warnHtml(e.data.warnings) + `<label>Why are you continuing? (goes in the audit trail)</label><input name="reason" maxlength="300" placeholder="e.g. benefit outweighs risk, dose adjusted, patient tolerated before">`, { ok: "Reviewed, continue", danger: true });
     if (!ok) return null;
-    return await fn(true);
+    if (e.data.warnings.some(w => w.severity === "high") && !(ok.reason || "").trim()) { toast("Write a reason to override a high-risk warning."); return null; }
+    return await fn(true, (ok.reason || "").trim());
   }
 }
 

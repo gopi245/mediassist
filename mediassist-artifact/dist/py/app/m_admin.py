@@ -11,7 +11,7 @@ import time
 from datetime import datetime
 
 from .core import (ROLES, ApiError, BACKUP_DIR, DB_PATH, DEFAULT_SETTINGS, SECRET_SETTINGS, SESSION_HOURS, P, R, add_days,
-                   all_access, as_int, audit, branch_row, clean, get_settings, hash_pw, in_tx, need, new_totp_secret, now_str,
+                   all_access, as_int, audit, branch_row, clean, get_settings, hash_pw, in_tx, like, need, new_totp_secret, now_str,
                    one, opt_num, pcode, qget, route, rows, set_setting, today, totp_ok, valid_day)
 
 BRANCH_KINDS = ("hospital", "pharmacy", "hospital+pharmacy")
@@ -67,6 +67,8 @@ def api_login(h, c, b, q):
         if u:
             n = u["failed_logins"] + 1
             c.execute("UPDATE users SET failed_logins=?, locked_until=? WHERE id=?", (n if n < LOCK_AFTER else 0, time.time() + LOCK_SECONDS if n >= LOCK_AFTER else 0, u["id"]))
+        c.execute("INSERT INTO audit(at,user_id,branch_id,action,detail) VALUES(?,?,?,?,?)",
+                  (now_str(), u["id"] if u else None, None, "login.failed", f"{str(b.get('username') or '')[:40]} from {getattr(h, 'client_ip', '')}"))
         time.sleep(0.8)
         raise ApiError(401, "Wrong username or password")
     c.execute("UPDATE users SET failed_logins=0, locked_until=0 WHERE id=?", (u["id"],))
@@ -83,9 +85,11 @@ def api_login(h, c, b, q):
 @route("POST", "/api/2fa/verify", "mfa")
 def api_2fa_verify(h, c, b, q):
     need(h.user["totp_secret"], "Two-step sign-in is not set up")
-    if not totp_ok(h.user["totp_secret"], b.get("code")):
+    step = totp_ok(h.user["totp_secret"], b.get("code"), h.user["last_totp"] or 0)
+    if not step:
         time.sleep(0.8)
-        raise ApiError(401, "That code is wrong or expired. Use the current code from your authenticator app.")
+        raise ApiError(401, "That code is wrong, expired or already used. Use the next code from your authenticator app.")
+    c.execute("UPDATE users SET last_totp=? WHERE id=?", (step, h.user["id"]))
     c.execute("UPDATE sessions SET mfa_ok=1 WHERE token=?", (h.token,))
     audit(c, h, "login.2fa")
     return {"ok": True}
@@ -277,8 +281,8 @@ def api_audit(h, c, b, q):
         args.append(h.user["branch_id"])
     term = qget(q, "q").strip()
     if term:
-        sql += " AND (a.action LIKE ? OR a.detail LIKE ? OR u.username LIKE ?)"
-        args += [f"%{term}%"] * 3
+        sql += " AND (a.action LIKE ? ESCAPE '\\' OR a.detail LIKE ? ESCAPE '\\' OR u.username LIKE ? ESCAPE '\\')"
+        args += [like(term)] * 3
     return rows(c.execute(sql + " ORDER BY a.id DESC LIMIT 400", args))
 
 
@@ -331,9 +335,10 @@ def api_import_stock(h, c, b, q):
         for i, r in enumerate(data, start=2):
             name = r.get("medicine") or r.get("name") or ""
             try:
-                qty = int(float(r.get("qty") or r.get("quantity") or 0))
+                qty = int(opt_num(r.get("qty") or r.get("quantity") or 0, float, "qty"))
                 mrp, cost = P(r.get("mrp")), P(r.get("cost") or 0)
                 exp = valid_day(r.get("expiry", ""), "expiry")
+                gst, pack = opt_num(r.get("gst") or 5, float, "gst"), opt_num(r.get("pack_size") or 1, int, "pack_size")
             except ApiError as e:
                 errors.append(f"Row {i}: {e}")
                 continue
@@ -344,7 +349,7 @@ def api_import_stock(h, c, b, q):
             if not m:
                 c.execute("INSERT INTO medicines(name,generic,form,schedule,gst_pct,pack_size) VALUES(?,?,?,?,?,?)",
                           (name[:100], r.get("generic", "").lower()[:100], r.get("form", "Tablet")[:20], (r.get("schedule") or "OTC").upper()[:3],
-                           float(r.get("gst") or 5), int(r.get("pack_size") or 1)))
+                           gst, pack))
                 m = one(c, "SELECT * FROM medicines WHERE lower(name)=lower(?)", (name,))
                 new_meds += 1
             cur = c.execute("INSERT INTO batches(branch_id,medicine_id,batch,expiry,qty,mrp_p,cost_p,rack,received_at) VALUES(?,?,?,?,?,?,?,?,?)",

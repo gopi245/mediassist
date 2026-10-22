@@ -202,10 +202,12 @@ def api_pay(h, c, b, q, iid):
     need(mode in ("cash", "upi", "card"), "Invalid payment mode")
     need(amt > 0, "Enter an amount")
     need(mode == "cash" or ref, "Enter the transaction reference")
-    st = inv_state(c, inv)
-    need(amt <= st["patient_due_p"], f"The patient owes at most {rs(st['patient_due_p'])}")
-    c.execute("INSERT INTO payments(branch_id,invoice_id,at,mode,amount_p,ref,user_id,kind) VALUES(?,?,?,?,?,?,?,?)", (h.branch, inv["id"], now_str(), mode, amt, ref, h.user["id"], "payment"))
-    audit(c, h, "invoice.payment", f"{inv['inv_no']} {rs(amt)} {mode} {ref}")
+    def run():
+        st = inv_state(c, inv)  # inside the write lock so two cashiers can't both take the last due amount
+        need(amt <= st["patient_due_p"], f"The patient owes at most {rs(st['patient_due_p'])}")
+        c.execute("INSERT INTO payments(branch_id,invoice_id,at,mode,amount_p,ref,user_id,kind) VALUES(?,?,?,?,?,?,?,?)", (h.branch, inv["id"], now_str(), mode, amt, ref, h.user["id"], "payment"))
+        audit(c, h, "invoice.payment", f"{inv['inv_no']} {rs(amt)} {mode} {ref}")
+    in_tx(c, run)
     return {"ok": True, **{k: R(v) if k.endswith("_p") else v for k, v in inv_state(c, inv).items()}}
 
 
@@ -230,13 +232,13 @@ def api_refund(h, c, b, q, iid):
     amt, reason, mode = P(b.get("amount"), "amount"), clean(b, "reason", 200), clean(b, "mode", 10) or "cash"
     need(amt > 0 and reason, "Enter the refund amount and reason")
     need(mode in ("cash", "upi", "card"), "Invalid refund mode")
-    net_paid = paid_p(c, inv["id"])
     excess = bool(b.get("excess"))
-    if excess:
-        need(amt <= net_paid - inv["total_p"], f"Only {rs(max(0, net_paid - inv['total_p']))} was paid in excess")
-    need(amt <= net_paid, f"Only {rs(net_paid)} has been paid on this invoice")
 
     def run():
+        net_paid = paid_p(c, inv["id"])  # checked under the write lock: two refunds can't both pass
+        if excess:
+            need(amt <= net_paid - inv["total_p"], f"Only {rs(max(0, net_paid - inv['total_p']))} was paid in excess")
+        need(amt <= net_paid, f"Only {rs(net_paid)} has been paid on this invoice")
         n = c.execute("SELECT COUNT(*) FROM credit_notes WHERE branch_id=?", (h.branch,)).fetchone()[0] + 1
         code = one(c, "SELECT code FROM branches WHERE id=?", (h.branch,))["code"]
         cn = f"{code}/CN/{n:05d}"

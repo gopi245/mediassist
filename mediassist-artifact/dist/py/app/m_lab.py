@@ -19,9 +19,20 @@ def create_order(c, h, patient_id, test_ids, visit_id=None, admission_id=None, d
     return cur.lastrowid
 
 
+NORMAL_WORDS = {"negative", "neg", "-ve", "absent", "not seen", "nil", "none", "non-reactive", "nonreactive", "non reactive", "normal", "not detected",
+                "nad", "within normal limits", "wnl", "clear"}
+
+
+def norm_text(t):
+    return " ".join((t or "").lower().replace("_", " ").split())
+
+
 def flag_for(p, num, text):
     if num is None:
-        if p["ref_text"] and text and text.strip().lower() not in p["ref_text"].lower():
+        if p["ref_text"] and text:
+            ref, val = norm_text(p["ref_text"]), norm_text(text)
+            if val == ref or (ref in NORMAL_WORDS and val in NORMAL_WORDS):
+                return "N"
             return "A"  # abnormal text result, e.g. "Positive" where "Negative" is normal
         return "N" if text else None
     if p["crit_low"] is not None and num < p["crit_low"]:

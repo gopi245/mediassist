@@ -64,7 +64,7 @@ on("saveBill", async f => {
   if (!CART.length) return toast("Add medicines first.");
   const v = vals(f), pid = pidOf($("#bPat").value);
   const body = { ...v, patient_id: pid, visit_id: CART.some(l => l.rx_item_id) ? CART_VISIT : null, items: CART.map(l => ({ medicine_id: l.medicine_id, qty: l.qty, unit: l.unit, rx_item_id: l.rx_item_id })), created_at: new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 16).replace("T", " ") };
-  const r = await withOverride(ov => apiSafe("/api/bills", { ...body, override: ov }, "Bill"), "Safety warnings at the counter");
+  const r = await withOverride((ov, reason) => apiSafe("/api/bills", { ...body, override: ov, override_reason: reason }, "Bill"), "Safety warnings at the counter");
   if (!r) return;
   if (!r.queued) { toast(`Bill ${r.bill_no} saved · ${money(r.total)}`); CART = []; CART_VISIT = null; await RENDER.billing($("#view"), []); ACTIONS.viewBill({ dataset: { id: r.id } }); }
   else { CART = []; drawCart(); }

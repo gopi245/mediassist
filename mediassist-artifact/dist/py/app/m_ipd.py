@@ -1,6 +1,7 @@
 """Inpatients: beds, admission, transfers, rounds and nursing notes, medication orders and
 administration record (MAR), ward charges, running bill, discharge summary and final invoice."""
 import json
+import re
 import math
 from datetime import datetime
 
@@ -149,7 +150,11 @@ def api_admission(h, c, b, q, aid):
     a["code"] = pcode(a["patient_id"])
     a["notes"] = rows(c.execute("SELECT n.*, u.name uname, u.role urole FROM ipd_notes n LEFT JOIN users u ON u.id=n.user_id WHERE admission_id=? ORDER BY n.id DESC", (a["id"],)))
     a["vitals"] = rows(c.execute("SELECT * FROM vitals WHERE patient_id=? AND at>=? ORDER BY at DESC LIMIT 60", (a["patient_id"], a["admitted_at"])))
-    a["mar"] = mar_today(c, a["id"])
+    mar_day = qget(q, "mar_day") or None
+    if mar_day:
+        valid_day(mar_day, "MAR day")
+    a["mar_day"] = mar_day or today()
+    a["mar"] = mar_today(c, a["id"], mar_day)
     a["labs"] = rows(c.execute("SELECT o.id, o.status, o.created_at, (SELECT group_concat(t.name, ', ') FROM lab_order_items i JOIN lab_tests t ON t.id=i.test_id WHERE i.order_id=o.id) tests "
                                "FROM lab_orders o WHERE admission_id=? ORDER BY o.id DESC", (a["id"],)))
     a["bill"] = running_bill(c, a)
@@ -190,7 +195,10 @@ def api_note(h, c, b, q, aid):
         c.execute("INSERT INTO ipd_notes(admission_id,at,user_id,kind,text) VALUES(?,?,?,?,?)", (a["id"], now_str(), h.user["id"], kind, text))
     if kind == "round" and h.user["role"] == "doctor":
         s = one(c, "SELECT * FROM services WHERE name='Doctor visit (IPD)'")
-        if s and b.get("charge_visit", True):
+        charge = b.get("charge_visit", True)
+        if isinstance(charge, str):
+            charge = charge.lower() not in ("0", "false", "no", "")
+        if s and charge:
             c.execute("INSERT INTO ipd_charges(admission_id,at,service_id,name,cat,qty,rate_p,amount_p,user_id,source) VALUES(?,?,?,?,?,?,?,?,?,?)",
                       (a["id"], now_str(), s["id"], f"{s['name']}: {h.user['name']}", s["cat"], 1, s["rate_p"], s["rate_p"], h.user["id"], "round"))
     audit(c, h, "ipd.note", f"{a['ip_no']} {kind}")
@@ -218,9 +226,13 @@ def api_deposit(h, c, b, q, aid):
     need(amt > 0, "Enter an amount")
     need(mode in ("cash", "upi", "card"), "Invalid payment mode")
     need(mode == "cash" or clean(b, "ref", 40), "Enter the transaction reference")
-    c.execute("INSERT INTO payments(branch_id,admission_id,at,mode,amount_p,ref,user_id,kind) VALUES(?,?,?,?,?,?,?,?)",
-              (h.branch, a["id"], now_str(), mode, amt, clean(b, "ref", 40), h.user["id"], "deposit"))
-    audit(c, h, "ipd.deposit", f"{a['ip_no']} {rs(amt)} {mode}")
+
+    def run():
+        need(one(c, "SELECT 1 FROM admissions WHERE id=? AND status='admitted'", (a["id"],)), "Patient is already discharged")
+        c.execute("INSERT INTO payments(branch_id,admission_id,at,mode,amount_p,ref,user_id,kind) VALUES(?,?,?,?,?,?,?,?)",
+                  (h.branch, a["id"], now_str(), mode, amt, clean(b, "ref", 40), h.user["id"], "deposit"))
+        audit(c, h, "ipd.deposit", f"{a['ip_no']} {rs(amt)} {mode}")
+    in_tx(c, run)
     return {"ok": True}
 
 
@@ -228,16 +240,19 @@ def api_deposit(h, c, b, q, aid):
 def due_times(mo):
     if mo["times"]:
         return [t.strip() for t in mo["times"].split(",") if t.strip()]
-    return {"OD": ["09:00"], "BD": ["09:00", "21:00"], "TDS": ["08:00", "14:00", "20:00"], "QID": ["06:00", "12:00", "18:00", "24:00"],
+    return {"OD": ["09:00"], "BD": ["09:00", "21:00"], "TDS": ["08:00", "14:00", "20:00"], "QID": ["06:00", "12:00", "18:00", "23:00"],
             "HS": ["22:00"], "STAT": ["now"], "SOS": []}.get((mo["freq"] or "").upper(), ["09:00"])
 
 
-def mar_today(c, aid):
+def mar_today(c, aid, day=None):
+    """Dose chart for one day (default today); earlier days show what was given, held or missed."""
+    day = day or today()
     out = []
     for mo in rows(c.execute("SELECT mo.*, m.name, m.generic, u.name oname FROM mar_orders mo JOIN medicines m ON m.id=mo.medicine_id LEFT JOIN users u ON u.id=mo.ordered_by "
                              "WHERE admission_id=? ORDER BY mo.active DESC, mo.id", (aid,))):
-        given = rows(c.execute("SELECT ma.*, u.name uname FROM mar_admin ma LEFT JOIN users u ON u.id=ma.user_id WHERE mar_id=? AND ma.at LIKE ? ORDER BY ma.id", (mo["id"], today() + "%")))
-        mo["slots"] = [{"due": t, "record": next((g for g in given if g["due"] == t), None)} for t in due_times(mo)] if mo["active"] else []
+        given = rows(c.execute("SELECT ma.*, u.name uname FROM mar_admin ma LEFT JOIN users u ON u.id=ma.user_id WHERE mar_id=? AND ma.at LIKE ? ORDER BY ma.id", (mo["id"], day + "%")))
+        ran = mo["start_at"][:10] <= day and (not mo["stop_at"] or mo["stop_at"][:10] >= day)
+        mo["slots"] = [{"due": t, "record": next((g for g in given if g["due"] == t), None)} for t in due_times(mo)] if ran else []
         mo["extra"] = [g for g in given if g["due"] not in due_times(mo)]
         out.append(mo)
     return out
@@ -257,17 +272,25 @@ def api_mar_order(h, c, b, q, aid):
     if warnings and not b.get("override"):
         raise ApiError(409, "Safety warnings: review before ordering", warnings=warnings)
     times = clean(b, "times", 60)
-    c.execute("INSERT INTO mar_orders(admission_id,medicine_id,dose,route,freq,times,start_at,ordered_by,active) VALUES(?,?,?,?,?,?,?,?,1)",
-              (a["id"], m["id"], clean(b, "dose", 20) or "1", clean(b, "route", 20) or "oral", freq, times or None, now_str(), h.user["id"]))
-    audit(c, h, "mar.order", f"{a['ip_no']} {m['name']} {clean(b, 'dose', 20)} {freq}" + (" OVERRIDE: " + " ".join(w["text"] for w in warnings) if warnings else ""))
+    for t in [x.strip() for x in times.split(",") if x.strip()]:
+        need(re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", t), f"Time {t!r} must be HH:MM (00:00-23:59)")
+    days = opt_num(b.get("days"), int, "days")
+    stop_at = add_days(today(), days - 1) + " 23:59" if days and days > 0 else None
+    c.execute("INSERT INTO mar_orders(admission_id,medicine_id,dose,route,freq,times,start_at,stop_at,ordered_by,active) VALUES(?,?,?,?,?,?,?,?,?,1)",
+              (a["id"], m["id"], clean(b, "dose", 20) or "1", clean(b, "route", 20) or "oral", freq, times or None, now_str(), stop_at, h.user["id"]))
+    reason = clean(b, "override_reason", 300)
+    audit(c, h, "mar.order", f"{a['ip_no']} {m['name']} {clean(b, 'dose', 20)} {freq}" + (f" {days}d" if days else "")
+          + ((" OVERRIDE" + (f" ({reason})" if reason else "") + ": " + " ".join(w["text"] for w in warnings)) if warnings else ""))
     return {"ok": True}
 
 
 @route("POST", r"/api/mar/(\d+)/stop", "ipd")
 def api_mar_stop(h, c, b, q, mid):
     need(h.user["role"] in ("doctor", "owner"), "Only doctors can stop medicines", 403)
-    c.execute("UPDATE mar_orders SET active=0, stop_at=? WHERE id=?", (now_str(), int(mid)))
-    audit(c, h, "mar.stop", mid)
+    mo = one(c, "SELECT mo.*, a.branch_id, a.ip_no, m.name FROM mar_orders mo JOIN admissions a ON a.id=mo.admission_id JOIN medicines m ON m.id=mo.medicine_id WHERE mo.id=?", (int(mid),))
+    need(mo and (mo["branch_id"] == h.branch or h.user["role"] == "owner"), "Medicine order not found", 404)
+    c.execute("UPDATE mar_orders SET active=0, stop_at=? WHERE id=?", (now_str(), mo["id"]))
+    audit(c, h, "mar.stop", f"{mo['ip_no']} {mo['name']} {mo['dose']} {mo['freq']}")
     return {"ok": True}
 
 
@@ -278,10 +301,10 @@ def api_mar_give(h, c, b, q, mid):
     st = clean(b, "status", 10) or "given"
     need(st in ("given", "held", "refused"), "Status must be given, held or refused")
     due = clean(b, "due", 5) or "extra"
-    need(not one(c, "SELECT 1 FROM mar_admin WHERE mar_id=? AND due=? AND at LIKE ?", (mo["id"], due, today() + "%")) or due == "extra", "This dose is already recorded")
     need(st == "given" or clean(b, "note", 200), "Write why the dose was held or refused")
 
     def run():
+        need(not one(c, "SELECT 1 FROM mar_admin WHERE mar_id=? AND due=? AND at LIKE ?", (mo["id"], due, today() + "%")) or due == "extra", "This dose is already recorded")
         c.execute("INSERT INTO mar_admin(mar_id,due,at,status,user_id,note) VALUES(?,?,?,?,?,?)", (mo["id"], due, now_str(), st, h.user["id"], clean(b, "note", 200)))
         msg = None
         if st == "given":
@@ -321,6 +344,9 @@ def api_discharge(h, c, b, q, aid):
     need(summary["final_diagnosis"], "Enter the final diagnosis")
     if summary["followup"]:
         valid_day(summary["followup"], "follow-up date")
+    pending = c.execute("SELECT COUNT(*) FROM lab_orders WHERE admission_id=? AND status IN ('ordered','collected')", (a["id"],)).fetchone()[0]
+    if dtype in ("normal", "referred"):
+        need(not pending or b.get("ignore_pending"), f"{pending} lab order(s) still have no result. Wait for them, cancel them in the lab, or tick 'discharge anyway'.")
 
     def run():
         end = now_str()
@@ -337,12 +363,15 @@ def api_discharge(h, c, b, q, aid):
         c.execute("UPDATE admissions SET status='discharged', discharged_at=?, discharge_type=?, summary=?, diagnosis=?, icd=?, invoice_id=? WHERE id=?",
                   (end, dtype, json.dumps(summary), summary["final_diagnosis"], summary["icd"] or a["icd"], inv["id"], a["id"]))
         c.execute("UPDATE beds SET status='cleaning' WHERE id=?", (a["bed_id"],))
-        if summary["followup"]:
+        if dtype == "death":
+            c.execute("UPDATE lab_orders SET status='cancelled' WHERE admission_id=? AND status IN ('ordered','collected')", (a["id"],))
+        if summary["followup"] and dtype != "death":
             c.execute("INSERT INTO visits(patient_id,branch_id,doctor_id,created_at,created_by,complaint,triage,diagnosis,followup,status,completed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                       (a["patient_id"], a["branch_id"], a["doctor_id"], end, h.user["id"], "Discharge", "normal", summary["final_diagnosis"], summary["followup"], "done", end))
         audit(c, h, "ipd.discharge", f"{a['ip_no']} {dtype} invoice {inv['inv_no']} {rs(inv['total_p'])}")
         return inv
     inv = in_tx(c, run)
     from .m_portal import share
-    share(c, a["patient_id"], f"Your discharge summary ({a['ip_no']}) and final bill {inv['inv_no']} are ready.", h.user["id"], pdf=("invoice", inv["id"]))
+    if dtype != "death":  # the family gets the bill from the desk, not a "your summary is ready" message
+        share(c, a["patient_id"], f"Your discharge summary ({a['ip_no']}) and final bill {inv['inv_no']} are ready.", h.user["id"], pdf=("invoice", inv["id"]))
     return {"ok": True, "invoice_id": inv["id"], "inv_no": inv["inv_no"]}

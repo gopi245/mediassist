@@ -68,7 +68,6 @@ def collections(c, bids, day, n):
 
 
 def daily_report(c, bids, day, label):
-    from .m_billing import inv_state
     n = day_numbers(c, bids, day)
     prev = day_numbers(c, bids, add_days(day, -1))
     week = [day_numbers(c, bids, add_days(day, -i)) for i in range(1, 8)]
@@ -92,9 +91,9 @@ def daily_report(c, bids, day, label):
                           f"AND i.created_at LIKE ? AND i.branch_id IN ({p})) billed FROM users u LEFT JOIN visits v ON v.doctor_id=u.id AND v.status='done' AND v.completed_at LIKE ? "
                           f"AND v.branch_id IN ({p}) WHERE u.role IN ('doctor','owner') GROUP BY u.id HAVING seen>0 OR billed>0 ORDER BY seen DESC",
                           (day + "%", *bids, day + "%", *bids)))
-    dues = 0
-    for inv in rows(c.execute(f"SELECT * FROM invoices WHERE branch_id IN ({p}) AND cancelled_at IS NULL", bids)):
-        dues += inv_state(c, inv)["due_p"]
+    # one aggregate instead of three queries per invoice: same arithmetic as inv_state (refunds are negative payments)
+    dues = c.execute(f"SELECT COALESCE(SUM(MAX(0, i.total_p - COALESCE((SELECT SUM(amount_p) FROM payments WHERE invoice_id=i.id), 0))), 0) "
+                     f"FROM invoices i WHERE i.branch_id IN ({p}) AND i.cancelled_at IS NULL", bids).fetchone()[0]
     alerts = branch_alerts(c, bids, day)
     col = collections(c, bids, day, n)
     total = n["hosp_p"] + n["pharm_p"]
@@ -182,12 +181,13 @@ def api_dashboard(h, c, b, q):
     br = branch_row(c, h.branch)
     rep = daily_report(c, [h.branch], day, br["name"])
     crit = rows(c.execute("SELECT v.id, p.name, v.triage_reasons, v.created_at FROM visits v JOIN patients p ON p.id=v.patient_id WHERE v.branch_id=? AND v.status='waiting' AND v.triage='critical'", (h.branch,)))
+    waiting = c.execute("SELECT COUNT(*) FROM visits WHERE branch_id=? AND status IN ('waiting','in_consult')", (h.branch,)).fetchone()[0]
     fups = rows(c.execute("SELECT p.name, p.phone, v.diagnosis FROM visits v JOIN patients p ON p.id=v.patient_id WHERE v.branch_id=? AND v.followup=?", (h.branch, day)))
     appts = c.execute("SELECT COUNT(*), SUM(status='booked'), SUM(status IN ('checked_in','in_consult','done')) FROM appointments WHERE branch_id=? AND day=?", (h.branch, day)).fetchone()
     beds = c.execute("SELECT COUNT(*), SUM(status='occupied') FROM beds WHERE branch_id=?", (h.branch,)).fetchone()
     lab = c.execute("SELECT SUM(status='ordered'), SUM(status='collected'), SUM(status='resulted') FROM lab_orders WHERE branch_id=?", (h.branch,)).fetchone()
     trend = [dict(day=add_days(day, -i), **rup(day_numbers(c, [h.branch], add_days(day, -i)))) for i in range(13, -1, -1)]
-    return {"mode": "branch", "branch": br, "report": rep, "critical": crit, "followups": fups, "trend": trend,
+    return {"mode": "branch", "branch": br, "report": rep, "critical": crit, "waiting": waiting, "followups": fups, "trend": trend,
             "appointments": {"total": appts[0], "booked": appts[1] or 0, "arrived": appts[2] or 0}, "beds": {"total": beds[0], "occupied": beds[1] or 0},
             "lab": {"ordered": lab[0] or 0, "collected": lab[1] or 0, "resulted": lab[2] or 0}}
 
@@ -429,11 +429,12 @@ def scheduler_tick():
         for r in send_weekly(c):
             print(f"[{now_str()}] weekly pharmacy summary -> {r['to']} {r['channel']}: {'OK' if r['ok'] else 'FAILED ' + r['detail']}")
     if s.get("last_backup") != today():
-        set_setting(c, "last_backup", today())
         from .m_admin import make_backup, prune_backups
-        p = make_backup("daily")
+        p = make_backup("daily")  # raises on failure, so the flag below is only set after a real backup
+        set_setting(c, "last_backup", today())
         prune_backups(int(s.get("backup_keep_days") or 30))
         print(f"[{now_str()}] daily backup saved: {p}")
+    c.execute("DELETE FROM idempotency WHERE at<?", (time.time() - 48 * 3600,))
 
 
 def scheduler_loop():
