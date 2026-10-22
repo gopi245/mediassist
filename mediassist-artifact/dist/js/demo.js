@@ -94,13 +94,25 @@ ASSIST.ask = async (text, voice) => {
   }
 };
 
-/* The Claude viewer blocks microphones on published pages, so in the demo the mic button hands over to the
+/* The Claude viewer usually blocks microphones on published pages. The mic button tries real speech recognition first
+   (it works when the viewer or browser allows it); only when the microphone is refused does it hand over to the
    device's own voice typing (Windows+H on a PC, the mic key on a phone keyboard), which types into the box. */
-on("askMic", () => {
-  const inp = $("#askText"); inp.focus();
+const realMic = ACTIONS.askMic;
+function micFallback() {
+  const inp = $("#askText"); if (!inp) return;
   const pc = !/Android|iPhone|iPad/i.test(navigator.userAgent);
   inp.placeholder = pc ? "Press Windows + H and speak…" : "Tap the mic on your keyboard and speak…";
-  dialog("Speak your question", `<p>This demo runs inside the Claude viewer, which doesn't let pages use the microphone. Use your device's voice typing instead. It types straight into the question box:</p>
+  dialog("Speak your question", `<p>This view doesn't let the page use the microphone. Use your device's voice typing instead. It types straight into the question box:</p>
     <ul><li><b>Windows PC:</b> press <span class="mono">Windows + H</span>, speak, then press Send.</li><li><b>Mac:</b> press <span class="mono">Fn</span> twice (Dictation).</li><li><b>Phone:</b> tap the 🎤 on your keyboard.</li></ul>
     <p class="small muted">In the installed MediAssist (Chrome or Edge), the mic button listens directly in English, Telugu and Hindi. Voice replies work here too: choose <b>Voice reply</b>.</p>`, { ok: "", cancel: "Got it" }).then(() => inp.focus());
+}
+on("askMic", async () => {
+  if (typeof REC !== "undefined" && REC) return realMic();  // already listening: the real handler stops it
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return micFallback();
+  try { const st = navigator.permissions && await navigator.permissions.query({ name: "microphone" }); if (st && st.state === "denied") return micFallback(); } catch (e) {}
+  realMic();
+  if (typeof REC === "undefined" || !REC) return;
+  const orig = REC.onerror;
+  REC.onerror = e => { if (e.error === "not-allowed" || e.error === "service-not-allowed" || e.error === "audio-capture") { stopListening(); $("#askText").placeholder = "Type or tap the mic and speak"; micFallback(); } else orig(e); };
 });
