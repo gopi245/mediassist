@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MediAssist Clinic</title>
+<style>
+:root{--bg:#f4f7fb;--card:#fff;--tx:#1b2433;--mu:#66748a;--pr:#0f7b8a;--red:#d93838;--org:#e08a12;--grn:#2e9b55;--bd:#e2e8f0}
+*{box-sizing:border-box}body{margin:0;font-family:Segoe UI,system-ui,sans-serif;background:var(--bg);color:var(--tx)}
+header{background:var(--pr);color:#fff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+header b{font-size:19px}header button{background:rgba(255,255,255,.18);color:#fff;border:0;padding:6px 12px;border-radius:6px;cursor:pointer;margin-left:6px}
+nav{display:flex;flex-wrap:wrap;gap:6px;padding:10px 16px;background:#fff;border-bottom:1px solid var(--bd)}
+nav button{border:0;background:#eef3f7;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:14px}nav button.on{background:var(--pr);color:#fff}
+main{padding:16px;max-width:1150px;margin:auto}.tab{display:none}.tab.on{display:block}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin-bottom:12px;overflow-x:auto}
+.kpi b{font-size:28px;display:block}.kpi span{color:var(--mu);font-size:13px}
+label{display:block;font-size:13px;color:var(--mu);margin:8px 0 3px}
+input,select,textarea{width:100%;padding:8px;border:1px solid var(--bd);border-radius:8px;font:inherit;background:#fff}
+.btn{background:var(--pr);color:#fff;border:0;padding:9px 16px;border-radius:8px;cursor:pointer;margin:10px 6px 0 0}
+.btn.gray{background:#556}.btn.green{background:#25a35a}.btn.sm{padding:4px 10px;margin:0;font-size:12px}
+table{width:100%;border-collapse:collapse;font-size:14px}td,th{padding:7px;border-bottom:1px solid var(--bd);text-align:left;vertical-align:top}
+tr.click{cursor:pointer}tr.click:hover{background:#f0f6f8}
+.tag{padding:3px 9px;border-radius:20px;color:#fff;font-size:12px;font-weight:600;white-space:nowrap}
+.red{background:var(--red)}.org{background:var(--org)}.grn{background:var(--grn)}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+.msg{padding:10px;border-radius:8px;margin-top:10px;white-space:pre-wrap}.ok{background:#e5f6ec}.err{background:#fde8e8}
+pre.rep{white-space:pre-wrap;font:14px/1.5 Segoe UI,sans-serif;margin:0}
+#login{max-width:360px;margin:12vh auto}.hint{font-size:13px;color:var(--mu)}
+@media print{header,nav,.tab:not(#t-report),#t-report>.card:not(#repBox){display:none!important}#t-report{display:block!important}.card{border:0}}
+</style></head><body>
+
+<div id="login" class="card" hidden><h2>🏥 MediAssist Login</h2>
+<label>Username</label><input id="lu" autocomplete="username"><label>Password</label><input id="lp" type="password" autocomplete="current-password">
+<button class="btn" onclick="login()">Log in</button><div id="lmsg"></div></div>
+
+<div id="app" hidden>
+<header><b>🏥 <span id="clinicName">MediAssist</span></b><span><span id="who"></span>
+<button onclick="changePw()">Change password</button><button onclick="logout()">Log out</button></span></header>
+<nav id="nav"></nav>
+<main>
+<section class="tab" id="t-dash"><div class="grid" id="kpis"></div>
+<div class="card"><h3>Alerts</h3><div id="alerts"></div></div>
+<div class="card"><h3>Recent report deliveries</h3><table id="dashLog"></table></div></section>
+
+<section class="tab" id="t-patients"><div class="card" data-perm="patients_write"><h3>Register Patient</h3>
+<div class="row"><div><label>Full name *</label><input id="pName"></div><div><label>Phone *</label><input id="pPhone"></div>
+<div><label>Age</label><input id="pAge" type="number" min="0"></div>
+<div><label>Gender</label><select id="pGen"><option>Male</option><option>Female</option><option>Other</option></select></div>
+<div><label>Address</label><input id="pAddr"></div><div><label>Allergies (comma separated)</label><input id="pAll" placeholder="penicillin, sulfa"></div>
+<div><label>Complaint / diagnosis</label><input id="pDx"></div><div><label>Doctor</label><input id="pDoc"></div></div>
+<button class="btn" onclick="addPatient()">Save Patient</button><div id="pMsg"></div></div>
+<div class="card"><h3>Patients</h3><input id="pSearch" placeholder="Search by name, phone or ID (P0001)..." oninput="debounce(loadPatients)">
+<table id="pTable"></table></div>
+<div class="card" id="pDetail" hidden></div></section>
+
+<section class="tab" id="t-dispense"><div class="card"><h3>Dispense Medicine</h3>
+<div class="row"><div><label>Patient * (type name, phone or ID)</label><input id="dPat" list="patList"><datalist id="patList"></datalist></div>
+<div><label>Medicine *</label><select id="dMed" onchange="fillPrice()"></select></div>
+<div><label>Quantity (tablets / bottles) *</label><input id="dQty" type="number" min="1" value="10"></div>
+<div><label>Price per unit (₹)</label><input id="dPrice" type="number" step=".01"></div>
+<div><label>Dosage</label><input id="dDose" placeholder="1-0-1 after food, 5 days"></div></div>
+<button class="btn" onclick="doDispense()">Dispense & Record</button><div id="dMsg"></div>
+<p class="hint">Stock comes from the batch that expires first. Expired stock is never dispensed. You are warned about allergies.</p></div>
+<div class="card"><h3>Today's Sales</h3><table id="dTable"></table></div></section>
+
+<section class="tab" id="t-meds"><div class="card" data-perm="meds"><h3>Add Stock (new batch)</h3>
+<div class="row"><div><label>Medicine name *</label><input id="mName" list="medNames"><datalist id="medNames"></datalist></div>
+<div><label>Type</label><select id="mType"><option>Tablet</option><option>Capsule</option><option>Tonic/Syrup</option><option>Injection</option><option>Other</option></select></div>
+<div><label>Batch no.</label><input id="mBatch"></div><div><label>Quantity *</label><input id="mQty" type="number" min="1"></div>
+<div><label>Price per unit (₹)</label><input id="mPrice" type="number" step=".01"></div>
+<div><label>Expiry date *</label><input id="mExp" type="date"></div><div><label>Opened on (syrups)</label><input id="mOpen" type="date"></div></div>
+<button class="btn" onclick="addMed()">Add Batch</button><div id="mMsg"></div>
+<p class="hint">Opened tonics/syrups expire 30 days after opening, or on the printed date if that is earlier.</p></div>
+<div class="card"><h3>Stock by medicine</h3><table id="mSum"></table></div>
+<div class="card"><h3>Batches & expiry</h3><table id="mTable"></table></div></section>
+
+<section class="tab" id="t-report"><div class="card"><h3>End-of-Day Report</h3>
+<div class="row"><div><label>Date</label><input id="rDate" type="date" onchange="loadReport()"></div></div>
+<button class="btn" onclick="sendRep(['email','whatsapp'])">📨 Send now (email + WhatsApp)</button>
+<button class="btn gray" onclick="sendRep(['email'])">✉ Email only</button>
+<button class="btn green" onclick="sendRep(['whatsapp'])">💬 WhatsApp only</button>
+<button class="btn gray" onclick="window.print()">🖨 Print / PDF</button>
+<button class="btn gray" onclick="location.href='/api/sales.csv?date='+rDate.value">⬇ Sales CSV</button>
+<div id="rMsg"></div><p class="hint" id="rAuto"></p></div>
+<div class="card" id="repBox"><pre class="rep" id="rText"></pre></div>
+<div class="card"><h3>Delivery log</h3><table id="rLog"></table></div></section>
+
+<section class="tab" id="t-settings"><div class="card"><h3>Clinic & Doctor</h3>
+<div class="row"><div><label>Clinic name</label><input data-s="clinic_name"></div>
+<div><label>Doctor email(s), comma separated</label><input data-s="doctor_email"></div>
+<div><label>Doctor WhatsApp (with country code)</label><input data-s="doctor_whatsapp" placeholder="919876543210"></div>
+<div><label>Send report automatically at</label><input data-s="report_time" type="time"></div>
+<div><label>Automatic sending</label><select data-s="auto_send"><option value="1">On</option><option value="0">Off</option></select></div>
+<div><label>Low-stock warning below (units)</label><input data-s="low_stock_level" type="number"></div></div></div>
+<div class="card"><h3>Email (SMTP)</h3><p class="hint">Gmail: turn on 2-step verification, create an <b>App password</b> (Google Account → Security → App passwords) and paste it below. Host smtp.gmail.com, port 587.</p>
+<div class="row"><div><label>SMTP host</label><input data-s="smtp_host"></div><div><label>Port</label><input data-s="smtp_port"></div>
+<div><label>Login email</label><input data-s="smtp_user"></div><div><label>App password</label><input data-s="smtp_pass" type="password"></div>
+<div><label>From address (optional)</label><input data-s="smtp_from"></div></div></div>
+<div class="card"><h3>WhatsApp (Twilio)</h3><p class="hint">Create a Twilio account → Messaging → WhatsApp. For testing use the WhatsApp Sandbox (the doctor must first send the join code to the sandbox number).</p>
+<div class="row"><div><label>Account SID</label><input data-s="twilio_sid"></div><div><label>Auth token</label><input data-s="twilio_token" type="password"></div>
+<div><label>Twilio WhatsApp number</label><input data-s="twilio_from" placeholder="14155238886"></div></div>
+<button class="btn" onclick="saveSettings()">Save Settings</button>
+<button class="btn gray" onclick="location.href='/api/backup'">⬇ Download database backup</button><div id="sMsg"></div></div></section>
+
+<section class="tab" id="t-users"><div class="card"><h3>Add Staff Login</h3>
+<div class="row"><div><label>Username</label><input id="uName"></div><div><label>Full name</label><input id="uFull"></div>
+<div><label>Role</label><select id="uRole"><option value="reception">Reception — register patients</option><option value="pharmacy">Pharmacy — stock & dispensing</option><option value="doctor">Doctor — view patients & reports</option><option value="admin">Admin — everything</option></select></div>
+<div><label>Password (min 8)</label><input id="uPw" type="password"></div></div>
+<button class="btn" onclick="addUser()">Create Login</button><div id="uMsg"></div></div>
+<div class="card"><h3>Staff</h3><table id="uTable"></table></div></section>
+</main></div>
+
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const money=n=>"₹"+Number(n||0).toFixed(2), today=()=>{const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,10)};
+let me=null,meds={summary:[],batches:[]},patList=[],timer;
+const debounce=f=>{clearTimeout(timer);timer=setTimeout(f,250)};
+async function api(path,body){const r=await fetch(path,body?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}:{});
+const j=await r.json().catch(()=>({error:"Bad response"}));if(r.status==401&&path!="/api/login"){showLogin();throw new Error("Please log in")}
+if(!r.ok){const e=new Error(j.error||"Error");e.status=r.status;throw e}return j}
+const say=(el,text,ok=true)=>{$(el).innerHTML=`<div class="msg ${ok?"ok":"err"}">${esc(text)}</div>`};
+const can=p=>me&&me.perms.includes(p);
+
+const TABS=[["dash","Dashboard","patients_read"],["patients","Patients","patients_read"],["dispense","Dispense","dispense"],
+["meds","Stock & Expiry","patients_read"],["report","Daily Report","report"],["settings","Settings","admin"],["users","Staff","admin"]];
+function showLogin(){$("app").hidden=true;$("login").hidden=false}
+async function login(){try{await api("/api/login",{username:lu.value,password:lp.value});lp.value="";start()}catch(e){say("lmsg",e.message,false)}}
+lp.onkeydown=e=>{if(e.key=="Enter")login()};
+async function logout(){await api("/api/logout",{});showLogin()}
+async function changePw(){const o=prompt("Current password");if(o==null)return;const n=prompt("New password (min 8 characters)");if(!n)return;
+try{await api("/api/password",{old:o,new:n});alert("Password changed")}catch(e){alert(e.message)}}
+async function start(){try{me=await api("/api/me")}catch(e){return}
+$("login").hidden=true;$("app").hidden=false;who.textContent=`${me.name||me.username} (${me.role})`;
+document.querySelectorAll("[data-perm]").forEach(el=>el.hidden=!can(el.dataset.perm));
+const tabs=TABS.filter(t=>can(t[2]));nav.innerHTML=tabs.map(t=>`<button data-t="${t[0]}">${t[1]}</button>`).join("");
+rDate.value=today();show(tabs[0][0])}
+nav.onclick=e=>{if(e.target.dataset.t)show(e.target.dataset.t)};
+function show(t){document.querySelectorAll(".tab,nav button").forEach(x=>x.classList.remove("on"));
+$("t-"+t).classList.add("on");nav.querySelector(`[data-t=${t}]`).classList.add("on");
+({dash:loadDash,patients:loadPatients,dispense:loadDispense,meds:loadMeds,report:loadReport,settings:loadSettings,users:loadUsers})[t]().catch(e=>console.error(e))}
+
+const statusTag=m=>m.days_left<0?`<span class="tag red">EXPIRED</span>`:m.days_left<=30?`<span class="tag red">${m.days_left} days</span>`:m.days_left<=90?`<span class="tag org">${m.days_left} days</span>`:`<span class="tag grn">OK</span>`;
+const logRows=l=>"<tr><th>When</th><th>For day</th><th>Channel</th><th>Result</th></tr>"+(l.map(r=>`<tr><td>${esc(r.sent_at)}</td><td>${esc(r.day)}</td><td>${esc(r.channel)}</td><td><span class="tag ${r.ok?"grn":"red"}">${r.ok?"Sent":"Failed"}</span> ${esc(r.detail)}</td></tr>`).join("")||"<tr><td colspan=4>Nothing sent yet</td></tr>");
+
+async function loadDash(){const d=await api("/api/dashboard");
+kpis.innerHTML=[["New patients today",d.patients],["Patients served",d.buyers],["Medicines sold",d.sales],["Sales today",money(d.revenue)],["Low stock",d.low.length],["Expiring ≤30 days",d.expiring.length]]
+.map(([l,v])=>`<div class="card kpi"><b>${v}</b><span>${l}</span></div>`).join("");
+alerts.innerHTML=[...d.expiring.map(m=>`💊 <b>${esc(m.name)}</b> batch ${esc(m.batch)} (${m.qty}) — ${m.days_left<0?"EXPIRED, remove from shelf":"expires in "+m.days_left+" days, use first"}`),
+...d.low.map(x=>`📦 <b>${esc(x.name)}</b> low: ${x.usable} left — reorder`)].map(x=>`<p>${x}</p>`).join("")||"No alerts 🎉";
+dashLog.innerHTML=logRows(d.log)}
+
+async function loadPatients(){const list=await api("/api/patients?q="+encodeURIComponent(pSearch.value));
+pTable.innerHTML="<tr><th>ID</th><th>Name</th><th>Age/Sex</th><th>Phone</th><th>Diagnosis</th><th>Allergies</th><th>Visits</th><th>Spent</th><th>Registered</th></tr>"+
+list.map(p=>`<tr class="click" onclick="patientDetail(${p.id})"><td>${p.code}</td><td>${esc(p.name)}</td><td>${esc(p.age??"?")}/${esc((p.gender||" ")[0])}</td><td>${esc(p.phone)}</td><td>${esc(p.dx)}</td><td>${esc(p.allergies)}</td><td>${p.visits}</td><td>${money(p.spent)}</td><td>${esc(p.created_at)}</td></tr>`).join("")}
+async function patientDetail(id){const p=await api("/api/patients/"+id);pDetail.hidden=false;
+pDetail.innerHTML=`<h3>${p.code} — ${esc(p.name)}</h3><p>${esc(p.age??"?")} yrs, ${esc(p.gender)} · 📞 ${esc(p.phone)} · ${esc(p.address)}<br>Diagnosis: ${esc(p.dx||"-")} · Doctor: ${esc(p.doctor||"-")} · <b>Allergies: ${esc(p.allergies||"none")}</b></p>
+<table><tr><th>Date</th><th>Medicine</th><th>Qty</th><th>Dosage</th><th>Amount</th></tr>${p.history.map(h=>`<tr><td>${esc(h.created_at)}</td><td>${esc(h.med)}</td><td>${h.qty}</td><td>${esc(h.dose)}</td><td>${money(h.total)}</td></tr>`).join("")||"<tr><td colspan=5>No medicines yet</td></tr>"}</table>`;
+pDetail.scrollIntoView({behavior:"smooth"})}
+async function addPatient(){try{const r=await api("/api/patients",{name:pName.value,phone:pPhone.value,age:pAge.value,gender:pGen.value,address:pAddr.value,allergies:pAll.value,dx:pDx.value,doctor:pDoc.value});
+["pName","pPhone","pAge","pAddr","pAll","pDx"].forEach(i=>$(i).value="");say("pMsg","Saved as "+r.code);loadPatients()}catch(e){say("pMsg",e.message,false)}}
+
+async function loadDispense(){[patList,meds]=await Promise.all([api("/api/patients?q="),api("/api/meds")]);
+$("patList").innerHTML=patList.map(p=>`<option value="${p.code} — ${esc(p.name)} (${esc(p.phone)})">`).join("");
+const cur=dMed.value;dMed.innerHTML=meds.summary.filter(s=>s.usable>0).map(s=>`<option value="${esc(s.name)}">${esc(s.name)} — ${s.usable} in stock</option>`).join("")||"<option value=''>No stock — add in Stock & Expiry</option>";
+if(cur)dMed.value=cur;fillPrice();
+if(can("report")){const s=await api("/api/sales?date="+today());
+dTable.innerHTML="<tr><th>Time</th><th>Patient</th><th>Medicine</th><th>Qty</th><th>Dosage</th><th>Amount</th><th>Batches</th></tr>"+
+s.map(r=>`<tr><td>${esc(r.created_at.slice(11))}</td><td>${r.code} ${esc(r.patient)}</td><td>${esc(r.med)}</td><td>${r.qty}</td><td>${esc(r.dose)}</td><td>${money(r.total)}</td><td>${esc(r.batches)}</td></tr>`).join("")+
+`<tr><th colspan=5>Total</th><th>${money(s.reduce((a,r)=>a+r.total,0))}</th><th></th></tr>`}}
+function fillPrice(){const s=meds.summary.find(x=>x.name==dMed.value);dPrice.value=s&&s.price?s.price:""}
+async function doDispense(override=false){const code=(dPat.value.match(/P(\d+)/i)||[])[1];
+if(!code)return say("dMsg","Choose a patient from the list",false);
+const body={patient_id:+code,med:dMed.value,qty:+dQty.value,price:dPrice.value,dose:dDose.value,override_allergy:override};
+try{const r=await api("/api/dispense",body);say("dMsg",`✅ ${dQty.value} × ${dMed.value} to ${r.patient} — ${money(r.total)} (batch ${r.batches.join(", ")})`);dDose.value="";loadDispense()}
+catch(e){if(e.status==409&&confirm("⚠ "+e.message+"\nDispense anyway?"))return doDispense(true);say("dMsg",e.message,false)}}
+
+async function loadMeds(){meds=await api("/api/meds");
+$("medNames").innerHTML=meds.summary.map(s=>`<option value="${esc(s.name)}">`).join("");
+mSum.innerHTML="<tr><th>Medicine</th><th>Type</th><th>Usable stock</th><th>Price</th></tr>"+meds.summary.map(s=>`<tr><td>${esc(s.name)}</td><td>${esc(s.type)}</td><td>${s.usable}</td><td>${money(s.price)}</td></tr>`).join("");
+mTable.innerHTML="<tr><th>Medicine</th><th>Type</th><th>Batch</th><th>Qty</th><th>Expires</th><th>Status</th><th></th></tr>"+meds.batches.map(m=>`<tr><td>${esc(m.name)}</td><td>${esc(m.type)}</td><td>${esc(m.batch)}</td><td>${m.qty}</td><td>${m.effective_expiry}${m.opened?"<br><small>opened "+esc(m.opened)+"</small>":""}</td><td>${statusTag(m)}</td><td>${can("meds")?`<button class="btn sm gray" onclick="removeMed(${m.id})">Write off</button>`:""}</td></tr>`).join("")}
+async function addMed(){try{await api("/api/meds",{name:mName.value,type:mType.value,batch:mBatch.value,qty:mQty.value,price:mPrice.value,expiry:mExp.value,opened:mOpen.value});
+["mName","mBatch","mQty","mPrice","mExp","mOpen"].forEach(i=>$(i).value="");say("mMsg","Batch added");loadMeds()}catch(e){say("mMsg",e.message,false)}}
+async function removeMed(id){if(confirm("Write off this batch (expired / damaged / returned)? Its quantity becomes 0.")){await api(`/api/meds/${id}/remove`,{});loadMeds()}}
+
+async function loadReport(){const r=await api("/api/report?date="+rDate.value);rText.textContent=r.text;rLog.innerHTML=logRows(r.log)}
+async function sendRep(ch){say("rMsg","Sending...");try{const res=await api("/api/report/send",{date:rDate.value,channels:ch});
+$("rMsg").innerHTML=res.map(x=>`<div class="msg ${x.ok?"ok":"err"}">${x.ok?"✅":"❌"} ${esc(x.channel)}: ${esc(x.detail)}</div>`).join("");loadReport()}catch(e){say("rMsg",e.message,false)}}
+
+async function loadSettings(){const s=await api("/api/settings");document.querySelectorAll("[data-s]").forEach(el=>el.value=s[el.dataset.s]??"");}
+async function saveSettings(){const b={};document.querySelectorAll("[data-s]").forEach(el=>b[el.dataset.s]=el.value);
+try{await api("/api/settings",b);say("sMsg","Saved");clinicName.textContent=b.clinic_name}catch(e){say("sMsg",e.message,false)}}
+
+async function loadUsers(){const u=await api("/api/users");
+uTable.innerHTML="<tr><th>Username</th><th>Name</th><th>Role</th><th></th></tr>"+u.map(x=>`<tr><td>${esc(x.username)}</td><td>${esc(x.name)}</td><td>${esc(x.role)}</td><td>
+<button class="btn sm gray" onclick="resetUser(${x.id})">Reset password</button> ${x.id!=me.id?`<button class="btn sm" style="background:var(--red)" onclick="delUser(${x.id})">Delete</button>`:""}</td></tr>`).join("")}
+async function addUser(){try{await api("/api/users",{username:uName.value,name:uFull.value,role:uRole.value,password:uPw.value});
+["uName","uFull","uPw"].forEach(i=>$(i).value="");say("uMsg","Login created");loadUsers()}catch(e){say("uMsg",e.message,false)}}
+async function resetUser(id){const p=prompt("New password (min 8 characters)");if(!p)return;try{await api(`/api/users/${id}/reset`,{password:p});alert("Password reset")}catch(e){alert(e.message)}}
+async function delUser(id){if(confirm("Delete this login?")){await api(`/api/users/${id}/delete`,{});loadUsers()}}
+
+start().catch(()=>showLogin());
+</script></body></html>

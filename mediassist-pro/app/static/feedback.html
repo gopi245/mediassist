@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>How was your visit?</title><link rel="icon" href="/icon.svg"><link rel="stylesheet" href="/app.css">
+</head><body class="public">
+<main class="pub-wrap">
+  <form class="card stack" id="fbForm">
+    <h2 id="fbTitle">How was your visit?</h2>
+    <div class="stars" role="radiogroup" aria-label="Rating">
+      <label><input type="radio" name="rating" value="1"><span>1</span></label><label><input type="radio" name="rating" value="2"><span>2</span></label>
+      <label><input type="radio" name="rating" value="3"><span>3</span></label><label><input type="radio" name="rating" value="4"><span>4</span></label>
+      <label><input type="radio" name="rating" value="5"><span>5</span></label>
+    </div>
+    <p class="small muted">1 = very poor, 5 = excellent</p>
+    <label for="fbC">Anything we should improve?</label><textarea id="fbC" name="comment"></textarea>
+    <button class="btn wide">Send feedback</button><div id="fbMsg" role="status"></div>
+  </form>
+</main>
+<script src="/js/public.js"></script>
+</body></html>

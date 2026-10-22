@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Book an appointment</title><link rel="icon" href="/icon.svg"><link rel="stylesheet" href="/app.css">
+</head><body class="public">
+<main class="pub-wrap">
+  <div class="brand dark"><div class="mark"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8 2h4v6h6v4h-6v6H8v-6H2V8h6z"/></svg></div><div><b id="bName">Book an appointment</b><span>Choose a doctor and a time</span></div></div>
+  <form class="card stack" id="bookForm">
+    <div class="fields">
+      <div class="span2"><label for="fName">Your name</label><input id="fName" name="name" required autocomplete="name"></div>
+      <div><label for="fPhone">Mobile number</label><input id="fPhone" name="phone" inputmode="tel" required autocomplete="tel"></div>
+      <div><label for="fAge">Age</label><input id="fAge" name="age" type="number" min="0" max="120"></div>
+      <div><label for="fGen">Gender</label><select id="fGen" name="gender"><option>Male</option><option>Female</option><option>Other</option></select></div>
+      <div class="span2"><label for="fDoc">Doctor</label><select id="fDoc" name="doctor_id"></select></div>
+      <div><label for="fDay">Day</label><input id="fDay" name="day" type="date"></div>
+      <div class="span2"><label for="fSlot">Time</label><select id="fSlot" name="slot"></select></div>
+      <div class="span2"><label for="fNote">Problem (optional)</label><input id="fNote" name="note"></div>
+    </div>
+    <label class="check"><input type="checkbox" name="consent" id="fCons"> I agree that the hospital stores my details to book and treat me, and may send me WhatsApp messages about this appointment.</label>
+    <button class="btn wide">Book appointment</button>
+    <div id="bMsg" role="status"></div>
+  </form>
+</main>
+<script src="/js/public.js"></script>
+</body></html>

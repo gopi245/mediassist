@@ -1,0 +1,1374 @@
+<meta charset="utf-8">
+<title>MediAssist Pro</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: clinical command centre. Ink-teal sidebar (navigation + identity) beside a pale work plane of cards; collapses to a top strip on phones */
+:root{
+  --plane:#eef3f2;--surface:#ffffff;--surface-2:#f6f9f8;--ink:#11252a;--ink-2:#3f5459;--muted:#6b7d81;--line:#dbe4e2;--grid:#e6ecea;--axis:#c3cfcc;
+  --accent:#0a6c6a;--accent-ink:#ffffff;--accent-soft:#dff0ee;
+  --side:#0f2e33;--side-2:#163a40;--side-ink:#e3f0ee;--side-muted:#8fb0ad;--side-accent:#6fd3c5;
+  --crit:#c2352a;--crit-soft:#fbe7e4;--warn:#9c5c00;--warn-soft:#fcefd8;--ok:#237340;--ok-soft:#e1f1e6;
+  --s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;
+  --shadow:0 1px 2px rgba(16,42,46,.05),0 4px 14px rgba(16,42,46,.05);
+  --f-display:"Bricolage Grotesque",system-ui,sans-serif;
+  --f-body:"Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --plane:#0b1416;--surface:#132024;--surface-2:#17272b;--ink:#e3ecea;--ink-2:#b9c9c7;--muted:#8ea2a4;--line:#243539;--grid:#1f2f33;--axis:#33474b;
+  --accent:#4fb6ae;--accent-ink:#04201e;--accent-soft:#16373a;
+  --side:#08191c;--side-2:#10282c;--side-ink:#e3f0ee;--side-muted:#7f9e9b;--side-accent:#6fd3c5;
+  --crit:#ff8073;--crit-soft:#3a1e1b;--warn:#f0a83f;--warn-soft:#382a12;--ok:#63c784;--ok-soft:#153222;
+  --s1:#3987e5;--s2:#d95926;--s3:#199e70;--shadow:none;color-scheme:dark}}
+:root[data-theme="dark"]{
+  --plane:#0b1416;--surface:#132024;--surface-2:#17272b;--ink:#e3ecea;--ink-2:#b9c9c7;--muted:#8ea2a4;--line:#243539;--grid:#1f2f33;--axis:#33474b;
+  --accent:#4fb6ae;--accent-ink:#04201e;--accent-soft:#16373a;
+  --side:#08191c;--side-2:#10282c;--side-ink:#e3f0ee;--side-muted:#7f9e9b;--side-accent:#6fd3c5;
+  --crit:#ff8073;--crit-soft:#3a1e1b;--warn:#f0a83f;--warn-soft:#382a12;--ok:#63c784;--ok-soft:#153222;
+  --s1:#3987e5;--s2:#d95926;--s3:#199e70;--shadow:none;color-scheme:dark}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--plane);color:var(--ink);font:14px/1.5 var(--f-body)}
+[hidden]{display:none!important}
+button{font:inherit}
+.app{display:grid;grid-template-columns:248px minmax(0,1fr);min-height:100%}
+/* ---------- sidebar ---------- */
+.side{background:var(--side);color:var(--side-ink);display:flex;flex-direction:column;gap:18px;padding:20px 14px;position:sticky;top:0;height:100vh;height:100dvh;overflow:auto}
+.brand{display:flex;gap:10px;align-items:center;padding:0 6px}
+.brand .mark{width:34px;height:34px;border-radius:9px;background:var(--side-accent);display:grid;place-items:center;flex:none}
+.brand .mark svg{width:20px;height:20px}
+.brand b{font:800 19px/1 var(--f-display);letter-spacing:-.02em;display:block}
+.brand span{font-size:11.5px;color:var(--side-muted)}
+#nav{display:flex;flex-direction:column;gap:2px}
+#nav button{display:flex;align-items:center;gap:11px;border:0;background:none;color:var(--side-muted);padding:9px 10px;border-radius:8px;cursor:pointer;font-weight:500;text-align:left;white-space:nowrap}
+#nav button svg{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+#nav button:hover{background:var(--side-2);color:var(--side-ink)}
+#nav button.on{background:var(--side-2);color:var(--side-ink);box-shadow:inset 3px 0 0 var(--side-accent)}
+#nav .badge{margin-left:auto;background:var(--crit);color:#fff;font:700 10.5px/1 var(--f-body);padding:3px 6px;border-radius:10px}
+.who{margin-top:auto;background:var(--side-2);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px}
+.who label{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--side-muted);margin:0}
+.who select{background:var(--side);color:var(--side-ink);border:1px solid #2a4e54;border-radius:7px;padding:7px 8px;width:100%}
+.who .av{display:flex;gap:10px;align-items:center}
+.avatar{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font:700 13px var(--f-body);flex:none;background:var(--accent-soft);color:var(--accent)}
+.who .avatar{background:var(--side-accent);color:var(--side)}
+.who .av b{display:block;font-size:13.5px}.who .av span{font-size:11.5px;color:var(--side-muted)}
+.linkbtn{background:none;border:0;color:var(--side-muted);font-size:12px;cursor:pointer;text-decoration:underline;text-underline-offset:3px;align-self:flex-start;padding:0 6px}
+/* ---------- main ---------- */
+.mainwrap{min-width:0;padding-left:max(24px,env(safe-area-inset-left,0px));padding-right:max(24px,env(safe-area-inset-right,0px));padding-block:20px 48px}
+.topbar{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:18px;max-width:1240px}
+.crumb{font-size:12px;color:var(--muted);letter-spacing:.02em}
+h1{font:800 clamp(24px,3vw,32px)/1.1 var(--f-display);letter-spacing:-.02em;margin:2px 0 0;text-wrap:balance}
+.top-r{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:5px 11px;font-size:12.5px;color:var(--ink-2);white-space:nowrap}
+.chip .dot{width:7px;height:7px;border-radius:50%;background:var(--ok)}
+main{max-width:1240px}
+.tab{display:none}.tab.on{display:block;animation:fade .2s ease-out}
+@keyframes fade{from{opacity:.4;transform:translateY(3px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.tab.on{animation:none}}
+h2{font:700 17px/1.25 var(--f-display);margin:0;letter-spacing:-.01em}
+h3{font:600 14px/1.3 var(--f-body);margin:0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 18px;box-shadow:var(--shadow);min-width:0}
+.card-h{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.card-h p{margin:2px 0 0;color:var(--muted);font-size:12.5px}
+.stack{display:flex;flex-direction:column;gap:14px}
+.g2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start}
+.g-main{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:14px;align-items:start}
+.g-form{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:14px;align-items:start}
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:14px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px 10px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:2px;min-width:0}
+.kpi .lab{font-size:12px;color:var(--muted);font-weight:500}
+.kpi .val{font:700 27px/1.15 var(--f-body);letter-spacing:-.02em}
+.kpi .val.crit{color:var(--crit)}.kpi .val.warn{color:var(--warn)}
+.kpi .sub{font-size:12px;color:var(--muted);min-height:18px}
+.kpi svg.spark{width:100%;height:34px;display:block;margin-top:4px}
+.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px 12px}
+.span2{grid-column:span 2}
+label{display:block;font-size:12px;color:var(--muted);margin:0 0 4px;font-weight:500}
+input,select,textarea{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);font:inherit}
+textarea{min-height:68px;resize:vertical}
+input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.btn{border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);font-weight:600;font-size:13px;padding:8px 15px;border-radius:8px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{filter:brightness(1.07)}
+.btn.ghost{background:transparent;color:var(--accent)}
+.btn.ghost:hover{background:var(--accent-soft);filter:none}
+.btn.danger{background:var(--crit);border-color:var(--crit);color:#fff}
+.btn.sm{padding:4px 10px;font-size:12px}
+.tbl{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);white-space:nowrap;background:var(--surface-2)}
+td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+tr:last-child td{border-bottom:0}
+tr.click{cursor:pointer}tr.click:hover td{background:var(--accent-soft)}
+.mono{font-family:var(--f-mono);font-size:12px}
+.muted{color:var(--muted)}.small{font-size:12px}
+.pill{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;white-space:nowrap}
+.pill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.p-crit{background:var(--crit-soft);color:var(--crit)}.p-warn{background:var(--warn-soft);color:var(--warn)}.p-ok{background:var(--ok-soft);color:var(--ok)}.p-info{background:var(--accent-soft);color:var(--accent)}
+.p-plain::before{display:none}
+.alert{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-left:3px solid var(--warn);background:var(--surface);padding:9px 12px;border-radius:8px;margin:0 0 8px}
+.alert.high{border-left-color:var(--crit);background:var(--crit-soft);border-color:transparent;border-left-color:var(--crit)}
+.alert.info{border-left-color:var(--accent)}
+.alert .ic{font:700 11px/18px var(--f-body);width:18px;height:18px;border-radius:50%;display:grid;place-items:center;flex:none;color:#fff;background:var(--warn)}
+.alert.high .ic{background:var(--crit)}.alert.info .ic{background:var(--accent)}
+.alert .t{flex:1;min-width:0}
+.allergy{color:var(--crit);font-weight:600}
+.banner{background:var(--crit-soft);color:var(--crit);border-radius:8px;padding:7px 11px;font-weight:600;font-size:13px;display:flex;gap:8px;align-items:center}
+.sub{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.sub button{border:1px solid var(--line);background:var(--surface);color:var(--ink-2);padding:7px 14px;border-radius:20px;font-weight:500;font-size:13px;cursor:pointer}
+.sub button.on{background:var(--ink);border-color:var(--ink);color:var(--surface)}
+.pane{display:none}.pane.on{display:block}
+pre.rep{white-space:pre-wrap;font:12.5px/1.65 var(--f-mono);margin:0;overflow-wrap:anywhere;color:var(--ink-2)}
+.empty{color:var(--muted);font-size:13px;padding:10px 0;text-align:center}
+/* tour */
+.tour{background:linear-gradient(120deg,var(--side) 0%,#134047 100%);color:var(--side-ink);border-radius:16px;padding:20px 22px;margin-bottom:14px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:18px;align-items:center}
+.tour h2{font-size:22px;color:#fff}.tour p{margin:6px 0 0;color:var(--side-muted);font-size:13px;max-width:44ch}
+.steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.step{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:12px;color:var(--side-ink);text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:4px;transition:background .15s}
+.step:hover{background:rgba(255,255,255,.12)}
+.step .n{font:700 11px var(--f-mono);color:var(--side-accent);letter-spacing:.06em}
+.step b{font-size:13.5px}.step span{font-size:12px;color:var(--side-muted)}
+/* branch cards */
+.branches{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.bcard{border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--surface);cursor:pointer;display:flex;flex-direction:column;gap:10px;text-align:left;color:inherit}
+.bcard:hover{border-color:var(--accent)}
+.bcard .h{display:flex;gap:10px;align-items:center}
+.code{font:600 11.5px var(--f-mono);background:var(--ink);color:var(--surface);border-radius:6px;padding:3px 6px}
+.bcard .h b{font-size:14px;display:block;line-height:1.2}.bcard .h span{font-size:11.5px;color:var(--muted)}
+.bstats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.bstats div{background:var(--surface-2);border-radius:8px;padding:6px 8px}
+.bstats b{display:block;font-size:15px}.bstats span{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.health{display:flex;height:6px;border-radius:4px;overflow:hidden;gap:2px;background:var(--surface)}
+.health i{display:block;height:100%}
+/* charts */
+.chart{position:relative}
+.chart svg{display:block;width:100%;overflow:visible}
+.chart text{font:11px var(--f-body);fill:var(--muted)}
+.chart .lbl{fill:var(--ink-2);font-weight:600}
+.tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--surface);border-radius:8px;padding:8px 10px;font-size:12px;line-height:1.5;white-space:nowrap;transform:translate(-50%,-100%);z-index:3;box-shadow:0 6px 18px rgba(0,0,0,.18)}
+.tip .sw{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--ink-2)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.linkish{background:none;border:0;color:var(--accent);cursor:pointer;font-size:12px;font-weight:600;padding:0}
+/* triage board */
+.board{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.col{background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:10px;min-height:120px}
+.col-h{display:flex;justify-content:space-between;align-items:center;padding:2px 4px 10px}
+.pcard{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:11px 12px;margin-bottom:8px;border-top:3px solid var(--ok)}
+.pcard.critical{border-top-color:var(--crit)}.pcard.urgent{border-top-color:var(--warn)}
+.pcard .nm{display:flex;justify-content:space-between;gap:6px;align-items:baseline}
+.pcard .nm b{font-size:14px}
+.vit{display:flex;flex-wrap:wrap;gap:5px;margin:8px 0}
+.vit span{font:500 11.5px var(--f-mono);background:var(--surface-2);border-radius:6px;padding:2px 6px;color:var(--ink-2)}
+.vit span.bad{background:var(--crit-soft);color:var(--crit);font-weight:600}
+/* patient */
+.phead{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.phead .avatar{width:48px;height:48px;font-size:16px}
+.phead h2{font-size:20px}
+.timeline{position:relative;padding-left:18px;margin-top:6px}
+.timeline::before{content:"";position:absolute;left:5px;top:6px;bottom:6px;width:2px;background:var(--line)}
+.tl{position:relative;padding:0 0 14px}
+.tl::before{content:"";position:absolute;left:-17px;top:5px;width:10px;height:10px;border-radius:50%;background:var(--surface);border:2px solid var(--accent)}
+.tl.bill::before{border-color:var(--s2)}
+.tl .when{font:500 11.5px var(--f-mono);color:var(--muted)}
+.vitals{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.vt{background:var(--surface-2);border-radius:10px;padding:8px 10px}
+.vt span{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.vt b{font-size:17px}
+.vt.bad{background:var(--crit-soft)}.vt.bad b{color:var(--crit)}
+.rx{border:1px solid var(--line);border-radius:12px;padding:16px;background:var(--surface)}
+.rx .sym{font:800 30px/1 var(--f-display);color:var(--accent)}
+.rx-h{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;border-bottom:2px solid var(--ink);padding-bottom:10px;margin-bottom:10px}
+.bars .row{display:grid;grid-template-columns:110px minmax(0,1fr) 90px;gap:10px;align-items:center;padding:5px 0;font-size:12.5px}
+.bars .track{height:12px;background:var(--surface-2);border-radius:4px;overflow:hidden}
+.bars .fill{height:100%;background:var(--accent);border-radius:0 4px 4px 0}
+.bars .v{text-align:right;font-variant-numeric:tabular-nums;color:var(--ink-2)}
+.dgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px}
+.dcard{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surface);cursor:pointer;text-align:left;padding:0;color:inherit;display:flex;flex-direction:column;min-width:0}
+.dcard:hover,.dcard.sel{border-color:var(--accent)}.dcard.sel{box-shadow:0 0 0 2px var(--accent-soft)}
+.dcard .th{aspect-ratio:4/3;max-width:100%;background:var(--surface-2);display:grid;place-items:center;overflow:hidden}
+.dcard .th img{width:100%;height:100%;object-fit:cover;display:block}
+.dcard .b{padding:10px;display:flex;flex-direction:column;gap:7px}
+.pdf{font:700 13px var(--f-mono);color:var(--crit);border:2px solid var(--crit);border-radius:6px;padding:6px 8px;letter-spacing:.05em}
+.pdfbox{display:flex;flex-direction:column;align-items:center;gap:10px;padding:28px;background:var(--surface-2);border-radius:10px}
+.pdfbox a{color:var(--accent);font-weight:600}
+.tags{display:flex;flex-wrap:wrap;gap:4px}
+.tagc{font-size:11px;background:var(--surface-2);border:1px solid var(--line);border-radius:6px;padding:1px 6px;color:var(--ink-2);max-width:100%;overflow-wrap:anywhere}
+.tagc b{font-weight:600;color:var(--muted);margin-right:3px}
+.drop{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;border:2px dashed var(--axis);border-radius:12px;padding:28px 16px;text-align:center;cursor:pointer;background:var(--surface-2);transition:border-color .15s,background .15s}
+.drop:hover,.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.drop:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+.drop input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%}
+.drop svg{width:34px;height:34px;stroke:var(--accent);fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.preview img{max-width:100%;max-height:380px;border-radius:10px;display:block;margin:0 auto;border:1px solid var(--line)}
+.aibar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:12px;padding:12px 14px;border-radius:10px;background:var(--accent-soft)}
+.aibar b{display:block}
+.aires{margin-top:10px}
+.dthumbs{display:flex;gap:8px;flex-wrap:wrap}
+.dthumb{width:92px;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface);padding:0;cursor:pointer;display:flex;flex-direction:column;color:inherit}
+.dthumb:hover{border-color:var(--accent)}
+.dthumb img{width:100%;height:62px;object-fit:cover;display:block}
+.dthumb .pdf{margin:14px auto;font-size:11px;padding:4px 6px}
+.dthumb span:last-child{font-size:10.5px;padding:3px 6px;color:var(--muted);text-align:left}
+.totals{display:flex;flex-direction:column;gap:5px;margin:12px 0;padding:10px 12px;background:var(--surface-2);border-radius:10px}
+.totals>div{display:flex;justify-content:space-between;gap:10px;font-size:13px}.totals>div span{color:var(--muted)}
+.totals .grand{font-size:16px;border-top:1px solid var(--line);padding-top:7px;margin-top:2px}.totals .grand span{color:var(--ink)}
+.paybox{margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2)}.paybox h3{margin-bottom:8px}
+.check{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--ink);margin:12px 0 8px;font-weight:500}.check input{width:auto;accent-color:var(--accent)}
+.totrow{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);font-size:13px}
+tr.selrow td{background:var(--accent-soft)}
+.sinfo{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:10px;background:var(--surface-2);display:flex;flex-direction:column;gap:7px}
+.sinfo-h{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.racks{display:flex;flex-direction:column;gap:3px}
+.rackrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:4px 6px;border-radius:6px}
+.rackrow.first{background:var(--accent-soft)}
+.rack{font:700 12px var(--f-mono);background:var(--ink);color:var(--surface);border-radius:5px;padding:2px 7px;letter-spacing:.04em;white-space:nowrap}
+.rack.sm{font-size:10.5px;padding:1px 5px;margin-right:3px}
+.lookup{position:relative;width:min(340px,100%)}
+.lookup input{border-radius:20px;padding-left:14px;background:var(--surface)}
+.lookpop{position:absolute;right:0;top:calc(100% + 6px);width:min(440px,calc(100vw - 32px));z-index:30;box-shadow:0 12px 32px rgba(0,0,0,.18);border-radius:12px}
+.lookpop .sinfo{margin:0;background:var(--surface)}
+.sinfo table{font-size:12px}
+.rhead{display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:14px}
+.share{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
+.share input{width:170px}
+a.btn{text-decoration:none}
+/* overlay + toast */
+#overlay{position:fixed;inset:0;background:rgba(5,22,24,.5);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px max(16px,env(safe-area-inset-left,0px))}
+#overlay .card{max-width:540px;width:100%;max-height:85vh;overflow:auto}
+#overlay h2{margin-bottom:10px}
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--surface);padding:10px 16px;border-radius:10px;font-weight:500;z-index:60;max-width:calc(100% - 32px);box-shadow:0 8px 24px rgba(0,0,0,.2)}
+/* responsive */
+@media (max-width:1100px){.g2{grid-template-columns:minmax(0,1fr)}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.g-main{grid-template-columns:minmax(0,1fr)}.tour{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:900px){
+  .app{grid-template-columns:minmax(0,1fr)}
+  .side{position:static;height:auto;flex-direction:column;gap:12px;padding:14px max(16px,env(safe-area-inset-left,0px)) 10px max(16px,env(safe-area-inset-right,0px))}
+  #nav{flex-direction:row;overflow-x:auto;padding-bottom:4px}
+  #nav button.on{box-shadow:inset 0 -3px 0 var(--side-accent)}
+  .who{margin-top:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));align-items:end}
+  .who .av{grid-column:1/-1}
+  .mainwrap{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+  .g2,.g-form{grid-template-columns:minmax(0,1fr)}
+  .board{grid-template-columns:minmax(0,1fr)}
+  .steps{grid-template-columns:minmax(0,1fr)}
+  .vitals{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media (max-width:480px){.kpis{grid-template-columns:minmax(0,1fr)}.span2{grid-column:auto}.bars .row{grid-template-columns:80px minmax(0,1fr) 72px}}
+</style>
+
+<div class="app">
+  <aside class="side">
+    <div class="brand"><div class="mark"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8 2h4v6h6v4h-6v6H8v-6H2V8h6z" fill="#0f2e33"/></svg></div><div><b>MediAssist Pro</b><span id="orgName">Sunrise Healthcare Group</span></div></div>
+    <nav id="nav" aria-label="Sections"></nav>
+    <div class="who">
+      <div class="av"><div class="avatar" id="whoAv"></div><div><b id="whoName"></b><span id="whoRole"></span></div></div>
+      <div><label for="roleSel">Signed in as</label><select id="roleSel"></select></div>
+      <div><label for="branchSel">Branch</label><select id="branchSel"></select></div>
+    </div>
+    <button class="linkbtn" id="resetDemo">Reset demo data</button>
+  </aside>
+
+  <div class="mainwrap">
+    <div class="topbar"><div><div class="crumb" id="crumb"></div><h1 id="pageTitle">Dashboard</h1></div><div class="top-r"><div class="lookup"><input id="gLook" list="medOpts" placeholder="Find a medicine: stock and rack" aria-label="Find a medicine"><div id="gLookBox" class="lookpop" hidden></div></div><span class="chip"><span class="dot"></span><span id="clock"></span></span></div></div>
+    <main>
+      <section class="tab" id="t-dash"></section>
+
+      <section class="tab" id="t-patients">
+        <div class="g-form">
+          <div class="stack">
+            <div class="card"><div class="card-h"><div><h2>Find a patient</h2><p>One record per patient across the whole group.</p></div></div>
+              <input id="pSearch" placeholder="Search name, phone or ID (P00003)" aria-label="Search patients"><div class="tbl" style="margin-top:10px"><table id="pTable"></table></div></div>
+            <div class="card" id="pFormCard"><div class="card-h"><div><h2 id="pFormTitle">Register new patient</h2><p>Allergies and conditions drive the safety checks.</p></div></div>
+              <div class="fields">
+                <div class="span2"><label for="pName">Full name</label><input id="pName"></div>
+                <div><label for="pPhone">Phone</label><input id="pPhone" inputmode="tel"></div>
+                <div><label for="pAge">Age</label><input id="pAge" type="number" min="0" max="130"></div>
+                <div><label for="pGen">Gender</label><select id="pGen"><option>Male</option><option>Female</option><option>Other</option></select></div>
+                <div><label for="pAddr">Address</label><input id="pAddr"></div>
+                <div class="span2"><label for="pAll">Allergies</label><input id="pAll" placeholder="penicillin, sulfa, nsaid"></div>
+                <div class="span2"><label for="pCond">Conditions</label><input id="pCond" placeholder="asthma, pregnant, kidney disease, ulcer"></div>
+              </div>
+              <div class="btns"><button class="btn" id="pSave">Save patient</button><button class="btn ghost" id="pClear">Clear</button></div>
+            </div>
+          </div>
+          <div class="card" id="pProfile"></div>
+        </div>
+      </section>
+
+      <section class="tab" id="t-queue">
+        <div class="card" id="qFormCard" style="margin-bottom:14px"><div class="card-h"><div><h2>Arrival desk</h2><p>Record vitals on arrival. Triage places the patient on the board automatically.</p></div></div>
+          <div class="fields">
+            <div class="span2"><label for="vPat">Patient</label><input id="vPat" list="patOpts" placeholder="Type name, phone or ID"></div>
+            <div class="span2"><label for="vComp">Complaint</label><input id="vComp" placeholder="fever 3 days, cough"></div>
+            <div><label for="vTemp">Temp °C</label><input id="vTemp" type="number" step=".1"></div>
+            <div><label for="vPulse">Pulse /min</label><input id="vPulse" type="number"></div>
+            <div><label for="vSys">BP systolic</label><input id="vSys" type="number"></div>
+            <div><label for="vDia">BP diastolic</label><input id="vDia" type="number"></div>
+            <div><label for="vSpo">SpO₂ %</label><input id="vSpo" type="number"></div>
+            <div style="align-self:end"><button class="btn" id="vAdd" style="width:100%;justify-content:center">Add to board</button></div>
+          </div>
+        </div>
+        <div class="board" id="board"></div>
+        <div class="card" style="margin-top:14px"><div class="card-h"><h2>Seen today</h2></div><div class="tbl"><table id="qDone"></table></div></div>
+      </section>
+
+      <section class="tab" id="t-consult"><div id="cBody"></div></section>
+
+      <section class="tab" id="t-billing">
+        <div class="g-form">
+          <div class="card"><div class="card-h"><div><h2>New bill</h2><p>Stock is taken from the batch that expires first.</p></div></div>
+            <label for="bPat">Patient <span class="muted">(leave empty for walk-in OTC)</span></label><input id="bPat" list="patOpts" placeholder="Type name, phone or ID">
+            <div id="bRx" style="margin-top:10px"></div>
+            <div class="fields" style="margin-top:10px">
+              <div class="span2"><label for="bMed">Medicine</label><input id="bMed" list="medOpts" placeholder="Start typing a brand"></div>
+              <div><label for="bQty">Qty</label><input id="bQty" type="number" min="1" value="10"></div>
+              <div style="align-self:end"><button class="btn ghost" id="bAddLine" style="width:100%;justify-content:center">Add line</button></div>
+            </div>
+            <div id="bInfo"></div>
+            <div class="tbl" style="margin-top:12px"><table id="bLines"></table></div>
+            <div class="fields" id="bDocBox" hidden style="margin-top:10px">
+              <div><label for="bDoc">Prescribing doctor</label><input id="bDoc"></div>
+              <div><label for="bReg">Doctor reg. no</label><input id="bReg"></div>
+            </div>
+            <div class="fields" style="margin-top:10px">
+              <div><label for="bDisc">Discount ₹</label><input id="bDisc" type="number" min="0" step=".5" value="0"></div>
+              <div><label for="bPay">Payment</label><select id="bPay"><option value="cash">Cash</option><option value="upi">UPI</option><option value="card">Card</option><option value="credit">Credit</option></select></div>
+            </div>
+            <div class="btns"><button class="btn" id="bSave">Save bill</button><button class="btn ghost" id="bReset">Clear</button></div>
+          </div>
+          <div class="stack">
+            <div class="card" id="bView" hidden></div>
+            <div class="card"><div class="card-h"><h2>Today's bills</h2><span class="muted small" id="bSum"></span></div><div class="tbl"><table id="bList"></table></div></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="tab" id="t-hbilling">
+        <div class="kpis" id="hbKpis"></div>
+        <div class="sub" id="hbSub"></div>
+        <div class="pane" id="h-new"><div class="g-form">
+          <div class="card"><div class="card-h"><div><h2>Patient and services</h2><p>Add the fee from today's consultation, then tests, procedures or bed days.</p></div></div>
+            <div class="fields"><div class="span2"><label for="hPat">Patient</label><input id="hPat" list="patOpts" placeholder="Type name, phone or ID"></div><div><label for="hDoc">Doctor</label><select id="hDoc"></select></div></div>
+            <div id="hVisit" style="margin-top:10px"></div>
+            <div class="fields" style="margin-top:10px"><div class="span2"><label for="hSvc">Service</label><input id="hSvc" list="svcOpts" placeholder="e.g. CBC blood test"></div><div><label for="hQty">Qty or days</label><input id="hQty" type="number" min="1" value="1"></div><div style="align-self:end"><button class="btn ghost" id="hAddSvc" style="width:100%;justify-content:center">Add service</button></div></div>
+            <div class="tbl" style="margin-top:12px"><table id="hLines"></table></div>
+          </div>
+          <div class="card"><h2 style="margin-bottom:12px">Payment</h2>
+            <div class="fields"><div><label for="hDisc">Invoice discount ₹</label><input id="hDisc" type="number" min="0" step="1" value="0"></div></div>
+            <label class="check"><input type="checkbox" id="hIns"> Insurance or TPA cashless</label>
+            <div id="hInsBox" hidden><div class="fields"><div><label for="hTpa">Insurer / TPA</label><select id="hTpa"></select></div><div><label for="hPol">Policy no.</label><input id="hPol"></div><div><label for="hClaim">Pre-auth / claim no.</label><input id="hClaim"></div><div><label for="hApp">Approved amount ₹</label><input id="hApp" type="number" min="0" step="1"></div></div></div>
+            <div class="totals" id="hTotals"></div>
+            <div class="fields"><div><label for="hPayNow">Paid now ₹</label><input id="hPayNow" type="number" min="0" step="1"></div><div style="align-self:end"><button class="btn ghost" id="hPayFull" style="width:100%;justify-content:center">Pay in full</button></div>
+              <div><label for="hMode">Mode</label><select id="hMode"><option value="cash">Cash</option><option value="upi">UPI</option><option value="card">Card</option></select></div><div id="hRefBox" hidden><label for="hRef">Transaction ref.</label><input id="hRef"></div></div>
+            <div style="margin-top:10px"><label for="hNotes">Note</label><input id="hNotes" placeholder="Optional"></div>
+            <p class="small muted" style="margin:10px 0 0">Anything not paid now becomes a due you can collect later.</p>
+            <div class="btns"><button class="btn" id="hSave">Save invoice</button><button class="btn ghost" id="hReset">Clear</button></div>
+          </div></div></div>
+        <div class="pane" id="h-list"><div class="g2">
+          <div class="card"><div class="card-h"><div><h2>Invoices</h2><p id="hbDueTotal"></p></div><input id="hbSearch" placeholder="Search name, phone, invoice" aria-label="Search invoices" style="max-width:230px"></div><div class="sub" id="hbChips"></div><div class="tbl"><table id="hbTable"></table></div></div>
+          <div class="card" id="hbView"></div></div></div>
+        <div class="pane" id="h-close"><div class="card" style="margin-bottom:14px"><div class="fields"><div><label for="clDate">Day</label><input id="clDate" type="date"></div></div><p class="small muted" style="margin:8px 0 0">Hospital receipts and pharmacy sales at this branch. Credit bills are not cash.</p></div><div id="clBody"></div></div>
+        <div class="pane" id="h-rates"><div class="card"><div class="card-h"><div><h2>Services and rates</h2><p>Healthcare services are GST-exempt in India. Some items, such as room rent above ₹5,000 a day, may carry GST.</p></div></div>
+          <div class="fields" id="rtNew" style="margin-bottom:12px"><div class="span2"><label for="rtName">New service</label><input id="rtName" placeholder="e.g. Physiotherapy session"></div><div><label for="rtCat">Category</label><select id="rtCat"><option>Consultation</option><option>Procedure</option><option>Laboratory</option><option>Imaging</option><option>Diagnostics</option><option>Inpatient</option><option>Admin</option><option>Other</option></select></div><div><label for="rtRate">Rate ₹</label><input id="rtRate" type="number" min="0" step="1"></div><div style="align-self:end"><button class="btn" id="rtAdd" style="width:100%;justify-content:center">Add service</button></div></div>
+          <div class="tbl"><table id="rtTable"></table></div></div></div>
+      </section>
+
+      <section class="tab" id="t-docs">
+        <div class="g-form">
+          <div class="card" id="upCard"><div class="card-h"><div><h2>Add a document</h2><p>Photograph a bill, supplier invoice, prescription or lab report, then link it to the patient, doctor, branch and stock.</p></div></div>
+            <label class="drop" id="drop"><input type="file" id="upFile" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf" aria-label="Choose a photo or PDF"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/><path d="M12 3v12M7 8l5-5 5 5"/></svg><b>Take a photo or choose a file</b><span class="small muted">JPG, PNG, WebP or PDF, up to 20 MB. Or drag it here.</span></label>
+            <div id="upStage" hidden></div>
+          </div>
+          <div class="stack">
+            <div class="card" id="docDetail" hidden></div>
+            <div class="card"><div class="card-h"><div><h2>Document library</h2><p id="docCount"></p></div><input id="docSearch" placeholder="Search patient, bill no., medicine" aria-label="Search documents" style="max-width:260px"></div>
+              <div class="sub" id="docChips"></div><div class="dgrid" id="docGrid"></div></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="tab" id="t-stock">
+        <div class="sub" id="stockSub"></div>
+        <div class="pane" id="s-overview"><div id="sOverview" class="stack"></div></div>
+        <div class="pane" id="s-insights"><div class="stack">
+          <div class="card"><div class="card-h"><div><h2>Expiry rescue</h2><p>Stock that won't sell here before it expires, and the branch that sells it fastest.</p></div></div><div class="tbl"><table id="sTransfers"></table></div></div>
+          <div class="card"><div class="card-h"><div><h2>Reorder suggestions</h2><p>From 30-day sales speed and each medicine's reorder level.</p></div></div><div class="tbl"><table id="sReorder"></table></div></div>
+        </div></div>
+        <div class="pane" id="s-batches"><div class="card tbl"><table id="sBatches"></table></div></div>
+        <div class="pane" id="s-purchase"><div class="card"><div class="card-h"><div><h2>Goods received</h2><p>Expired batches and cost above MRP are rejected.</p></div></div>
+          <div class="fields">
+            <div><label for="puSup">Supplier</label><input id="puSup" value="Apollo Distributors"></div><div><label for="puInv">Invoice no.</label><input id="puInv"></div>
+            <div class="span2"><label for="puMed">Medicine</label><input id="puMed" list="medOpts"></div>
+            <div><label for="puBatch">Batch</label><input id="puBatch"></div><div><label for="puRack">Rack</label><input id="puRack" placeholder="e.g. A2-3"></div><div><label for="puExp">Expiry</label><input id="puExp" type="date"></div>
+            <div><label for="puQty">Qty</label><input id="puQty" type="number" min="1"></div><div><label for="puFree">Free</label><input id="puFree" type="number" min="0" value="0"></div>
+            <div><label for="puCost">Cost/unit ₹</label><input id="puCost" type="number" step=".01"></div><div><label for="puMrp">MRP/unit ₹</label><input id="puMrp" type="number" step=".01"></div>
+          </div>
+          <div class="btns"><button class="btn" id="puSave">Receive batch</button></div></div></div>
+      </section>
+
+      <section class="tab" id="t-reports">
+        <div class="card" style="margin-bottom:14px"><div class="fields">
+          <div class="span2"><label for="rKind">Report</label><select id="rKind"><option value="daily">Daily report: patients and revenue</option><option value="branch">Branch report for the manager</option><option value="doctor">Doctor summary</option><option value="group">Group report for the owner</option></select></div>
+          <div><label for="rDate">Date</label><input id="rDate" type="date"></div>
+          <div id="rDocBox"><label for="rDoc">Doctor</label><select id="rDoc"></select></div>
+        </div></div>
+        <div id="rDaily"></div>
+        <div class="card" id="rClassic"><div class="card-h"><div><h2 id="rTitle">Report</h2><p>Sent automatically at 8 PM by email and WhatsApp in the server version.</p></div><button class="btn ghost sm" id="rCopy">Copy text</button></div><pre class="rep" id="rText"></pre></div>
+      </section>
+
+      <section class="tab" id="t-audit"><div class="card"><div class="card-h"><div><h2>Audit trail</h2><p>Who did what, where and when, including every safety-warning override.</p></div></div><div class="tbl"><table id="auTable"></table></div></div></section>
+    </main>
+  </div>
+</div>
+
+<datalist id="patOpts"></datalist><datalist id="svcOpts"></datalist><datalist id="medOpts"></datalist>
+<div id="overlay" hidden><div class="card" role="dialog" aria-modal="true" aria-labelledby="mTitle"><h2 id="mTitle"></h2><div id="mBody"></div><div class="btns"><button class="btn" id="mOk"></button><button class="btn ghost" id="mCancel">Cancel</button></div></div></div>
+<div id="toast" hidden role="status"></div>
+
+<script>
+"use strict";
+// ================= reference data =================
+const ROLES={owner:["all","hbilling","patients_read","patients_write","visit_create","consult","billing","stock","stock_admin","reports","org_reports","audit"],
+manager:["patients_read","patients_write","visit_create","billing","hbilling","stock","stock_admin","reports","audit"],
+doctor:["patients_read","patients_write","visit_create","consult","reports"],
+reception:["patients_read","patients_write","visit_create","hbilling"],pharmacist:["patients_read","billing","stock"]};
+const MED_SEED=[["Dolo 650","paracetamol","Tablet","OTC",200],["Crocin Syrup 60ml","paracetamol","Syrup","OTC",20],["Amoxyclav 625","amoxicillin clavulanic acid","Tablet","H",60],
+["Azithral 500","azithromycin","Tablet","H",40],["Cifran 500","ciprofloxacin","Tablet","H",40],["Cefixime 200","cefixime","Tablet","H",40],["Pan 40","pantoprazole","Tablet","H",100],
+["Omez 20","omeprazole","Capsule","H",60],["Brufen 400","ibuprofen","Tablet","OTC",100],["Voveran 50","diclofenac","Tablet","H",60],["Ecosprin 75","aspirin","Tablet","OTC",100],
+["Clopilet 75","clopidogrel","Tablet","H",60],["Warf 5","warfarin","Tablet","H",30],["Glycomet 500","metformin","Tablet","H",120],["Telma 40","telmisartan","Tablet","H",90],
+["Aldactone 25","spironolactone","Tablet","H",30],["Atorva 10","atorvastatin","Tablet","H",60],["Metrogyl 400","metronidazole","Tablet","H",40],["Fluconazole 150","fluconazole","Tablet","H",20],
+["Ultracet","tramadol paracetamol","Tablet","H1",30],["Fluoxetine 20","fluoxetine","Capsule","H",30],["Cetirizine 10","cetirizine","Tablet","OTC",100],
+["Benadryl Syrup 100ml","diphenhydramine","Syrup","OTC",20],["ORS Sachet","oral rehydration salts","Sachet","OTC",100],["Propranolol 40","propranolol","Tablet","H",30]];
+const ALLERGY={penicillin:["penicillin","amoxicillin","ampicillin","cloxacillin","flucloxacillin","piperacillin"],sulfa:["sulfamethoxazole","sulfasalazine","sulfadiazine","cotrimoxazole"],
+nsaid:["ibuprofen","diclofenac","aspirin","naproxen","aceclofenac","mefenamic","ketorolac"],cephalosporin:["cefixime","ceftriaxone","cefuroxime","cefpodoxime","cephalexin","cefadroxil"],
+macrolide:["azithromycin","clarithromycin","erythromycin"],quinolone:["ciprofloxacin","levofloxacin","ofloxacin","moxifloxacin"]};
+const CROSS={penicillin:"cephalosporin",cephalosporin:"penicillin"};
+const GROUPS={anticoagulant:["warfarin","acenocoumarol","apixaban","rivaroxaban"],antiplatelet:["aspirin","clopidogrel"],nsaid:ALLERGY.nsaid,nitrate:["nitroglycerin","isosorbide"],
+pde5:["sildenafil","tadalafil"],statin:["simvastatin","atorvastatin"],strong_macrolide:["clarithromycin","erythromycin"],acei_arb:["enalapril","lisinopril","ramipril","telmisartan","losartan"],
+k_sparing:["spironolactone","eplerenone","amiloride"],ssri:["fluoxetine","sertraline","escitalopram","paroxetine"],tramadol:["tramadol"],metronidazole:["metronidazole"],
+azole:["fluconazole","ketoconazole","itraconazole"],beta_blocker:["propranolol","atenolol","metoprolol"],metformin:["metformin"],ciprofloxacin:["ciprofloxacin"],
+ppi_cyp:["omeprazole","esomeprazole"],clopidogrel:["clopidogrel"]};
+const INTERACTIONS=[["anticoagulant","antiplatelet","high","major bleeding risk"],["anticoagulant","nsaid","high","major bleeding risk"],
+["anticoagulant","metronidazole","high","raises warfarin effect, check INR"],["anticoagulant","azole","high","raises anticoagulant effect, bleeding risk"],
+["nitrate","pde5","high","severe low blood pressure"],["statin","strong_macrolide","high","muscle damage risk"],["acei_arb","k_sparing","moderate","high potassium, monitor K+"],
+["acei_arb","nsaid","moderate","kidney injury risk"],["ssri","tramadol","high","serotonin syndrome and seizure risk"],["antiplatelet","nsaid","moderate","stomach bleeding risk"],
+["clopidogrel","ppi_cyp","moderate","omeprazole weakens clopidogrel, prefer pantoprazole"]];
+const CONDITIONS=[["asthma","nsaid","moderate","NSAIDs can trigger asthma attacks"],["asthma","beta_blocker","high","non-selective beta blockers can cause bronchospasm"],
+["pregnan","acei_arb","high","ACE inhibitors and ARBs are contraindicated in pregnancy"],["pregnan","statin","high","statins are contraindicated in pregnancy"],
+["pregnan","anticoagulant","high","warfarin harms the foetus"],["ulcer","nsaid","high","NSAIDs worsen ulcers and bleeding"],["kidney","nsaid","high","NSAIDs worsen kidney function"],
+["kidney","metformin","moderate","check eGFR before metformin"]];
+
+// ================= helpers =================
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const DAY=864e5;
+const iso=t=>{const d=new Date(t);d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,10)};
+const today=()=>iso(Date.now());
+const addDays=(day,n)=>iso(new Date(day+"T12:00").getTime()+n*DAY);
+const diffDays=(a,b)=>Math.round((new Date(a+"T12:00")-new Date(b+"T12:00"))/DAY);
+const nowStr=()=>today()+" "+new Date().toTimeString().slice(0,5);
+const money=p=>"₹"+((p||0)/100).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
+const pcode=id=>"P"+String(id).padStart(5,"0");
+const pill=(t,c)=>`<span class="pill ${c}">${esc(t)}</span>`;
+const triPill=t=>pill(t,t=="critical"?"p-crit":t=="urgent"?"p-warn":"p-ok");
+class Err extends Error{constructor(m,warnings){super(m);this.warnings=warnings}}
+function rng(seed){return()=>{seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+
+// ================= state =================
+let S;
+const KEY="mediassist-pro-demo-v1";
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+function nid(t){S.seq[t]=(S.seq[t]||0)+1;return S.seq[t]}
+const branch=id=>S.branches.find(b=>b.id==id);
+const med=id=>S.meds.find(m=>m.id==id);
+const patient=id=>S.patients.find(p=>p.id==id);
+const user=id=>S.users.find(u=>u.id==id);
+let ctx={user:null,branch:0};
+const can=p=>ROLES[ctx.user.role].includes(p);
+const allAccess=()=>ctx.user.branch==null;
+function audit(action,detail){S.audit.unshift({at:nowStr(),user:ctx.user.username,branch:ctx.branch?branch(ctx.branch).code:"ALL",action,detail});if(S.audit.length>400)S.audit.length=400}
+function needBranch(kind){if(!ctx.branch)throw new Err("Choose a branch first (top right).");const b=branch(ctx.branch);if(kind&&!b.kind.includes(kind))throw new Err(`${b.name} is not set up as a ${kind}.`);return b}
+
+// ================= clinical rules =================
+const medText=m=>((m.generic||"")+" "+m.name).toLowerCase();
+const groupsOf=m=>{const t=medText(m);return new Set(Object.keys(GROUPS).filter(g=>GROUPS[g].some(w=>t.includes(w))))};
+function safetyCheck(p,newMeds,cur=[]){const out=[];const add=(severity,text)=>{if(!out.some(w=>w.text==text))out.push({severity,text})};
+  if(p){const allergies=(p.allergies||"").split(/[,;/]/).map(s=>s.trim().toLowerCase()).filter(Boolean),cond=(p.conditions||"").toLowerCase();
+    for(const m of newMeds){const t=medText(m);
+      for(const a of allergies){const key=Object.keys(ALLERGY).find(k=>k.includes(a)||a.includes(k));const mem=ALLERGY[key]||[];
+        if(t.includes(a)||mem.some(x=>t.includes(x)))add("high",`Allergy: patient is allergic to ${a}. ${m.name} contains ${m.generic}.`);
+        else if(CROSS[key]&&ALLERGY[CROSS[key]].some(x=>t.includes(x)))add("moderate",`${m.name}: possible cross-reaction with the ${a} allergy.`)}
+      for(const[c,g,sev,msg]of CONDITIONS)if(cond.includes(c)&&groupsOf(m).has(g))add(sev,`${m.name}: ${msg} (patient record: ${p.conditions}).`);
+      if(p.age!=null&&p.age<16&&t.includes("aspirin"))add("high",`${m.name}: aspirin in children risks Reye's syndrome.`)}}
+  const pool=[...newMeds.map(m=>[m,true]),...cur.map(m=>[m,false])];
+  for(let i=0;i<pool.length;i++)for(let j=i+1;j<pool.length;j++){const[a,an]=pool[i],[b,bn]=pool[j];if(!(an||bn)||a.id==b.id)continue;
+    const src=an&&bn?"":" (already taking)",ga=groupsOf(a),gb=groupsOf(b);
+    const ka=(a.generic||"").split(" ")[0];if(ka&&ka==(b.generic||"").split(" ")[0])add("moderate",`Duplicate: ${a.name} and ${b.name} both contain ${ka}${src}.`);
+    for(const[x,y,sev,msg]of INTERACTIONS)if((ga.has(x)&&gb.has(y))||(ga.has(y)&&gb.has(x)))add(sev,`Interaction: ${a.name} + ${b.name}${src}: ${msg}.`)}
+  return out.sort((a,b)=>(a.severity!="high")-(b.severity!="high"))}
+function triage(v){let s=0;const why=[];const sy=(v.complaint||"").toLowerCase();
+  if(v.spo2!=null&&v.spo2<92){s+=4;why.push(`SpO₂ ${v.spo2}%`)}
+  if(v.pulse!=null){if(v.pulse>120||v.pulse<45){s+=3;why.push(`pulse ${v.pulse}`)}else if(v.pulse>100){s+=1;why.push("fast pulse")}}
+  if(v.sys!=null){if(v.sys>180||v.sys<90){s+=3;why.push(`BP ${v.sys}`)}else if(v.sys>160){s+=2;why.push(`high BP ${v.sys}`)}}
+  if(v.temp!=null){if(v.temp>=39.5){s+=2;why.push("high fever")}else if(v.temp>=38){s+=1;why.push("fever")}}
+  for(const k of["chest pain","breathless","unconscious","seizure","bleeding","stroke","slurred","severe"])if(sy.includes(k)){s+=4;why.push(k)}
+  for(const k of["vomit","fracture","abdominal pain","dizzy","sweating"])if(sy.includes(k)){s+=1;why.push(k)}
+  return[s>=6?"critical":s>=3?"urgent":"normal",why.join(", ")]}
+function currentMeds(pid,exclude){const seen=new Set(),out=[];
+  for(const v of S.visits)if(v.patient==pid&&v.status=="done"&&v.id!=exclude)for(const r of S.rx.filter(r=>r.visit==v.id)){
+    if(addDays(v.completed.slice(0,10),r.days||30)>=today()&&!seen.has(r.med)){seen.add(r.med);out.push(med(r.med))}}return out}
+const freqPerDay=f=>{const n=(f||"").match(/\d+(\.\d+)?/g);if(n&&(f||"").includes("-"))return n.reduce((a,b)=>a+ +b,0);return{OD:1,BD:2,TDS:3,QID:4,HS:1,SOS:0}[(f||"").toUpperCase()]??1};
+
+// ================= stock =================
+const effExp=b=>{let e=b.expiry;if(b.opened){const o=addDays(b.opened,30);if(o<e)e=o}return e};
+const daysLeft=b=>diffDays(effExp(b),today());
+const usable=(bid,mid)=>S.batches.filter(b=>b.branch==bid&&b.med==mid&&b.qty>0&&daysLeft(b)>=0).sort((a,b)=>effExp(a)<effExp(b)?-1:1);
+const usableStock=bid=>{const o={};for(const b of S.batches)if(b.branch==bid&&b.qty>0&&daysLeft(b)>=0)o[b.med]=(o[b.med]||0)+b.qty;return o};
+const pharmacies=()=>S.branches.filter(b=>b.kind.includes("pharmacy"));
+function velocity(bid,days=30){const since=addDays(today(),-days),v={};
+  for(const bl of S.bills)if(bl.branch==bid&&bl.created>=since)for(const it of bl.items)v[it.med]=(v[it.med]||0)+(it.qty-it.returned)/days;return v}
+function stockView(bid){const vel=velocity(bid),sum={};
+  const row=mid=>sum[mid]??=({med:mid,name:med(mid).name,generic:med(mid).generic,schedule:med(mid).schedule,reorder:med(mid).reorder,usable:0,expired:0,near:0,value:0});
+  const batches=S.batches.filter(b=>b.branch==bid&&b.qty>0).map(b=>({...b,days:daysLeft(b)}));
+  for(const b of batches){const r=row(b.med);if(b.days<0)r.expired+=b.qty;else{r.usable+=b.qty;r.value+=b.qty*b.cost;if(b.days<=90)r.near+=b.qty}}
+  for(const m in vel)row(+m);
+  const reorder=[];for(const s of Object.values(sum)){const avg=vel[s.med]||0;s.perDay=Math.round(avg*10)/10;s.cover=avg?Math.round(s.usable/avg):null;
+    const low=s.usable<s.reorder||(s.cover!=null&&s.cover<15);s.status=s.usable==0?"out":low?"low":"ok";
+    if(s.status!="ok"){const want=Math.max(s.reorder,Math.ceil(avg*30)),q=Math.ceil((want-s.usable)/10)*10;
+      if(q>0)reorder.push({name:s.name,have:s.usable,perDay:s.perDay,order:q,why:`${s.usable} left, sells ${s.perDay}/day, reorder level ${s.reorder}`})}}
+  const others=pharmacies().filter(b=>b.id!=bid).map(b=>[b,velocity(b.id),usableStock(b.id)]),transfers=[];
+  for(const b of batches){if(b.days<0||b.days>120)continue;const willSell=(vel[b.med]||0)*b.days,excess=Math.floor(b.qty-willSell);if(excess<10)continue;
+    let best=null;for(const[ob,ov,os]of others){const room=Math.floor((ov[b.med]||0)*b.days-(os[b.med]||0));if(room>=10&&(!best||room>best[1]))best=[ob,room,ov[b.med]]}
+    transfers.push(best?{batch:b.id,name:med(b.med).name,code:b.code,days:b.days,qty:Math.min(excess,best[1]),to:best[0].id,toName:best[0].name,why:`About ${Math.round(willSell)} of ${b.qty} will sell here before expiry. ${best[0].name} sells ${best[2].toFixed(1)}/day.`}
+      :{batch:b.id,name:med(b.med).name,code:b.code,days:b.days,qty:excess,to:null,why:`About ${excess} units will not sell before expiry. Return to supplier or run an offer.`})}
+  const order={out:0,low:1,ok:2};
+  return{summary:Object.values(sum).sort((a,b)=>order[a.status]-order[b.status]||a.name.localeCompare(b.name)),batches:batches.sort((a,b)=>a.days-b.days),reorder,transfers}}
+
+// ================= billing =================
+function createBill(b){const br=needBranch("pharmacy");if(!b.items.length)throw new Err("Add at least one medicine.");
+  const p=b.patient?patient(b.patient):null,v=b.visit?S.visits.find(x=>x.id==b.visit):null;
+  if(b.pay=="credit"&&!p)throw new Err("Credit bills need a registered patient.");
+  const doc=v?user(v.doctor):null,docName=doc?doc.name:(b.docName||"").trim(),docReg=doc?doc.reg:(b.docReg||"").trim();
+  const lines=b.items.map(it=>{const m=med(it.med);let rx=null;if(it.rx){rx=S.rx.find(r=>r.id==it.rx);if(it.qty>rx.qty-rx.dispensed)throw new Err(`${m.name}: only ${rx.qty-rx.dispensed} left on this prescription.`)}
+    if(!(it.qty>0))throw new Err(`Enter a quantity for ${m.name}.`);return{m,qty:it.qty,rx}});
+  for(const{m}of lines){if(m.schedule=="X")throw new Err(`${m.name} is Schedule X and must go through the narcotics register.`);
+    if((m.schedule=="H"||m.schedule=="H1")&&!v&&!(docName&&docReg))throw new Err(`${m.name} is Schedule ${m.schedule}. Link the patient's prescription, or enter the prescribing doctor's name and registration number.`);
+    if(m.schedule=="H1"&&!p)throw new Err(`${m.name} is Schedule H1. Register the patient so the sale goes in the H1 register.`)}
+  const warnings=safetyCheck(p,lines.map(l=>l.m),p?currentMeds(p.id):[]);
+  if(warnings.length&&!b.override)throw new Err("Safety warnings need the pharmacist's confirmation.",warnings);
+  const alloc=[];let sub=0;
+  for(const{m,qty,rx}of lines){const bs=usable(br.id,m.id),avail=bs.reduce((a,x)=>a+x.qty,0);
+    if(avail<qty){const el=pharmacies().filter(o=>o.id!=br.id).map(o=>[o,usableStock(o.id)[m.id]||0]).filter(x=>x[1]);
+      throw new Err(`Only ${avail} ${m.name} in stock here.`+(el.length?` Available at ${el.map(([o,q])=>`${o.name} (${q})`).join(", ")}.`:""))}
+    let left=qty;for(const bt of bs){if(!left)break;const take=Math.min(left,bt.qty);alloc.push({m,bt,take,rx});sub+=take*bt.mrp;left-=take}}
+  const disc=Math.min(Math.round((+b.discount||0)*100),sub);
+  const bill={id:nid("bill"),branch:br.id,no:`${br.code}-${String(S.bills.filter(x=>x.branch==br.id).length+1).padStart(6,"0")}`,created:nowStr(),patient:p?p.id:null,
+    customer:p?p.name:((b.customer||"").trim()||"Walk-in"),visit:v?v.id:null,docName,docReg,sub,disc,total:sub-disc,gst:0,pay:b.pay,user:ctx.user.username,refund:0,items:[]};
+  let dleft=disc;alloc.forEach((a,i)=>{const gross=a.take*a.bt.mrp,share=i==alloc.length-1?dleft:Math.floor(disc*gross/sub);dleft-=share;const net=gross-share,gst=net-Math.round(net/1.05);
+    a.bt.qty-=a.take;if(a.rx)a.rx.dispensed+=a.take;bill.gst+=gst;
+    bill.items.push({id:nid("item"),med:a.m.id,batch:a.bt.id,code:a.bt.code,expiry:a.bt.expiry,qty:a.take,mrp:a.bt.mrp,net,gst,rx:a.rx?a.rx.id:null,returned:0})});
+  S.bills.push(bill);audit("bill.create",`${bill.no} ${money(bill.total)} ${bill.pay}`+(warnings.length?" · OVERRIDE: "+warnings.map(w=>w.text).join(" "):""));return bill}
+
+// ================= reports =================
+function branchReport(bid,day){const br=branch(bid),like=x=>x&&x.startsWith(day);
+  const newPts=S.patients.filter(p=>p.branch==bid&&like(p.created)).length,visits=S.visits.filter(v=>v.branch==bid&&like(v.created));
+  const byDoc={},tri={critical:0,urgent:0,normal:0};for(const v of visits){tri[v.triage]++;if(v.status=="done"){const n=user(v.doctor).name;byDoc[n]=(byDoc[n]||0)+1}}
+  const waiting=visits.filter(v=>v.status=="waiting").length,seen=Object.values(byDoc).reduce((a,b)=>a+b,0);
+  const bills=S.bills.filter(b=>b.branch==bid&&like(b.created)),sales=bills.reduce((a,b)=>a+b.total,0),refund=bills.reduce((a,b)=>a+b.refund,0),gst=bills.reduce((a,b)=>a+b.gst,0);
+  const byMode={},top={};for(const b of bills){byMode[b.pay]=(byMode[b.pay]||0)+b.total;for(const it of b.items)top[it.med]=(top[it.med]||0)+it.qty}
+  const fups=S.visits.filter(v=>v.branch==bid&&v.followup==addDays(day,1)).length;
+  const isP=br.kind.includes("pharmacy"),isH=br.kind.includes("hospital"),sv=isP?stockView(bid):{summary:[],batches:[]};
+  const low=sv.summary.filter(s=>s.status!="ok"),expiring=sv.batches.filter(b=>b.days>=0&&b.days<=30),expired=sv.batches.filter(b=>b.days<0);
+  const L=[`${S.org} | ${br.name} (${br.code})`,`DAILY REPORT ${day}`,""];
+  if(isH){L.push(`PATIENTS: ${newPts} new | ${seen} consulted | ${waiting} still waiting`,`Triage: ${tri.critical} critical, ${tri.urgent} urgent, ${tri.normal} normal`);
+    if(seen)L.push("By doctor: "+Object.entries(byDoc).map(([k,v])=>`${k} ${v}`).join(", "));L.push(`Follow-ups due tomorrow: ${fups}`);if(S.invoices){const hb=hbSummary(bid,day);L.push(`BILLING: ${hb.count} invoices | billed ${money(hb.billed)} | collected ${money(hb.collected)} | dues ${money(hb.dues)}`+(hb.insPending?` | insurance pending ${money(hb.insPending)}`:""))}L.push("")}
+  if(isP){L.push(`PHARMACY: ${bills.length} bills | sales ${money(sales)} | refunds ${money(refund)} | net ${money(sales-refund)}`,`GST collected ${money(gst)}`,
+    "Payment: "+(Object.entries(byMode).map(([k,v])=>`${k.toUpperCase()} ${money(v)}`).join(", ")||"-"));
+    const t=Object.entries(top).sort((a,b)=>b[1]-a[1]).slice(0,5);if(t.length)L.push("Top medicines: "+t.map(([m,q])=>`${med(m).name} (${q})`).join(", "));L.push("");
+    if(expired.length)L.push("EXPIRED ON SHELF, remove now: "+expired.map(b=>`${med(b.med).name} ${b.code} (${b.qty})`).join(", "));
+    if(expiring.length)L.push("Expiring in 30 days: "+expiring.map(b=>`${med(b.med).name} ${b.code} (${b.qty}, ${b.days}d)`).join(", "));
+    if(low.length)L.push("Low or out of stock: "+low.map(s=>`${s.name} (${s.usable})`).join(", "))}
+  return{br,newPts,seen,waiting,tri,bills:bills.length,net:sales-refund,low,expiring,expired,text:L.join("\n").trim(),
+    expiredValue:expired.reduce((a,b)=>a+b.qty*b.cost,0),expiringValue:expiring.reduce((a,b)=>a+b.qty*b.cost,0)}}
+function orgReport(day){const rows=S.branches.map(b=>branchReport(b.id,day)),t=k=>rows.reduce((a,r)=>a+r[k],0);
+  const alerts=[];for(const r of rows){const c=r.br.code;
+    if(r.expired.length)alerts.push(["crit",`${c}: ${r.expired.length} expired batches still on shelf (${money(r.expiredValue)} at cost)`]);
+    if(r.expiring.length)alerts.push(["warn",`${c}: ${r.expiring.length} batches expire within 30 days (${money(r.expiringValue)})`]);
+    if(r.low.length)alerts.push(["warn",`${c}: ${r.low.length} medicines low or out of stock`]);
+    if(r.waiting)alerts.push(["info",`${c}: ${r.waiting} patients waiting for consultation`])}
+  const L=[`${S.org}: GROUP REPORT ${day}`,"",`TOTAL: ${t("newPts")} new patients | ${t("seen")} consultations | ${t("bills")} bills | net sales ${money(t("net"))}`,""];
+  if(S.invoices){const hc=S.branches.reduce((a,b)=>a+hbSummary(b.id,day).collected,0),hd=S.branches.reduce((a,b)=>a+hbSummary(b.id,day).dues,0);L.splice(3,0,`HOSPITAL BILLING: collected ${money(hc)} today | outstanding dues ${money(hd)}`)}
+  for(const r of rows)L.push(`${r.br.code} ${r.br.name}: patients ${r.newPts}, consulted ${r.seen}, bills ${r.bills}, net ${money(r.net)}`+(r.tri.critical?`, critical ${r.tri.critical}`:""));
+  if(alerts.length)L.push("","ALERTS",...alerts.map(a=>"- "+a[1]));
+  return{rows,alerts,totals:{newPts:t("newPts"),seen:t("seen"),bills:t("bills"),net:t("net")},text:L.join("\n")}}
+function doctorReport(uid,day){const d=user(uid),vs=S.visits.filter(v=>v.doctor==uid&&v.status=="done"&&v.completed.startsWith(day));
+  const L=[`${d.name}: DAILY SUMMARY ${day}`,`Patients seen: ${vs.length}`,""];
+  for(const v of vs){const p=patient(v.patient),rx=S.rx.filter(r=>r.visit==v.id);
+    L.push(`- ${v.completed.slice(11)} ${branch(v.branch).code} ${pcode(p.id)} ${p.name} ${p.age??"?"}${(p.gender||" ")[0]}${v.triage=="critical"?" [CRITICAL]":""}: ${v.diagnosis}`);
+    if(rx.length)L.push("    Rx: "+rx.map(r=>`${med(r.med).name} ${r.freq} x${r.days}d`).join("; "))}
+  const f=S.visits.filter(v=>v.doctor==uid&&v.followup==addDays(day,1));
+  L.push("",`Follow-ups tomorrow (${f.length}):`,...(f.length?f.map(v=>`- ${patient(v.patient).name} ${patient(v.patient).phone} (${v.diagnosis})`):["- none"]));
+  return{text:L.join("\n")}}
+
+// ================= seed =================
+function seed(){const r=rng(7),pick=a=>a[Math.floor(r()*a.length)];
+  S={org:"Sunrise Healthcare Group",seq:{},audit:[],docs:[],bills:[],visits:[],rx:[],batches:[],patients:[],
+    branches:[{id:1,code:"CH",name:"City Hospital",kind:"hospital+pharmacy"},{id:2,code:"NH",name:"North Hospital",kind:"hospital+pharmacy"},{id:3,code:"TC",name:"Town Clinic",kind:"hospital"},{id:4,code:"MS",name:"Main Street Medicals",kind:"pharmacy"}],
+    users:[{id:1,username:"owner",name:"Owner",role:"owner",branch:null},{id:2,username:"dr.rao",name:"Dr. Rao",role:"doctor",branch:1,reg:"KMC-12345"},
+      {id:3,username:"dr.khan",name:"Dr. Khan",role:"doctor",branch:2,reg:"KMC-24680"},{id:4,username:"reception.ch",name:"Anita",role:"reception",branch:1},
+      {id:5,username:"pharma.ch",name:"Suresh",role:"pharmacist",branch:1},{id:6,username:"pharma.ms",name:"Imran",role:"pharmacist",branch:4},{id:7,username:"manager.ch",name:"Priya",role:"manager",branch:1}],
+    meds:MED_SEED.map(([name,generic,form,schedule,reorder],i)=>({id:i+1,name,generic,form,schedule,reorder}))};
+  for(const bid of[1,2,4])for(const m of S.meds){const mrp=pick([2,3,5,8,12,25,40,95])*100;
+    for(let k=0,n=r()<.5?1:2;k<n;k++)S.batches.push({id:nid("batch"),branch:bid,med:m.id,code:"B"+(1000+Math.floor(r()*9000)),expiry:addDays(today(),pick([-5,20,45,80,200,400,600])),opened:null,qty:pick([10,30,60,150,300]),mrp,cost:Math.round(mrp*.7)})}
+  const people=[["Ravi Kumar",62,"Male","asthma","penicillin"],["Lakshmi Devi",28,"Female","pregnant",""],["Arjun Singh",35,"Male","",""],["Fatima Begum",54,"Female","kidney disease","sulfa"],["John Mathew",70,"Male","","nsaid"],["Meena Kumari",8,"Female","",""]];
+  people.forEach(([name,age,gender,conditions,allergies],i)=>S.patients.push({id:nid("patient"),name,age,gender,phone:"98765"+(43210+i),address:"Main Road",allergies,conditions,branch:1,created:nowStr()}));
+  ctx={user:S.users[0],branch:0};const otc=S.meds.filter(m=>m.schedule=="OTC");
+  for(const bid of[1,2,4]){ctx.branch=bid;for(let back=30;back>=1;back--)for(let k=0,n=2+Math.floor(r()*5);k<n;k++){
+    try{const b=createBill({items:[{med:pick(otc).id,qty:1+Math.floor(r()*10)}],pay:pick(["cash","upi","card"]),override:true});b.created=addDays(today(),-back)+" "+String(9+Math.floor(r()*10)).padStart(2,"0")+":"+String(Math.floor(r()*60)).padStart(2,"0")}catch(e){}}}
+  for(const[pid,complaint,temp,pulse,sys,dia,spo2]of[[1,"breathless, chest pain",37.2,118,165,90,91],[3,"fever, body ache",38.6,96,120,80,98],[5,"knee pain",36.9,76,130,85,99]]){
+    const v={complaint,temp,pulse,sys,dia,spo2},[t,why]=triage(v);S.visits.push({id:nid("visit"),patient:pid,branch:1,doctor:null,created:nowStr(),...v,triage:t,reasons:why,status:"waiting"})}
+  S.audit=[];S.today=today()}
+function load(){try{const s=JSON.parse(localStorage.getItem(KEY));if(s&&s.branches&&s.meds){S=s;return}}catch(e){}seed();save()}
+
+// ================= UI plumbing =================
+let toastT;function toast(t){const el=$("#toast");el.textContent=t;el.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>el.hidden=true,3600)}
+function ask(title,body,ok="Continue",danger=false){return new Promise(res=>{$("#mTitle").textContent=title;$("#mBody").innerHTML=body;const okb=$("#mOk");okb.textContent=ok;okb.className="btn"+(danger?" danger":"");
+  $("#overlay").hidden=false;okb.focus();const done=v=>{$("#overlay").hidden=true;res(v)};okb.onclick=()=>done(true);$("#mCancel").onclick=()=>done(false)})}
+document.addEventListener("keydown",e=>{if(e.key=="Escape"&&!$("#overlay").hidden)$("#mCancel").click()});
+const warnHtml=ws=>ws.map(w=>`<div class="alert ${w.severity=="high"?"high":""}"><span class="ic">!</span><div class="t"><b>${w.severity=="high"?"High risk":"Caution"}</b> · ${esc(w.text)}</div></div>`).join("");
+const alertRow=(kind,html)=>`<div class="alert ${kind}"><span class="ic">${kind=="info"?"i":"!"}</span><div class="t">${html}</div></div>`;
+const pidOf=v=>{const m=(v||"").match(/^P0*(\d+)/i);return m?+m[1]:null};
+const medByName=n=>S.meds.find(m=>m.name.toLowerCase()==(n||"").trim().toLowerCase());
+const initials=n=>n.replace(/^Dr\.?\s*/,"").split(/\s+/).map(w=>w[0]).slice(0,2).join("").toUpperCase();
+const rupees=p=>{const r=p/100;return r>=100000?"₹"+(r/100000).toFixed(1)+"L":r>=1000?"₹"+(r/1000).toFixed(r>=10000?0:1)+"k":"₹"+Math.round(r)};
+const shortDay=d=>new Date(d+"T12:00").toLocaleDateString("en-IN",{day:"numeric",month:"short"});
+function fillLists(){$("#patOpts").innerHTML=S.patients.map(p=>`<option value="${pcode(p.id)} · ${esc(p.name)} · ${esc(p.phone)}">`).join("");
+  const st=ctx.branch?usableStock(ctx.branch):{},ph=ctx.branch&&branch(ctx.branch).kind.includes("pharmacy");
+  $("#medOpts").innerHTML=S.meds.map(m=>`<option value="${esc(m.name)}">${esc(m.generic)} · ${m.schedule}${ph?" · stock "+(st[m.id]||0):""}</option>`).join("")}
+const ICON={dash:'<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
+patients:'<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>',queue:'<path d="M3 12h4l3-8 4 16 3-8h4"/>',
+consult:'<path d="M6 3v6a4 4 0 0 0 8 0V3"/><path d="M10 13v3a5 5 0 0 0 10 0v-2"/><circle cx="20" cy="12" r="2"/>',
+billing:'<path d="M6 2h12v20l-3-2-3 2-3-2-3 2z"/><path d="M9 7h6M9 11h6M9 15h4"/>',stock:'<path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/>',
+reports:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>',hbilling:'<path d="M6 4h12M6 9h12M14 20l-7-7h3a4 4 0 0 0 0-8"/>',docs:'<path d="M21 11l-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7"/>',audit:'<path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/>'};
+const TABS=[["dash","Dashboard",()=>true],["patients","Patients",()=>can("patients_read")],["queue","OPD board",()=>ctx.branch&&branch(ctx.branch).kind.includes("hospital")],
+  ["consult","Consultation",()=>can("consult")&&ctx.branch&&branch(ctx.branch).kind.includes("hospital")],["billing","Pharmacy billing",()=>can("billing")&&ctx.branch&&branch(ctx.branch).kind.includes("pharmacy")],
+  ["hbilling","Hospital billing",()=>can("hbilling")&&ctx.branch&&branch(ctx.branch).kind.includes("hospital")],["docs","Documents",()=>can("patients_read")],["stock","Stock & expiry",()=>(ctx.branch&&branch(ctx.branch).kind.includes("pharmacy"))||!ctx.branch],["reports","Reports",()=>can("reports")],["audit","Audit trail",()=>can("audit")]];
+let cur="dash";
+function renderShell(){$("#roleSel").innerHTML=S.users.map(u=>`<option value="${u.id}">${esc(u.name)} · ${u.role}${u.branch?" · "+branch(u.branch).code:""}</option>`).join("");$("#roleSel").value=ctx.user.id;
+  $("#branchSel").innerHTML=(allAccess()?`<option value="0">All branches</option>`:"")+S.branches.filter(b=>allAccess()||b.id==ctx.user.branch).map(b=>`<option value="${b.id}">${b.code} · ${esc(b.name)}</option>`).join("");
+  $("#branchSel").value=ctx.branch;$("#branchSel").disabled=!allAccess();
+  $("#whoAv").textContent=initials(ctx.user.name);$("#whoName").textContent=ctx.user.name;$("#whoRole").textContent=ctx.user.role[0].toUpperCase()+ctx.user.role.slice(1)+(ctx.user.reg?" · "+ctx.user.reg:"");
+  const crit=ctx.branch?S.visits.filter(v=>v.branch==ctx.branch&&v.status=="waiting"&&v.triage=="critical").length:0;
+  const tabs=TABS.filter(t=>t[2]());$("#nav").innerHTML=tabs.map(t=>`<button data-t="${t[0]}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON[t[0]]}</svg>${t[1]}${t[0]=="queue"&&crit?`<span class="badge">${crit}</span>`:""}</button>`).join("");
+  if(!tabs.some(t=>t[0]==cur))cur="dash";fillLists();show(cur)}
+function show(t){cur=t;document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("on",x.id=="t-"+t));document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("on",b.dataset.t==t));
+  $("#pageTitle").textContent=TABS.find(x=>x[0]==t)[1];$("#crumb").textContent=S.org+" / "+(ctx.branch?branch(ctx.branch).name:"All branches");
+  ({dash:renderDash,patients:renderPatients,queue:renderQueue,consult:renderConsult,billing:renderBilling,hbilling:renderHB,docs:renderDocs,stock:renderStock,reports:renderReports,audit:renderAudit})[t]();
+  if(window.innerWidth<900)scrollTo({top:0})}
+$("#nav").onclick=e=>{const t=e.target.closest("button");if(t)show(t.dataset.t)};
+function setUser(uid,bid){const u=user(uid);ctx={user:u,branch:bid??u.branch??0};consult=null;cart=[];billVisit=null}
+$("#roleSel").onchange=()=>{setUser(+$("#roleSel").value);renderShell();toast(`Signed in as ${ctx.user.name} (${ctx.user.role})`)};
+$("#branchSel").onchange=()=>{ctx.branch=+$("#branchSel").value;cart=[];renderShell()};
+function commit(){save();fillLists();const b=document.querySelector('#nav [data-t="queue"]');if(b)renderNavBadge()}
+function renderNavBadge(){const crit=ctx.branch?S.visits.filter(v=>v.branch==ctx.branch&&v.status=="waiting"&&v.triage=="critical").length:0,b=document.querySelector('#nav [data-t="queue"]');if(!b)return;
+  const old=b.querySelector(".badge");if(old)old.remove();if(crit)b.insertAdjacentHTML("beforeend",`<span class="badge">${crit}</span>`)}
+function tick(){$("#clock").textContent=new Date().toLocaleDateString("en-IN",{weekday:"short",day:"numeric",month:"short"})+" · "+new Date().toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"})}
+setInterval(tick,30000);
+
+// ================= charts =================
+const days14=()=>Array.from({length:14},(_,i)=>addDays(today(),i-13));
+function netByDay(bid,days){return days.map(d=>S.bills.filter(b=>b.branch==bid&&b.created.startsWith(d)).reduce((a,b)=>a+b.total-b.refund,0))}
+function niceMax(v){const p=Math.pow(10,Math.floor(Math.log10(v)));for(const f of[1,2,2.5,5,10])if(f*p>=v)return f*p;return v}
+function sparkline(vals){const W=200,H=34,max=Math.max(1,...vals),x=i=>i*(W-6)/(vals.length-1)+3,y=v=>H-3-(H-8)*v/max;
+  const pts=vals.map((v,i)=>`${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  return`<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><polygon points="3,${H} ${pts} ${W-3},${H}" fill="var(--accent)" opacity=".12"/><polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`}
+function lineChart(host,labels,series){
+  const draw=()=>{const W=Math.max(320,host.clientWidth),H=250,m={l:48,r:W<520?12:108,t:14,b:30},iw=W-m.l-m.r,ih=H-m.t-m.b;
+    const max=niceMax(Math.max(100,...series.flatMap(s=>s.values))),x=i=>m.l+iw*i/(labels.length-1),y=v=>m.t+ih*(1-v/max);
+    let g="";for(let k=0;k<=4;k++){const v=max*k/4,yy=y(v);g+=`<line x1="${m.l}" x2="${W-m.r}" y1="${yy}" y2="${yy}" stroke="${k?"var(--grid)":"var(--axis)"}" stroke-width="1"/><text x="${m.l-8}" y="${yy+4}" text-anchor="end">${rupees(v)}</text>`}
+    labels.forEach((d,i)=>{if(i%(W<520?4:2)==0||i==labels.length-1)g+=`<text x="${x(i)}" y="${H-8}" text-anchor="middle">${i==labels.length-1?"Today":shortDay(d)}</text>`});
+    let p="";const ends=[];series.forEach(s=>{p+=`<polyline points="${s.values.map((v,i)=>`${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ")}" fill="none" stroke="var(${s.color})" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+      const last=s.values.length-1;p+=`<circle cx="${x(last)}" cy="${y(s.values[last])}" r="4" fill="var(${s.color})" stroke="var(--surface)" stroke-width="2"/>`;ends.push({s,y:y(s.values[last])})});
+    if(W>=520){ends.sort((a,b)=>a.y-b.y);for(let i=1;i<ends.length;i++)if(ends[i].y-ends[i-1].y<15)ends[i].y=ends[i-1].y+15;
+      ends.forEach(e=>p+=`<text class="lbl" x="${W-m.r+10}" y="${e.y+4}">${esc(e.s.name)}</text>`)}
+    host.innerHTML=`<svg viewBox="0 0 ${W} ${H}" height="${H}" role="img" aria-label="Net sales per pharmacy, last 14 days">${g}${p}<line id="xh" y1="${m.t}" y2="${H-m.b}" stroke="var(--axis)" stroke-width="1" visibility="hidden"/><g id="xd"></g><rect x="${m.l}" y="${m.t}" width="${iw}" height="${ih}" fill="transparent" id="hit"/></svg><div class="tip" hidden></div>`;
+    const svg=host.querySelector("svg"),tip=host.querySelector(".tip"),xh=host.querySelector("#xh"),xd=host.querySelector("#xd");
+    const at=i=>{xh.setAttribute("x1",x(i));xh.setAttribute("x2",x(i));xh.setAttribute("visibility","visible");
+      xd.innerHTML=series.map(s=>`<circle cx="${x(i)}" cy="${y(s.values[i])}" r="4" fill="var(${s.color})" stroke="var(--surface)" stroke-width="2"/>`).join("");
+      tip.hidden=false;tip.innerHTML=`<b>${i==labels.length-1?"Today":shortDay(labels[i])}</b><br>`+series.map(s=>`<span class="sw" style="background:var(${s.color})"></span>${esc(s.name)}: ${money(s.values[i])}`).join("<br>");
+      const top=Math.min(...series.map(s=>y(s.values[i])));tip.style.left=Math.min(Math.max(x(i)*host.clientWidth/W,90),host.clientWidth-90)+"px";tip.style.top=(top*host.clientWidth/W-10)+"px"};
+    const hit=host.querySelector("#hit");hit.onmousemove=e=>{const r=svg.getBoundingClientRect(),px=(e.clientX-r.left)*W/r.width;at(Math.max(0,Math.min(labels.length-1,Math.round((px-m.l)/iw*(labels.length-1)))))};
+    hit.onmouseleave=()=>{tip.hidden=true;xh.setAttribute("visibility","hidden");xd.innerHTML=""}};
+  draw();host._redraw=draw}
+let rz;addEventListener("resize",()=>{clearTimeout(rz);rz=setTimeout(()=>document.querySelectorAll(".chart").forEach(c=>c._redraw&&c.isConnected&&c.offsetParent&&c._redraw()),150)});
+function tableToggle(btn,box){btn.onclick=()=>{box.hidden=!box.hidden;btn.textContent=box.hidden?"Show as table":"Hide table"}}
+
+// ================= dashboard =================
+const kpi=(lab,val,sub="",cls="",spark="")=>`<div class="kpi"><span class="lab">${lab}</span><span class="val ${cls}">${val}</span><span class="sub">${sub}</span>${spark}</div>`;
+function renderDash(){const el=$("#t-dash"),day=today(),dd=days14();
+  if(!ctx.branch){const o=orgReport(day),ph=pharmacies(),colors=["--s1","--s2","--s3"];
+    const series=ph.map((b,i)=>({name:b.code+" "+b.name.split(" ")[0],color:colors[i],values:netByDay(b.id,dd)}));
+    const total=dd.map((_,i)=>series.reduce((a,s)=>a+s.values[i],0)),week=total.slice(7).reduce((a,b)=>a+b,0),prev=total.slice(0,7).reduce((a,b)=>a+b,0),delta=prev?Math.round((week-prev)/prev*100):0;
+    const billsDay=dd.map(d=>S.bills.filter(b=>b.created.startsWith(d)).length);
+    const expVal=o.rows.reduce((a,r)=>a+r.expiredValue+r.expiringValue,0),waiting=o.rows.reduce((a,r)=>a+r.waiting,0),crit=o.rows.reduce((a,r)=>a+r.tri.critical,0);
+    el.innerHTML=`${ctx.user.role=="owner"?`<div class="tour"><div><h2>See the group work end to end</h2><p>Three short steps show how one patient moves from triage to the doctor to the pharmacy counter, and how stock is protected.</p></div>
+      <div class="steps"><button class="step" data-step="1"><span class="n">STEP 1 · DOCTOR</span><b>Treat the critical patient</b><span>Dr. Rao prescribes and gets live allergy warnings.</span></button>
+      <button class="step" data-step="2"><span class="n">STEP 2 · PHARMACY</span><b>Fill the prescription</b><span>Suresh bills it in one click with batch-wise stock.</span></button>
+      <button class="step" data-step="3"><span class="n">STEP 3 · MANAGER</span><b>Rescue expiring stock</b><span>Priya moves stock before it expires.</span></button></div></div>`:""}
+    <div class="kpis">${kpi("Net sales, last 7 days",money(week),`${delta>=0?"▲":"▼"} ${Math.abs(delta)}% vs previous 7 days`,"",sparkline(total))}
+    ${(()=>{const col=dd.map(d=>S.invoices.flatMap(i=>i.payments).filter(p=>p.at.startsWith(d)).reduce((a,p)=>a+p.amount,0));return kpi("Hospital collections, 7 days",money(col.slice(7).reduce((a,b)=>a+b,0)),"consultations, tests and beds","",sparkline(col))})()}
+    ${kpi("Patients waiting now",waiting,crit?`${crit} critical`:"none critical",crit?"crit":"")}
+    ${kpi("Stock at expiry risk",money(expVal),"expired or ≤30 days, at cost",expVal?"warn":"")}</div>
+    <div class="g-main"><div class="stack"><div class="card"><div class="card-h"><div><h2>Net sales by pharmacy</h2><p>Last 14 days, after refunds</p></div><div class="legend">${series.map(s=>`<span><i style="background:var(${s.color})"></i>${esc(s.name)}</span>`).join("")}</div></div>
+      <div class="chart" id="salesChart"></div><button class="linkish" id="salesTblBtn">Show as table</button>
+      <div class="tbl" id="salesTbl" hidden><table><tr><th>Day</th>${series.map(s=>`<th class="num">${esc(s.name)}</th>`).join("")}</tr>${dd.map((d,i)=>`<tr><td>${shortDay(d)}</td>${series.map(s=>`<td class="num">${money(s.values[i])}</td>`).join("")}</tr>`).join("")}</table></div></div>
+      <div class="card"><div class="card-h"><div><h2>Branches</h2><p>Select a branch to open its dashboard</p></div></div><div class="branches">${o.rows.map(r=>{const sv=r.br.kind.includes("pharmacy")?stockView(r.br.id).summary:[],n=sv.length||1,c=t=>sv.filter(s=>s.status==t).length;
+        return`<button class="bcard" data-b="${r.br.id}"><div class="h"><span class="code">${r.br.code}</span><div><b>${esc(r.br.name)}</b><span>${r.br.kind.replace("+"," + ")}</span></div></div>
+        <div class="bstats"><div><b>${r.waiting}</b><span>Waiting</span></div><div><b style="color:${r.tri.critical?"var(--crit)":"inherit"}">${r.tri.critical}</b><span>Critical</span></div><div><b>${rupees(r.net)}</b><span>Sales today</span></div></div>
+        ${sv.length?`<div><div class="health" aria-label="Stock health"><i style="width:${c("ok")/n*100}%;background:var(--ok)"></i><i style="width:${c("low")/n*100}%;background:var(--warn)"></i><i style="width:${c("out")/n*100}%;background:var(--crit)"></i></div>
+        <div class="small muted" style="margin-top:4px">Stock: ${c("ok")} ok · ${c("low")} low · ${c("out")} out${r.expired.length?` · <span class="allergy">${r.expired.length} expired</span>`:""}</div></div>`:`<div class="small muted">Outpatient clinic, no pharmacy</div>`}</button>`}).join("")}</div></div></div>
+    <div class="card"><div class="card-h"><div><h2>Alerts</h2><p>${o.alerts.length} need attention</p></div></div>${o.alerts.map(([c,t])=>alertRow(c=="crit"?"high":c=="info"?"info":"",esc(t))).join("")||'<p class="empty">All clear.</p>'}</div></div>`;
+    lineChart($("#salesChart"),dd,series);tableToggle($("#salesTblBtn"),$("#salesTbl"));
+    el.querySelectorAll("[data-b]").forEach(b=>b.onclick=()=>{ctx.branch=+b.dataset.b;renderShell()});
+    el.querySelectorAll("[data-step]").forEach(b=>b.onclick=()=>tour(+b.dataset.step));return}
+  const r=branchReport(ctx.branch,day),H=r.br.kind.includes("hospital"),P=r.br.kind.includes("pharmacy");
+  const crit=S.visits.filter(v=>v.branch==ctx.branch&&v.status=="waiting"&&v.triage=="critical"),fu=S.visits.filter(v=>v.branch==ctx.branch&&v.followup==day);
+  const sales=P?netByDay(ctx.branch,dd):[];
+  el.innerHTML=`<div class="kpis">${H?kpi("Patients waiting",r.waiting,`${r.seen} consulted today`)+kpi("Critical today",r.tri.critical,r.tri.urgent+" urgent",r.tri.critical?"crit":""):""}
+    ${P?kpi("Net sales today",money(r.net),`${r.bills} bills`,"",sparkline(sales))+kpi("Stock needing action",r.low.length+r.expired.length,`${r.expired.length} expired · ${r.low.length} low`,r.expired.length?"crit":"warn"):""}
+    ${!H?kpi("Expiring in 30 days",r.expiring.length,money(r.expiringValue)+" at cost","warn")+kpi("Expired on shelf",money(r.expiredValue),"remove and write off",r.expired.length?"crit":""):""}
+    ${!P?kpi("New patients",r.newPts,"registered today")+kpi("Follow-ups today",fu.length,"calls to make"):""}</div>
+  <div class="g-main"><div class="stack">
+    ${H?`<div class="card"><div class="card-h"><div><h2>Critical patients waiting</h2><p>Sorted by triage score</p></div></div>${crit.map(v=>alertRow("high",`<b>${esc(patient(v.patient).name)}</b> · ${esc(v.reasons)} <span class="muted small">since ${v.created.slice(11)}</span>${can("consult")?` <button class="btn danger sm" data-consult="${v.id}">See now</button>`:""}`)).join("")||'<p class="empty">No critical patients waiting.</p>'}</div>`:""}
+    ${P?`<div class="card"><div class="card-h"><div><h2>Stock alerts</h2><p>Expired stock can't be billed. Move or return near-expiry stock.</p></div><button class="btn ghost sm" id="goStock">Open stock</button></div>${r.expired.map(b=>alertRow("high",`<b>${esc(med(b.med).name)}</b> batch <span class="mono">${b.code}</span> (${b.qty}) has expired. Remove it from the shelf.`)).join("")}${r.expiring.map(b=>alertRow("",`<b>${esc(med(b.med).name)}</b> batch <span class="mono">${b.code}</span> (${b.qty}) expires in ${b.days} days.`)).join("")}${r.low.slice(0,5).map(s=>alertRow("info",`<b>${esc(s.name)}</b> is low: ${s.usable} left.`)).join("")||""}</div>`:""}
+    ${H?(()=>{const hb=hbSummary(ctx.branch,day);return`<div class="card"><div class="card-h"><div><h2>Hospital billing today</h2><p>${hb.count} invoice${hb.count==1?"":"s"}</p></div>${can("hbilling")?'<button class="btn ghost sm" id="goHB">Open billing</button>':""}</div><div class="bstats"><div><b>${rupees(hb.billed)}</b><span>Billed</span></div><div><b>${rupees(hb.collected)}</b><span>Collected</span></div><div><b style="color:${hb.dues?"var(--crit)":"inherit"}">${rupees(hb.dues)}</b><span>Dues</span></div></div></div>`})():""}
+    ${H?`<div class="card"><div class="card-h"><h2>Follow-up calls today</h2></div>${fu.map(v=>`<p>${esc(patient(v.patient).name)} · <span class="mono">${esc(patient(v.patient).phone)}</span> · ${esc(v.diagnosis)}</p>`).join("")||'<p class="empty">None due today.</p>'}</div>`:""}
+  </div><div class="card"><div class="card-h"><div><h2>Tonight's report so far</h2><p>Goes to the branch manager at 8 PM</p></div></div><pre class="rep">${esc(r.text)}</pre></div></div>`;
+  el.querySelectorAll("[data-consult]").forEach(b=>b.onclick=()=>openConsult(+b.dataset.consult));$("#goStock")&&($("#goStock").onclick=()=>show("stock"));$("#goHB")&&($("#goHB").onclick=()=>show("hbilling"))}
+function tour(n){if(n==1){setUser(2);const v=S.visits.find(v=>v.branch==1&&v.status=="waiting"&&v.triage=="critical")||S.visits.find(v=>v.branch==1&&v.status=="waiting");renderShell();
+    if(v){openConsult(v.id);toast("Add Amoxyclav 625 or Brufen 400 to see the live safety warnings.")}else{show("queue");toast("Nobody is waiting. Add a patient at the arrival desk.")}}
+  if(n==2){setUser(5);renderShell();show("billing");const v=S.visits.filter(v=>v.status=="done"&&S.rx.some(r=>r.visit==v.id&&r.dispensed<r.qty)).pop();
+    if(v){const p=patient(v.patient);$("#bPat").value=`${pcode(p.id)} · ${p.name} · ${p.phone}`;billPatient();toast("Press 'Add to bill', then 'Save bill'.")}else toast("Save a consultation in step 1 first, then come back.")}
+  if(n==3){setUser(7);stockPane="insights";renderShell();show("stock");toast("Transfer moves near-expiry stock to the branch that sells it.")}}
+
+// ================= patients =================
+let editing=null,openPid=null;
+function renderPatients(){const q=$("#pSearch").value.trim().toLowerCase(),id=pidOf(q);
+  const list=S.patients.filter(p=>!q||(id?p.id==id:(p.name.toLowerCase().includes(q)||p.phone.includes(q)))).slice().reverse();
+  $("#pTable").innerHTML="<tr><th>Patient</th><th>Phone</th><th>Allergies</th></tr>"+(list.map(p=>`<tr class="click" data-p="${p.id}"><td><b>${esc(p.name)}</b><div class="small muted"><span class="mono">${pcode(p.id)}</span> · ${p.age??"?"}${(p.gender||" ")[0]}</div></td><td class="mono">${esc(p.phone)}</td><td class="allergy small">${esc(p.allergies)}</td></tr>`).join("")||'<tr><td colspan="3" class="empty">No match. Register them below.</td></tr>');
+  $("#pTable").querySelectorAll("tr[data-p]").forEach(tr=>tr.onclick=()=>profile(+tr.dataset.p));$("#pFormCard").hidden=!can("patients_write");
+  if(openPid&&patient(openPid))profile(openPid);else $("#pProfile").innerHTML=`<div class="empty" style="padding:40px 10px"><b>Select a patient</b><br>Their visits, prescriptions and bills from every branch appear here as one timeline.</div>`}
+$("#pSearch").oninput=renderPatients;
+function profile(id){openPid=id;const p=patient(id),curM=currentMeds(id);
+  const hosp=ctx.branch&&branch(ctx.branch).kind.includes("hospital"),pharm=ctx.branch&&branch(ctx.branch).kind.includes("pharmacy");
+  const ev=[...S.visits.filter(v=>v.patient==id).map(v=>({t:v.created,k:"visit",v})),...S.bills.filter(b=>b.patient==id).map(b=>({t:b.created,k:"bill",b})),...S.invoices.filter(i=>i.patient==id).map(i=>({t:i.created,k:"inv",i}))].sort((a,b)=>a.t<b.t?1:-1);
+  $("#pProfile").innerHTML=`<div class="phead"><div class="avatar">${initials(p.name)}</div><div style="flex:1;min-width:0"><h2>${esc(p.name)}</h2><div class="small muted"><span class="mono">${pcode(p.id)}</span> · ${p.age??"?"} yrs · ${esc(p.gender)} · <span class="mono">${esc(p.phone)}</span></div></div></div>
+  <div class="stack" style="margin-top:12px">${p.allergies?`<div class="banner">Allergic to ${esc(p.allergies)}</div>`:""}
+  <div class="small"><b>Conditions:</b> ${esc(p.conditions||"none recorded")}<br><b>Currently taking:</b> ${curM.map(m=>esc(m.name)).join(", ")||"nothing active"}</div>
+  <div class="btns" style="margin-top:0">${can("patients_write")?`<button class="btn ghost sm" id="pEdit">Edit details</button>`:""}${can("visit_create")&&hosp?`<button class="btn sm" id="pQueue">Add to OPD board</button>`:""}${can("billing")&&pharm?`<button class="btn sm" id="pBill">New bill</button>`:""}</div>
+  <div><h3 style="margin-bottom:8px">Documents</h3>${docThumbs(docsFor(d=>d.patient==id))}</div>
+  <div><h3 style="margin-bottom:8px">Timeline, all branches</h3><div class="timeline">${ev.map(e=>e.k=="visit"?`<div class="tl"><div class="when">${e.v.created} · ${branch(e.v.branch).code}</div><div><b>${esc(e.v.diagnosis||"Waiting for consultation")}</b> ${triPill(e.v.triage)}</div><div class="small muted">${e.v.doctor?esc(user(e.v.doctor).name)+" · ":""}${esc(e.v.complaint||"")}</div>${S.rx.filter(r=>r.visit==e.v.id).length?`<div class="small">℞ ${S.rx.filter(r=>r.visit==e.v.id).map(r=>`${esc(med(r.med).name)} ${esc(r.freq)} ×${r.days}d`).join(" · ")}</div>`:""}</div>`
+    :e.k=="inv"?`<div class="tl bill"><div class="when">${e.i.created} · ${branch(e.i.branch).code}</div><div><b>Invoice <span class="mono">${e.i.no}</span></b> · ${money(e.i.total)} ${stPill(e.i)}</div><div class="small muted">${e.i.items.map(x=>esc(x.name)).join(", ")}</div></div>`
+    :`<div class="tl bill"><div class="when">${e.b.created} · ${branch(e.b.branch).code}</div><div><b>Bill <span class="mono">${e.b.no}</span></b> · ${money(e.b.total-e.b.refund)}</div><div class="small muted">${e.b.items.map(i=>esc(med(i.med).name)+" ×"+i.qty).join(", ")}</div></div>`).join("")||'<p class="empty">No visits or bills yet.</p>'}</div></div></div>`;
+  bindThumbs($("#pProfile"));const tag=`${pcode(p.id)} · ${p.name} · ${p.phone}`;
+  $("#pEdit")&&($("#pEdit").onclick=()=>{editing=p.id;$("#pFormTitle").textContent="Edit "+pcode(p.id);$("#pName").value=p.name;$("#pPhone").value=p.phone;$("#pAge").value=p.age??"";$("#pGen").value=p.gender;$("#pAddr").value=p.address||"";$("#pAll").value=p.allergies||"";$("#pCond").value=p.conditions||"";$("#pName").focus()});
+  $("#pQueue")&&($("#pQueue").onclick=()=>{show("queue");$("#vPat").value=tag;$("#vComp").focus()});
+  $("#pBill")&&($("#pBill").onclick=()=>{show("billing");$("#bPat").value=tag;billPatient()})}
+function clearPatientForm(){editing=null;$("#pFormTitle").textContent="Register new patient";["#pName","#pPhone","#pAge","#pAddr","#pAll","#pCond"].forEach(s=>$(s).value="")}
+$("#pClear").onclick=clearPatientForm;
+$("#pSave").onclick=async()=>{const name=$("#pName").value.trim(),phone=$("#pPhone").value.replace(/[^\d+]/g,"");
+  if(!name||phone.length<10)return toast("Enter a name and a 10-digit phone number.");
+  const data={name,phone,age:$("#pAge").value===""?null:+$("#pAge").value,gender:$("#pGen").value,address:$("#pAddr").value.trim(),allergies:$("#pAll").value.trim(),conditions:$("#pCond").value.trim()};
+  if(editing){Object.assign(patient(editing),data);audit("patient.update",`${pcode(editing)} allergies=${data.allergies||"-"} conditions=${data.conditions||"-"}`);openPid=editing;clearPatientForm();commit();renderPatients();return toast("Patient updated")}
+  const dup=S.patients.filter(p=>p.phone==phone);
+  if(dup.length&&!await ask("This phone number is already registered",`<p>${dup.map(d=>`<b>${pcode(d.id)}</b> ${esc(d.name)}, ${d.age??"?"} yrs`).join("<br>")}</p><p class="small muted">Create a new record only for a different person, such as a family member who shares the phone.</p>`,"Register as new patient")){openPid=dup[0].id;renderPatients();return}
+  const p={id:nid("patient"),...data,branch:ctx.branch||null,created:nowStr()};S.patients.push(p);audit("patient.create",`${pcode(p.id)} ${p.name}`);openPid=p.id;clearPatientForm();commit();renderPatients();toast(`Registered as ${pcode(p.id)}`)};
+
+// ================= OPD board =================
+const bad=(v,k)=>({spo2:v.spo2!=null&&v.spo2<92,pulse:v.pulse!=null&&(v.pulse>100||v.pulse<50),sys:v.sys!=null&&(v.sys>160||v.sys<90),temp:v.temp!=null&&v.temp>=38})[k];
+const vchips=v=>`<div class="vit"><span class="${bad(v,"temp")?"bad":""}">${v.temp??"–"}°C</span><span class="${bad(v,"pulse")?"bad":""}">P ${v.pulse??"–"}</span><span class="${bad(v,"sys")?"bad":""}">BP ${v.sys??"–"}/${v.dia??"–"}</span><span class="${bad(v,"spo2")?"bad":""}">SpO₂ ${v.spo2??"–"}</span></div>`;
+function renderQueue(){$("#qFormCard").hidden=!can("visit_create");
+  const w=S.visits.filter(v=>v.branch==ctx.branch&&v.status=="waiting").sort((a,b)=>a.created<b.created?-1:1);
+  $("#board").innerHTML=[["critical","Critical","p-crit"],["urgent","Urgent","p-warn"],["normal","Routine","p-ok"]].map(([t,lab,c])=>{const l=w.filter(v=>v.triage==t);
+    return`<div class="col"><div class="col-h"><span class="pill ${c}">${lab}</span><span class="small muted">${l.length} waiting</span></div>${l.map(v=>{const p=patient(v.patient);return`<div class="pcard ${t}"><div class="nm"><b>${esc(p.name)}</b><span class="mono small muted">${v.created.slice(11)}</span></div>
+      <div class="small muted">${pcode(p.id)} · ${p.age??"?"}${(p.gender||" ")[0]} · ${esc(v.complaint||"no complaint noted")}</div>${vchips(v)}${p.allergies?`<div class="allergy small">Allergic to ${esc(p.allergies)}</div>`:""}
+      ${can("consult")?`<div class="btns" style="margin-top:8px"><button class="btn sm ${t=="critical"?"danger":""}" data-c="${v.id}">Start consultation</button></div>`:""}</div>`}).join("")||'<p class="empty">Nobody here.</p>'}</div>`}).join("");
+  const d=S.visits.filter(v=>v.branch==ctx.branch&&v.status=="done"&&v.completed.startsWith(today()));
+  $("#qDone").innerHTML="<tr><th>Time</th><th>Patient</th><th>Diagnosis</th><th>Doctor</th></tr>"+(d.map(v=>`<tr><td class="mono">${v.completed.slice(11)}</td><td>${esc(patient(v.patient).name)}</td><td>${esc(v.diagnosis)}</td><td>${esc(user(v.doctor).name)}</td></tr>`).join("")||'<tr><td colspan="4" class="empty">No consultations completed yet today.</td></tr>');
+  $("#board").querySelectorAll("[data-c]").forEach(b=>b.onclick=()=>openConsult(+b.dataset.c))}
+const numOrNull=s=>$(s).value===""?null:+$(s).value;
+$("#vAdd").onclick=()=>{const pid=pidOf($("#vPat").value);if(!pid||!patient(pid))return toast("Pick a patient from the list. Register them in Patients if they are new.");
+  if(S.visits.some(v=>v.patient==pid&&v.branch==ctx.branch&&v.status=="waiting"))return toast("This patient is already on the board.");
+  const v={complaint:$("#vComp").value.trim(),temp:numOrNull("#vTemp"),pulse:numOrNull("#vPulse"),sys:numOrNull("#vSys"),dia:numOrNull("#vDia"),spo2:numOrNull("#vSpo")},[t,why]=triage(v);
+  S.visits.push({id:nid("visit"),patient:pid,branch:ctx.branch,doctor:null,created:nowStr(),...v,triage:t,reasons:why,status:"waiting"});audit("visit.create",`${pcode(pid)} triage=${t}`);
+  ["#vPat","#vComp","#vTemp","#vPulse","#vSys","#vDia","#vSpo"].forEach(s=>$(s).value="");commit();renderQueue();toast(`Triage: ${t.toUpperCase()}${why?" · "+why:""}`)};
+
+// ================= consultation =================
+let consult=null;
+function openConsult(vid){const v=S.visits.find(x=>x.id==vid);consult={vid,items:S.rx.filter(r=>r.visit==vid).map(r=>({med:r.med,freq:r.freq,days:r.days,ins:r.ins})),saved:v.status=="done"};show("consult")}
+function renderConsult(){const el=$("#cBody");if(!consult){el.innerHTML=`<div class="card"><div class="empty" style="padding:40px 10px"><b>No patient open</b><br>Start a consultation from the OPD board.</div><div class="btns" style="justify-content:center"><button class="btn" id="goQ">Open OPD board</button></div></div>`;$("#goQ").onclick=()=>show("queue");return}
+  const v=S.visits.find(x=>x.id==consult.vid),p=patient(v.patient),curM=currentMeds(p.id,v.id),hist=S.visits.filter(x=>x.patient==p.id&&x.id!=v.id&&x.status=="done").reverse();
+  const vt=(lab,val,unit,k)=>`<div class="vt ${k&&bad(v,k)?"bad":""}"><span>${lab}</span><b>${val??"–"}</b> <small class="muted">${val==null?"":unit}</small></div>`;
+  el.innerHTML=`<div class="card" style="margin-bottom:14px"><div class="phead"><div class="avatar">${initials(p.name)}</div><div style="flex:1;min-width:0"><h2>${esc(p.name)}</h2><div class="small muted"><span class="mono">${pcode(p.id)}</span> · ${p.age??"?"} yrs · ${esc(p.gender)} · ${esc(branch(v.branch).name)} · arrived ${v.created.slice(11)}</div></div>${triPill(v.triage)}</div>
+    <div class="vitals" style="margin-top:14px">${vt("Temp",v.temp,"°C","temp")}${vt("Pulse",v.pulse,"/min","pulse")}${vt("BP",v.sys!=null?v.sys+"/"+(v.dia??"–"):null,"mmHg","sys")}${vt("SpO₂",v.spo2,"%","spo2")}${vt("Complaint",null,"")}</div>
+    <p class="small" style="margin:10px 0 0"><b>Complaint:</b> ${esc(v.complaint||"–")}${v.reasons?` · <span class="muted">Triage: ${esc(v.reasons)}</span>`:""}</p></div>
+  <div class="g-form"><div class="stack">${p.allergies?`<div class="banner">Allergic to ${esc(p.allergies)}</div>`:""}
+    <div class="card"><h3 style="margin-bottom:6px">Clinical context</h3><p class="small" style="margin:0"><b>Conditions:</b> ${esc(p.conditions||"none recorded")}<br><b>Currently taking:</b> ${curM.map(m=>esc(m.name)).join(", ")||"nothing"}</p></div>
+    <div class="card"><h3 style="margin-bottom:8px">Previous visits, all branches</h3><div class="timeline">${hist.map(x=>`<div class="tl"><div class="when">${x.created.slice(0,10)} · ${branch(x.branch).code} · ${esc(user(x.doctor).name)}</div><b>${esc(x.diagnosis)}</b><div class="small muted">${S.rx.filter(r=>r.visit==x.id).map(r=>esc(med(r.med).name)).join(", ")}</div></div>`).join("")||'<p class="empty">First visit.</p>'}</div></div>
+    <div class="card"><h3 style="margin-bottom:8px">Reports and documents</h3>${docThumbs(docsFor(d=>d.patient==p.id))}</div>
+    <div id="cRxCard" ${consult.saved?"":"hidden"}></div></div>
+  <div class="card"><div class="card-h"><div><h2>Consultation</h2><p>Warnings update as you add each medicine.</p></div></div>
+    <div class="fields"><div class="span2"><label for="cDx">Diagnosis</label><input id="cDx" value="${esc(v.diagnosis||"")}" placeholder="e.g. Acute bronchitis"></div></div>
+    <div style="margin-top:10px"><label for="cNotes">Advice</label><textarea id="cNotes" placeholder="Rest, fluids, steam inhalation">${esc(v.notes||"")}</textarea></div>
+    <h3 style="margin:14px 0 8px">Prescription</h3>
+    <div class="fields"><div class="span2"><label for="cMed">Medicine</label><input id="cMed" list="medOpts" placeholder="Start typing a brand"></div>
+      <div><label for="cFreq">Frequency</label><input id="cFreq" value="1-0-1"></div><div><label for="cDays">Days</label><input id="cDays" type="number" min="1" value="5"></div>
+      <div class="span2"><label for="cIns">Instructions</label><input id="cIns" placeholder="after food"></div><div style="align-self:end"><button class="btn ghost" id="cAdd" style="width:100%;justify-content:center">Add medicine</button></div></div>
+    <div id="cInfo"></div><div class="tbl" style="margin-top:12px"><table id="cRx"></table></div><div id="cWarn" style="margin-top:10px"></div>
+    <div class="fields" style="margin-top:6px"><div><label for="cFu">Follow-up date</label><input id="cFu" type="date" value="${esc(v.followup||"")}"></div></div>
+    <div class="btns"><button class="btn" id="cSave">Save and complete</button></div></div></div>`;
+  const draw=()=>{const st=usableStock(v.branch),ph=branch(v.branch).kind.includes("pharmacy");
+    $("#cRx").innerHTML=consult.items.length?"<tr><th>Medicine</th><th>Freq</th><th class='num'>Days</th><th></th></tr>"+consult.items.map((it,i)=>{const m=med(it.med),s=st[m.id]||0;return`<tr><td><b>${esc(m.name)}</b> <span class="small muted">${esc(m.generic)} · ${m.schedule}</span>${ph?`<div class="small ${s?"muted":"allergy"}">${s?s+" in stock here":"out of stock here"}</div>`:""}${it.ins?`<div class="small muted">${esc(it.ins)}</div>`:""}</td><td class="mono">${esc(it.freq)}</td><td class="num">${it.days}</td><td><button class="btn ghost sm" data-rm="${i}" aria-label="Remove ${esc(m.name)}">Remove</button></td></tr>`}).join(""):'<tr><td class="empty">No medicines added yet.</td></tr>';
+    $("#cRx").querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{consult.items.splice(+b.dataset.rm,1);draw()});
+    const ws=safetyCheck(p,consult.items.map(i=>med(i.med)),curM);$("#cWarn").innerHTML=ws.length?warnHtml(ws):consult.items.length?alertRow("info","No allergy, interaction or condition conflicts found."):""};
+  draw();if(consult.saved)drawRxSlip(v);bindThumbs(el);wireLookup("#cMed","#cInfo",()=>v.branch);
+  $("#cAdd").onclick=()=>{const m=medByName($("#cMed").value);if(!m)return toast("Choose a medicine from the list.");consult.items.push({med:m.id,freq:$("#cFreq").value.trim(),days:Math.max(1,+$("#cDays").value||1),ins:$("#cIns").value.trim()});$("#cMed").value="";$("#cIns").value="";$("#cInfo").innerHTML="";draw();$("#cMed").focus()};
+  $("#cSave").onclick=async()=>{if(!can("consult"))return toast("Only doctors can save a consultation.");const dx=$("#cDx").value.trim();if(!dx)return toast("Enter a diagnosis.");
+    if(S.rx.some(r=>r.visit==v.id&&r.dispensed>0))return toast("The pharmacy has already dispensed this prescription, so it can't be changed.");
+    const ws=safetyCheck(p,consult.items.map(i=>med(i.med)),curM);
+    if(ws.length&&!await ask("Review safety warnings",warnHtml(ws)+'<p class="small muted">Saving records that you reviewed these warnings. The override goes in the audit trail.</p>',"Reviewed, save anyway",true))return;
+    S.rx=S.rx.filter(r=>r.visit!=v.id);for(const it of consult.items){const m=med(it.med),qty=["Syrup","Injection"].includes(m.form)?1:Math.max(1,Math.ceil(freqPerDay(it.freq)*it.days));
+      S.rx.push({id:nid("rx"),visit:v.id,med:it.med,freq:it.freq,days:it.days,qty,ins:it.ins,dispensed:0})}
+    Object.assign(v,{diagnosis:dx,notes:$("#cNotes").value.trim(),followup:$("#cFu").value||null,doctor:ctx.user.id,status:"done",completed:v.completed||nowStr()});
+    audit("visit.complete",`${pcode(p.id)} dx=${dx} rx=${consult.items.length}`+(ws.length?" · OVERRIDE: "+ws.map(w=>w.text).join(" "):""));consult.saved=true;commit();renderConsult();toast("Saved. Any pharmacy in the group can now fill this prescription.")}}
+function drawRxSlip(v){const p=patient(v.patient),d=user(v.doctor),rx=S.rx.filter(r=>r.visit==v.id);
+  $("#cRxCard").innerHTML=`<div class="rx"><div class="rx-h"><div><b>${esc(branch(v.branch).name)}</b><div class="small muted">${esc(d?d.name:"")} · Reg. ${esc(d?.reg||"–")}</div></div><div class="mono small">${esc(v.completed)}</div></div>
+  <p class="small" style="margin:0 0 8px">${pcode(p.id)} · ${esc(p.name)}, ${p.age??"?"} yrs · <span class="allergy">Allergies: ${esc(p.allergies||"none")}</span><br><b>Diagnosis:</b> ${esc(v.diagnosis)}</p>
+  <div class="sym">℞</div><div class="tbl"><table><tr><th>Medicine</th><th>Freq</th><th class="num">Days</th><th class="num">Qty</th></tr>${rx.map(r=>`<tr><td><b>${esc(med(r.med).name)}</b><div class="small muted">${esc(med(r.med).generic)}${r.ins?" · "+esc(r.ins):""}</div></td><td class="mono">${esc(r.freq)}</td><td class="num">${r.days}</td><td class="num">${r.qty}</td></tr>`).join("")||'<tr><td class="empty">No medicines.</td></tr>'}</table></div>
+  ${v.notes?`<p class="small">${esc(v.notes)}</p>`:""}${v.followup?`<p class="small"><b>Follow-up:</b> ${shortDay(v.followup)}</p>`:""}</div>`}
+
+// ================= billing =================
+let cart=[],billVisit=null;
+function renderBilling(){fillLists();drawCart();
+  const l=S.bills.filter(b=>b.branch==ctx.branch&&b.created.startsWith(today())).slice().reverse();
+  $("#bSum").textContent=l.length?`${l.length} bills · ${money(l.reduce((a,b)=>a+b.total-b.refund,0))}`:"";
+  $("#bList").innerHTML="<tr><th>Bill</th><th>Customer</th><th>Pay</th><th class='num'>Total</th></tr>"+(l.map(b=>`<tr class="click" data-b="${b.id}"><td><span class="mono">${b.no}</span><div class="small muted">${b.created.slice(11)}</div></td><td>${esc(b.customer)}</td><td><span class="pill p-info p-plain">${b.pay}</span></td><td class="num">${money(b.total-b.refund)}${b.refund?`<div class="small muted">refund ${money(b.refund)}</div>`:""}</td></tr>`).join("")||'<tr><td colspan="4" class="empty">No bills yet today.</td></tr>');
+  $("#bList").querySelectorAll("tr[data-b]").forEach(tr=>tr.onclick=()=>viewBill(+tr.dataset.b))}
+function billPatient(){const pid=pidOf($("#bPat").value);billVisit=null;cart=cart.filter(l=>!l.rx);drawCart();if(!pid||!patient(pid)){$("#bRx").innerHTML="";return}
+  const p=patient(pid),since=addDays(today(),-30),pend=S.visits.filter(v=>v.patient==pid&&v.status=="done"&&v.completed>=since).map(v=>({v,items:S.rx.filter(r=>r.visit==v.id&&r.dispensed<r.qty)})).filter(x=>x.items.length).reverse();
+  $("#bRx").innerHTML=(p.allergies?`<div class="banner" style="margin-bottom:8px">Allergic to ${esc(p.allergies)}</div>`:"")+(pend.map(({v,items})=>alertRow("info",`<b>Prescription</b> · ${v.completed.slice(0,10)} · ${esc(user(v.doctor).name)} · ${esc(branch(v.branch).name)}<br>${esc(v.diagnosis)}: ${items.map(r=>`${esc(med(r.med).name)} ×${r.qty-r.dispensed}`).join(", ")}<div class="btns" style="margin-top:6px"><button class="btn sm" data-v="${v.id}">Add to bill</button></div>`)).join("")||'<p class="small muted">No pending prescriptions for this patient.</p>');
+  $("#bRx").querySelectorAll("[data-v]").forEach(b=>b.onclick=()=>{const vid=+b.dataset.v,st=usableStock(ctx.branch),miss=[];billVisit=vid;cart=cart.filter(l=>!l.rx);
+    for(const r of S.rx.filter(r=>r.visit==vid&&r.dispensed<r.qty)){const need=r.qty-r.dispensed,q=Math.min(need,st[r.med]||0);if(q<need)miss.push(`${med(r.med).name} (${q} of ${need})`);if(q)cart.push({med:r.med,qty:q,rx:r.id})}
+    drawCart();if(miss.length)toast("Short here: "+miss.join(", ")+". The rest stays on the prescription for any branch.")})}
+$("#bPat").onchange=billPatient;
+function drawCart(){const st=ctx.branch?usableStock(ctx.branch):{};let sub=0;
+  $("#bLines").innerHTML=cart.length?"<tr><th>Medicine</th><th>Sch.</th><th class='num'>Qty</th><th class='num'>Amount</th><th></th></tr>"+cart.map((l,i)=>{const m=med(l.med),b=ctx.branch?usable(ctx.branch,l.med)[0]:null,a=(b?b.mrp:0)*l.qty;sub+=a;
+    return`<tr><td><b>${esc(m.name)}</b> ${l.rx?pill("Rx","p-info p-plain"):""}${b?`<div class="small muted"><span class="rack sm">${esc(b.rack||"–")}</span>batch ${esc(b.code)} · exp ${effExp(b).slice(0,7)}</div>`:""}${(st[l.med]||0)<l.qty?`<div class="allergy small">only ${st[l.med]||0} in stock</div>`:""}</td><td>${m.schedule}</td><td class="num"><input type="number" min="1" value="${l.qty}" data-q="${i}" style="width:72px" aria-label="Quantity of ${esc(m.name)}"></td><td class="num">${money(a)}</td><td><button class="btn ghost sm" data-rm="${i}">Remove</button></td></tr>`}).join("")+
+    `<tr><td colspan="3"><b>Total</b> <span class="small muted">MRP incl. 5% GST, less discount</span></td><td class="num"><b>${money(Math.max(0,sub-Math.round((+$("#bDisc").value||0)*100)))}</b></td><td></td></tr>`:'<tr><td class="empty">Add medicines or load a prescription.</td></tr>';
+  $("#bLines").querySelectorAll("[data-q]").forEach(x=>x.onchange=()=>{cart[+x.dataset.q].qty=Math.max(1,+x.value||1);drawCart()});
+  $("#bLines").querySelectorAll("[data-rm]").forEach(x=>x.onclick=()=>{cart.splice(+x.dataset.rm,1);drawCart()});
+  $("#bDocBox").hidden=!cart.some(l=>["H","H1"].includes(med(l.med).schedule)&&!l.rx)}
+$("#bDisc").oninput=drawCart;
+$("#bAddLine").onclick=()=>{const m=medByName($("#bMed").value),q=+$("#bQty").value;if(!m)return toast("Choose a medicine from the list.");if(!(q>0))return toast("Enter a quantity.");cart.push({med:m.id,qty:q});$("#bMed").value="";$("#bInfo").innerHTML="";drawCart();$("#bMed").focus()};
+function resetBill(){cart=[];billVisit=null;["#bPat","#bDoc","#bReg"].forEach(s=>$(s).value="");$("#bDisc").value=0;$("#bRx").innerHTML="";drawCart()}
+$("#bReset").onclick=resetBill;
+$("#bSave").onclick=async()=>{const body={patient:pidOf($("#bPat").value),visit:cart.some(l=>l.rx)?billVisit:null,docName:$("#bDoc").value,docReg:$("#bReg").value,discount:$("#bDisc").value,pay:$("#bPay").value,items:cart.map(l=>({med:l.med,qty:l.qty,rx:l.rx||null}))};
+  for(let attempt=0;attempt<2;attempt++){try{const b=createBill(body);resetBill();commit();renderBilling();viewBill(b.id);toast(`Bill ${b.no} saved · ${money(b.total)}`);return}
+    catch(e){if(e.warnings&&!body.override){if(await ask("Safety warnings at the counter",warnHtml(e.warnings)+'<p class="small muted">Continue only after checking with the patient or the prescribing doctor. The override is logged.</p>',"Checked, continue",true)){body.override=true;continue}return}toast(e.message);return}}};
+function viewBill(id){const b=S.bills.find(x=>x.id==id),el=$("#bView"),br=branch(b.branch);el.hidden=false;
+  el.innerHTML=`<div class="rx-h"><div><b>${esc(br.name)}</b><div class="small muted">GSTIN 29ABCDE1234F1Z5 · DL KA-B-20-12345</div></div><div style="text-align:right"><b class="mono">${b.no}</b><div class="small muted">${b.created}</div></div></div>
+  <p class="small" style="margin:0 0 8px">${esc(b.customer)}${b.patient?` · <span class="mono">${pcode(b.patient)}</span>`:""}${b.docName?` · Rx by ${esc(b.docName)} ${esc(b.docReg||"")}`:""} · ${b.pay.toUpperCase()} · cashier ${esc(b.user)}</p>
+  <div class="tbl"><table><tr><th>Item</th><th>Batch</th><th class="num">Qty</th><th class="num">MRP</th><th class="num">Amount</th><th class="num">Return</th></tr>
+  ${b.items.map(i=>`<tr><td>${esc(med(i.med).name)}<div class="small muted">${(()=>{const bt=S.batches.find(z=>z.id==i.batch);return bt&&bt.rack?`<span class="rack sm">${esc(bt.rack)}</span>`:""})()}exp ${i.expiry.slice(0,7)}</div></td><td class="mono">${i.code}</td><td class="num">${i.qty}${i.returned?`<div class="small muted">ret ${i.returned}</div>`:""}</td><td class="num">${money(i.mrp)}</td><td class="num">${money(i.net)}</td><td class="num">${i.qty-i.returned&&can("billing")&&b.branch==ctx.branch?`<input type="number" min="0" max="${i.qty-i.returned}" value="0" data-ret="${i.id}" style="width:64px" aria-label="Return quantity">`:"–"}</td></tr>`).join("")}</table></div>
+  <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:10px">${can("billing")&&b.branch==ctx.branch?`<button class="btn ghost sm" id="bRet">Process return</button>`:"<span></span>"}
+  <div style="text-align:right" class="small">Subtotal ${money(b.sub)} · Discount ${money(b.disc)}<br><b style="font-size:16px">Total ${money(b.total)}</b><br><span class="muted">includes GST ${money(b.gst)}${b.refund?` · refunded ${money(b.refund)}`:""}</span></div></div>
+  <h3 style="margin:14px 0 8px">Attached documents</h3>${docThumbs(docsFor(d=>d.bill==b.id))}`;bindThumbs(el);
+  $("#bRet")&&($("#bRet").onclick=()=>{let refund=0;for(const x of el.querySelectorAll("[data-ret]")){const q=+x.value;if(!q)continue;const it=b.items.find(i=>i.id==+x.dataset.ret);if(q>it.qty-it.returned)return toast("Return is more than was sold.");
+      const bt=S.batches.find(z=>z.id==it.batch);if(daysLeft(bt)>=0)bt.qty+=q;const amt=Math.floor(it.net*q/it.qty);refund+=amt;it.returned+=q;if(it.rx){const r=S.rx.find(z=>z.id==it.rx);r.dispensed=Math.max(0,r.dispensed-q)}}
+    if(!refund)return toast("Enter how many to return.");b.refund+=refund;audit("bill.return",`${b.no} refund ${money(refund)}`);commit();renderBilling();viewBill(b.id);toast(`Refunded ${money(refund)}. Stock restored.`)})}
+
+// ================= stock =================
+let stockPane="overview";
+function renderStock(){fillLists();
+  if(!ctx.branch){$("#stockSub").innerHTML="";document.querySelectorAll("#t-stock .pane").forEach(x=>x.classList.toggle("on",x.id=="s-overview"));
+    const ph=pharmacies(),st=Object.fromEntries(ph.map(b=>[b.id,usableStock(b.id)]));
+    $("#sOverview").innerHTML=`<div class="card"><div class="card-h"><div><h2>Stock across all pharmacies</h2><p>Usable units. Red is below the reorder level. Open a branch to transfer stock.</p></div></div><div class="tbl"><table><tr><th>Medicine</th>${ph.map(b=>`<th class="num">${b.code}</th>`).join("")}<th class="num">Total</th></tr>${S.meds.map(m=>`<tr><td>${esc(m.name)}<div class="small muted">${esc(m.generic)}</div></td>${ph.map(b=>{const q=st[b.id][m.id]||0;return`<td class="num">${q<m.reorder?`<b style="color:var(--crit)">${q}</b>`:q}</td>`}).join("")}<td class="num">${ph.reduce((a,b)=>a+(st[b.id][m.id]||0),0)}</td></tr>`).join("")}</table></div></div>`;return}
+  const panes=[["overview","Overview"],["insights","Expiry rescue & reorder"],["batches","All batches"]].concat(can("stock")?[["purchase","Receive goods"]]:[]);
+  if(!panes.some(p=>p[0]==stockPane))stockPane="overview";
+  $("#stockSub").innerHTML=panes.map(p=>`<button data-p="${p[0]}" class="${p[0]==stockPane?"on":""}">${p[1]}</button>`).join("");
+  $("#stockSub").querySelectorAll("button").forEach(b=>b.onclick=()=>{stockPane=b.dataset.p;renderStock()});
+  document.querySelectorAll("#t-stock .pane").forEach(x=>x.classList.toggle("on",x.id=="s-"+stockPane));
+  const sv=stockView(ctx.branch),stp={out:"p-crit",low:"p-warn",ok:"p-ok"};
+  const win=[["Expired",b=>b.days<0,"p-crit"],["0–30 days",b=>b.days>=0&&b.days<=30,"p-crit"],["31–90 days",b=>b.days>30&&b.days<=90,"p-warn"],["91–180 days",b=>b.days>90&&b.days<=180,"p-ok"],["Over 180 days",b=>b.days>180,"p-ok"]].map(([l,f,c])=>{const bs=sv.batches.filter(f);return{l,c,v:bs.reduce((a,b)=>a+b.qty*b.cost,0),n:bs.length}});
+  const wmax=Math.max(1,...win.map(w=>w.v));
+  $("#sOverview").innerHTML=`<div class="kpis">${kpi("Stock value",money(sv.batches.filter(b=>b.days>=0).reduce((a,b)=>a+b.qty*b.cost,0)),"usable, at cost")}${kpi("Out of stock",sv.summary.filter(s=>s.status=="out").length,"medicines","crit")}${kpi("Below reorder level",sv.summary.filter(s=>s.status=="low").length,"medicines","warn")}${kpi("Expired on shelf",money(win[0].v),win[0].n+" batches",win[0].n?"crit":"")}</div>
+  <div class="g-main"><div class="card"><div class="card-h"><div><h2>Medicines</h2><p>Sales speed is the 30-day average</p></div></div><div class="tbl"><table><tr><th>Medicine</th><th class="num">Usable</th><th class="num">Sells/day</th><th class="num">Days cover</th><th>Status</th></tr>
+  ${sv.summary.map(s=>`<tr><td><b>${esc(s.name)}</b> <span class="small muted">${s.schedule}</span> ${[...new Set(usable(ctx.branch,s.med).map(b=>b.rack))].map(r=>`<span class="rack sm">${esc(r)}</span>`).join("")}<div class="small muted">${esc(s.generic)}${s.expired?` · <span class="allergy">${s.expired} expired</span>`:""}</div></td><td class="num">${s.usable}</td><td class="num">${s.perDay}</td><td class="num">${s.cover??"–"}</td><td>${pill(s.status,stp[s.status])}</td></tr>`).join("")}</table></div></div>
+  <div class="card"><div class="card-h"><div><h2>Value by time to expiry</h2><p>Stock at cost, grouped by days left</p></div></div><div class="bars">${win.map(w=>`<div class="row"><span>${pill(w.l,w.c)}</span><div class="track"><div class="fill" style="width:${(w.v/wmax*100).toFixed(1)}%"></div></div><span class="v">${money(w.v)}</span></div>`).join("")}</div>
+  <p class="small muted" style="margin:10px 0 0">${win.map(w=>`${w.l}: ${w.n} batches`).join(" · ")}</p></div></div>`;
+  $("#sTransfers").innerHTML="<tr><th>Medicine</th><th>Batch</th><th class='num'>Days left</th><th class='num'>Qty</th><th>Suggestion</th><th></th></tr>"+(sv.transfers.map(t=>`<tr><td><b>${esc(t.name)}</b></td><td class="mono">${t.code}</td><td class="num">${t.days}</td><td class="num">${t.qty}</td><td>${t.to?`Move to <b>${esc(t.toName)}</b>`:"Return to supplier or run an offer"}<div class="small muted">${esc(t.why)}</div></td><td>${t.to&&can("stock_admin")?`<button class="btn sm" data-tr="${t.batch}" data-to="${t.to}" data-q="${t.qty}">Transfer</button>`:""}</td></tr>`).join("")||'<tr><td colspan="6" class="empty">Nothing at risk.</td></tr>');
+  $("#sTransfers").querySelectorAll("[data-tr]").forEach(b=>b.onclick=()=>transfer(+b.dataset.tr,+b.dataset.to,+b.dataset.q));
+  $("#sReorder").innerHTML="<tr><th>Medicine</th><th class='num'>Have</th><th class='num'>Sells/day</th><th class='num'>Order</th><th>Why</th></tr>"+(sv.reorder.map(r=>`<tr><td><b>${esc(r.name)}</b></td><td class="num">${r.have}</td><td class="num">${r.perDay}</td><td class="num"><b>${r.order}</b></td><td class="small muted">${esc(r.why)}</td></tr>`).join("")||'<tr><td colspan="5" class="empty">Nothing to reorder.</td></tr>');
+  $("#sBatches").innerHTML=`<tr><th>Medicine</th><th>Batch</th><th>Rack</th><th class="num">Qty</th><th>Expires</th><th>Left</th><th class="num">MRP</th><th></th></tr>${sv.batches.map(b=>`<tr><td><b>${esc(med(b.med).name)}</b></td><td class="mono">${b.code}</td><td>${can("stock")?`<input value="${esc(b.rack||"")}" data-rack="${b.id}" style="width:80px" class="mono" aria-label="Rack for batch ${esc(b.code)}">`:`<span class="rack sm">${esc(b.rack||"–")}</span>`}</td><td class="num">${b.qty}</td><td class="mono">${effExp(b)}${b.opened?`<div class="small muted">opened ${b.opened}</div>`:""}</td><td>${pill(b.days<0?"expired":b.days+" d",b.days<=30?"p-crit":b.days<=90?"p-warn":"p-ok")}</td><td class="num">${money(b.mrp)}</td>
+  <td style="white-space:nowrap">${(()=>{const n=S.docs.filter(d=>(d.batches||[]).includes(b.id));return n.length?`<button class="btn ghost sm" data-doc="${n[0].id}">${n.length} doc${n.length>1?"s":""}</button> `:""})()}${can("stock")?`<button class="btn ghost sm" data-wo="${b.id}">Write off</button>`:""}${can("stock")&&med(b.med).form=="Syrup"&&!b.opened?` <button class="btn ghost sm" data-op="${b.id}">Mark opened</button>`:""}</td></tr>`).join("")}`;
+  bindThumbs($("#sBatches"));$("#sBatches").querySelectorAll("[data-rack]").forEach(x=>x.onchange=()=>{const bt=S.batches.find(z=>z.id==+x.dataset.rack),old=bt.rack,v=x.value.trim().toUpperCase().slice(0,12);if(!v){x.value=old;return toast("Enter a rack, e.g. A2-3.")}bt.rack=v;x.value=v;audit("stock.rack",`${med(bt.med).name} ${bt.code} rack ${old||"-"} → ${v}`);commit();toast(`Rack set to ${v}`)});$("#sBatches").querySelectorAll("[data-wo]").forEach(b=>b.onclick=()=>writeOff(+b.dataset.wo));
+  $("#sBatches").querySelectorAll("[data-op]").forEach(b=>b.onclick=()=>{const bt=S.batches.find(x=>x.id==+b.dataset.op);bt.opened=today();audit("stock.opened",`${med(bt.med).name} ${bt.code}`);commit();renderStock();toast("Marked opened. It now expires in 30 days or on the printed date, whichever comes first.")})}
+async function transfer(id,to,qty){const bt=S.batches.find(b=>b.id==id),dest=branch(to);
+  if(!await ask("Transfer stock",`<p>Move <b>${qty}</b> × ${esc(med(bt.med).name)} (batch <span class="mono">${bt.code}</span>, ${daysLeft(bt)} days left) to <b>${esc(dest.name)}</b>?</p>`,"Transfer"))return;
+  bt.qty-=qty;S.batches.push({...bt,id:nid("batch"),branch:to,qty,rack:rackFor(to,bt.med)});audit("stock.transfer",`${branch(ctx.branch).code}→${dest.code} ${med(bt.med).name} ${bt.code} ×${qty}`);commit();renderStock();toast(`Moved ${qty} to ${dest.name}`)}
+async function writeOff(id){const bt=S.batches.find(b=>b.id==id);
+  const ok=await ask("Write off stock",`<p>${esc(med(bt.med).name)} batch <span class="mono">${bt.code}</span>, ${bt.qty} in stock.</p><div class="fields"><div><label for="woQty">Quantity</label><input id="woQty" type="number" min="1" max="${bt.qty}" value="${bt.qty}"></div>
+    <div><label for="woWhy">Reason</label><select id="woWhy"><option value="expired">Expired</option><option value="damaged">Damaged</option><option value="returned_to_supplier">Returned to supplier</option><option value="count_correction">Count correction</option></select></div></div>`,"Write off",true);
+  if(!ok)return;const q=Math.min(bt.qty,Math.max(1,+$("#woQty").value||0)),why=$("#woWhy").value;bt.qty-=q;audit("stock.writeoff",`${med(bt.med).name} ${bt.code} ×${q} (${why}) loss ${money(q*bt.cost)}`);commit();renderStock();toast(`Wrote off ${q} · loss ${money(q*bt.cost)}`)}
+$("#puSave").onclick=()=>{const m=medByName($("#puMed").value),qty=+$("#puQty").value,free=+$("#puFree").value||0,cost=Math.round(+$("#puCost").value*100),mrp=Math.round(+$("#puMrp").value*100),exp=$("#puExp").value;
+  if(!m)return toast("Choose a medicine from the list.");if(!(qty>0)||!exp||!mrp)return toast("Enter quantity, expiry and MRP.");
+  if(exp<=today())return toast("This batch has already expired. Don't accept it.");if(cost>mrp)return toast("Cost is higher than MRP. Check the invoice.");
+  const rk=($("#puRack").value.trim().toUpperCase()||rackFor(ctx.branch,m.id)).slice(0,12);S.batches.push({id:nid("batch"),branch:ctx.branch,med:m.id,code:$("#puBatch").value.trim()||"NEW",expiry:exp,opened:null,qty:qty+free,mrp,cost:Math.floor(cost*qty/(qty+free)),rack:rk});
+  audit("purchase.create",`${$("#puSup").value} inv ${$("#puInv").value||"-"} ${m.name} ×${qty}+${free} ${money(cost*qty)}`);["#puMed","#puBatch","#puRack","#puExp","#puQty","#puCost","#puMrp"].forEach(s=>$(s).value="");$("#puFree").value=0;commit();toast(`Received ${qty+free} × ${m.name}. Put it on rack ${rk}.`)};
+
+// ================= reports & audit =================
+function renderReports(){const docs=S.users.filter(u=>u.role=="doctor");$("#rDoc").innerHTML=docs.map(d=>`<option value="${d.id}">${esc(d.name)}</option>`).join("");
+  $("#rKind").querySelector("[value=group]").hidden=!can("org_reports");$("#rKind").querySelector("[value=daily]").hidden=ctx.user.role=="doctor";
+  if(ctx.user.role=="doctor"){$("#rKind").value="doctor";$("#rDoc").value=ctx.user.id;$("#rDoc").disabled=true}else $("#rDoc").disabled=false;
+  if(!ctx.branch&&$("#rKind").value=="branch")$("#rKind").value=can("org_reports")?"daily":"doctor";
+  if($("#rKind").value=="group"&&!can("org_reports"))$("#rKind").value="branch";
+  if(!$("#rDate").value)$("#rDate").value=today();drawReport()}
+function drawReport(){const k=$("#rKind").value,d=$("#rDate").value||today();$("#rDocBox").hidden=k!="doctor";$("#rDaily").hidden=k!="daily";$("#rClassic").hidden=k=="daily";if(k=="daily"){renderDaily(d);return}
+  $("#rTitle").textContent=k=="group"?"Group report":k=="doctor"?"Doctor summary":"Branch report";
+  $("#rText").textContent=k=="group"?orgReport(d).text:k=="doctor"?doctorReport(+$("#rDoc").value,d).text:(ctx.branch?branchReport(ctx.branch,d).text:"Choose a branch in the sidebar.")}
+["#rKind","#rDate","#rDoc"].forEach(s=>$(s).onchange=drawReport);
+$("#rCopy").onclick=()=>{const t=$("#rText").textContent;navigator.clipboard.writeText(t).then(()=>toast("Report copied"),()=>{const r=document.createRange();r.selectNodeContents($("#rText"));const s=getSelection();s.removeAllRanges();s.addRange(r);toast("Text selected. Press Ctrl+C to copy.")})};
+function renderAudit(){const rows=allAccess()?S.audit:S.audit.filter(a=>a.branch==branch(ctx.user.branch).code);
+  $("#auTable").innerHTML="<tr><th>When</th><th>User</th><th>Branch</th><th>Action</th><th>Detail</th></tr>"+(rows.map(a=>`<tr><td class="mono">${a.at}</td><td>${esc(a.user)}</td><td><span class="code">${a.branch}</span></td><td class="mono">${a.action}</td><td class="small">${a.detail.includes("OVERRIDE")?`<span class="pill p-crit p-plain">override</span> `:""}${esc(a.detail)}</td></tr>`).join("")||'<tr><td colspan="5" class="empty">No actions yet. Register a patient or save a bill and it appears here.</td></tr>')}
+$("#resetDemo").onclick=async()=>{if(await ask("Reset demo data","<p>This clears everything you changed and reloads the sample group.</p>","Reset",true)){try{localStorage.removeItem(KEY)}catch(e){}const keepDocs=(S.docs||[]).filter(d=>d.assetId);seed();S.docs=[];ensureBilling();ensureRacks();save();setUser(1,0);openPid=null;renderShell();toast("Demo data reset")}};
+
+// ================= boot =================
+
+// ================= documents =================
+const DOC_TYPES={bill:"Pharmacy bill",invoice:"Supplier invoice",rx:"Prescription",lab:"Lab report",scan:"Scan / X-ray",id:"ID / insurance",other:"Other"};
+let ASSETS=null,SAMPLE=null,SAMPLE_IMG=false,upFile=null,upUrl=null,upAdded=[],docType="all",openDoc=null;
+(async()=>{try{if(!window.claude||!window.claude.use)return;const[a,s]=await Promise.all([window.claude.use("assets"),window.claude.use("sample")]);ASSETS=a;SAMPLE=s;
+  if(s){const l=await s.limits().catch(()=>null);SAMPLE_IMG=!!(l&&l.images)}}catch(e){}if(cur=="docs")renderDocs()})();
+const docSrc=d=>d.assetId?"/_blob/"+d.assetId:(d.dataUrl||"");
+const isImg=d=>(d.mime||"").startsWith("image/");
+const docsFor=f=>S.docs.filter(f).sort((a,b)=>a.created<b.created?1:-1);
+const kb=n=>n>1048576?(n/1048576).toFixed(1)+" MB":Math.max(1,Math.round(n/1024))+" KB";
+const optH=(v,l,sel)=>`<option value="${esc(v)}"${sel?" selected":""}>${esc(l)}</option>`;
+function docThumbs(list){return list.length?`<div class="dthumbs">${list.map(d=>`<button class="dthumb" data-doc="${d.id}" aria-label="Open ${esc(DOC_TYPES[d.type])}">${isImg(d)?`<img src="${esc(docSrc(d))}" alt="">`:`<span class="pdf">PDF</span>`}<span>${esc(DOC_TYPES[d.type])}</span></button>`).join("")}</div>`:'<p class="small muted" style="margin:0">No documents attached.</p>'}
+function bindThumbs(root){root.querySelectorAll("[data-doc]").forEach(b=>b.onclick=()=>{openDoc=+b.dataset.doc;show("docs")})}
+function docTags(d){const t=[];const p=d.patient&&patient(d.patient),b=d.bill&&S.bills.find(x=>x.id==d.bill);
+  if(p)t.push(`<span class="tagc"><b>Patient</b> ${esc(p.name)}</span>`);
+  if(d.doctor)t.push(`<span class="tagc"><b>Doctor</b> ${d.doctor=="ext"?"Outside doctor":esc(user(d.doctor).name)}</span>`);
+  if(d.branch)t.push(`<span class="tagc"><b>Branch</b> ${branch(d.branch).code}</span>`);
+  if(b)t.push(`<span class="tagc"><b>Bill</b> ${b.no}</span>`);
+  if(d.med)t.push(`<span class="tagc"><b>Stock</b> ${esc(med(d.med).name)}${(d.batches||[]).length?" · "+d.batches.length+" batch"+(d.batches.length>1?"es":""):""}</span>`);
+  return`<div class="tags">${t.join("")||'<span class="tagc">Not assigned</span>'}</div>`}
+
+function assignHtml(p,d){const brs=S.branches.filter(b=>allAccess()||b.id==ctx.user.branch),docs=S.users.filter(u=>u.role=="doctor"),pat=d.patient?patient(d.patient):null,brSel=d.branch||ctx.branch||brs[0].id;
+  return`<div class="fields">
+  <div><label for="${p}Type">Document type</label><select id="${p}Type">${Object.entries(DOC_TYPES).map(([k,l])=>optH(k,l,d.type==k)).join("")}</select></div>
+  <div><label for="${p}Date">Document date</label><input id="${p}Date" type="date" value="${esc(d.date||today())}"></div>
+  <div class="span2"><label for="${p}Pat">Patient</label><input id="${p}Pat" list="patOpts" value="${pat?esc(`${pcode(pat.id)} · ${pat.name} · ${pat.phone}`):""}" placeholder="Type name, phone or ID"></div>
+  <div><label for="${p}Doc">Doctor</label><select id="${p}Doc">${optH("","None",!d.doctor)}${docs.map(u=>optH(u.id,u.name,d.doctor==u.id)).join("")}${optH("ext","Outside doctor",d.doctor=="ext")}</select></div>
+  <div><label for="${p}Br">Branch</label><select id="${p}Br">${brs.map(b=>optH(b.id,b.code+" · "+b.name,brSel==b.id)).join("")}</select></div>
+  <div class="span2"><label for="${p}Bill">Pharmacy bill</label><select id="${p}Bill"></select></div>
+  <div class="span2"><label for="${p}Med">Stock item</label><input id="${p}Med" list="medOpts" value="${d.med?esc(med(d.med).name):""}" placeholder="Medicine on an invoice, return or damage note"></div>
+  <div class="span2"><label for="${p}Batch">Batch</label><select id="${p}Batch"></select></div>
+  <div class="span2"><label for="${p}Note">Note</label><input id="${p}Note" value="${esc(d.note||"")}" placeholder="e.g. CBC report, insurance claim, damaged strip"></div></div>`}
+function wireAssign(p,d){const q=s=>$("#"+p+s);
+  const fillBills=()=>{const pid=pidOf(q("Pat").value),bid=+q("Br").value,since=addDays(today(),-90),keep=+q("Bill").value||d.bill;
+    const l=S.bills.filter(b=>(pid?b.patient==pid:b.branch==bid)&&b.created>=since).slice(-40).reverse();
+    q("Bill").innerHTML=optH("",l.length?"None":"No recent bills for this "+(pid?"patient":"branch"),!keep)+l.map(b=>optH(b.id,`${b.no} · ${b.created.slice(0,10)} · ${b.customer} · ${money(b.total)}`,keep==b.id)).join("")};
+  const fillBatches=()=>{const m=medByName(q("Med").value),bid=+q("Br").value,keep=(d.batches||[])[0];
+    const l=m?S.batches.filter(b=>b.med==m.id&&b.branch==bid):[];
+    q("Batch").innerHTML=optH("",m?(l.length?"Any batch":"No batches at this branch"):"Choose a medicine first",!keep)+l.map(b=>optH(b.id,`${b.code} · exp ${effExp(b)} · ${b.qty} in stock`,keep==b.id)).join("")};
+  q("Pat").addEventListener("change",fillBills);q("Br").addEventListener("change",()=>{fillBills();fillBatches()});q("Med").addEventListener("change",fillBatches);
+  q("Bill").addEventListener("change",()=>{const b=S.bills.find(x=>x.id==+q("Bill").value);if(b&&b.patient&&!q("Pat").value){const pt=patient(b.patient);q("Pat").value=`${pcode(pt.id)} · ${pt.name} · ${pt.phone}`}if(b&&q("Type").value=="other")q("Type").value="bill"});
+  fillBills();fillBatches();return{fillBills,fillBatches}}
+function readAssign(p){const q=s=>$("#"+p+s),pid=pidOf(q("Pat").value),m=medByName(q("Med").value),dv=q("Doc").value,bt=+q("Batch").value||null;
+  if(q("Pat").value.trim()&&!patient(pid))throw new Err("Pick the patient from the list, or clear the patient field.");
+  if(q("Med").value.trim()&&!m)throw new Err("Pick the medicine from the list, or clear the stock field.");
+  return{type:q("Type").value,date:q("Date").value||today(),patient:pid,doctor:dv==""?null:dv=="ext"?"ext":+dv,branch:+q("Br").value,bill:+q("Bill").value||null,med:m?m.id:null,batches:bt?[bt]:[],note:q("Note").value.trim()}}
+
+function renderDocs(){fillLists();
+  const list=S.docs.filter(d=>allAccess()||d.branch==ctx.user.branch),q=($("#docSearch").value||"").trim().toLowerCase();
+  const match=d=>{if(docType!="all"&&d.type!=docType)return false;if(!q)return true;const p=d.patient&&patient(d.patient),b=d.bill&&S.bills.find(x=>x.id==d.bill);
+    return[p&&p.name,p&&pcode(p.id),b&&b.no,d.med&&med(d.med).name,d.note,d.name,DOC_TYPES[d.type],d.doctor&&d.doctor!="ext"&&user(d.doctor).name].some(s=>s&&String(s).toLowerCase().includes(q))};
+  const shown=list.filter(match).sort((a,b)=>a.created<b.created?1:-1);
+  $("#docCount").textContent=`${list.length} document${list.length==1?"":"s"}`+(ASSETS?" · stored with this artifact":" · saved in this browser");
+  $("#docChips").innerHTML=[["all","All"],...Object.entries(DOC_TYPES)].map(([k,l])=>{const n=k=="all"?list.length:list.filter(d=>d.type==k).length;return n||k=="all"?`<button data-k="${k}" class="${docType==k?"on":""}">${l} <span class="muted">${n}</span></button>`:""}).join("");
+  $("#docChips").querySelectorAll("button").forEach(b=>b.onclick=()=>{docType=b.dataset.k;renderDocs()});
+  $("#docGrid").innerHTML=shown.map(d=>`<button class="dcard${openDoc==d.id?" sel":""}" data-open="${d.id}"><div class="th">${isImg(d)?`<img src="${esc(docSrc(d))}" alt="${esc(DOC_TYPES[d.type])}" loading="lazy">`:`<span class="pdf">PDF</span>`}</div>
+    <div class="b"><div style="display:flex;justify-content:space-between;gap:6px;align-items:center"><span class="pill p-info p-plain">${esc(DOC_TYPES[d.type])}</span><span class="mono small muted">${esc(d.date)}</span></div>${docTags(d)}</div></button>`).join("")
+    ||`<div class="empty" style="grid-column:1/-1;padding:36px 10px"><b>${list.length?"No documents match":"No documents yet"}</b><br>${list.length?"Try another filter.":"Upload a photo of a bill, invoice or report on the left. It appears here with everything it's linked to."}</div>`;
+  $("#docGrid").querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>{openDoc=+b.dataset.open;renderDocs();$("#docDetail").scrollIntoView({behavior:"smooth",block:"nearest"})});
+  renderDocDetail()}
+$("#docSearch").oninput=()=>renderDocs();
+
+// ---- upload
+const dropEl=$("#drop");
+["dragenter","dragover"].forEach(ev=>dropEl.addEventListener(ev,e=>{e.preventDefault();dropEl.classList.add("over")}));
+["dragleave","drop"].forEach(ev=>dropEl.addEventListener(ev,e=>{e.preventDefault();dropEl.classList.remove("over")}));
+dropEl.addEventListener("drop",e=>pickFile(e.dataTransfer.files[0]));
+$("#upFile").onchange=e=>{pickFile(e.target.files[0]);e.target.value=""};
+function pickFile(f){if(!f)return;if(!/^image\/(jpeg|png|webp|gif)$|^application\/pdf$/.test(f.type))return toast("Choose a JPG, PNG or WebP photo, or a PDF.");
+  if(f.size>20*1048576)return toast("That file is over 20 MB. Take a smaller photo.");
+  upFile=f;upAdded=[];if(upUrl)URL.revokeObjectURL(upUrl);upUrl=URL.createObjectURL(f);dropEl.hidden=true;
+  const img=f.type.startsWith("image/"),canAi=SAMPLE&&SAMPLE_IMG&&img;
+  $("#upStage").hidden=false;$("#upStage").innerHTML=`<div class="preview">${img?`<img src="${upUrl}" alt="Selected document">`:`<div class="pdfbox"><span class="pdf">PDF</span><b>${esc(f.name)}</b></div>`}</div>
+    <p class="small muted" style="margin:8px 0 0">${esc(f.name)} · ${kb(f.size)}</p>
+    ${canAi?`<div class="aibar"><div><b>Let AI read it</b><span class="small muted">Fills in the type, date, patient, doctor and medicines. You check before saving.</span></div><button class="btn" id="aiBtn">Read with AI</button></div>`:""}
+    <div id="aiOut"></div><h3 style="margin:14px 0 8px">Assign this document</h3>${assignHtml("u",{type:img?"bill":"lab",branch:ctx.branch})}
+    <div class="btns"><button class="btn" id="upSave">Save document</button><button class="btn ghost" id="upCancel">Cancel</button></div>`;
+  wireAssign("u",{});$("#upCancel").onclick=resetUpload;$("#upSave").onclick=saveUpload;canAi&&($("#aiBtn").onclick=aiRead)}
+function resetUpload(){upFile=null;upAdded=[];if(upUrl)URL.revokeObjectURL(upUrl);upUrl=null;$("#upStage").hidden=true;$("#upStage").innerHTML="";dropEl.hidden=false}
+function shrink(file,max=1400,qual=.72){return new Promise((res,rej)=>{const img=new Image(),u=URL.createObjectURL(file);img.onload=()=>{const s=Math.min(1,max/Math.max(img.width,img.height)),c=document.createElement("canvas");
+  c.width=Math.round(img.width*s);c.height=Math.round(img.height*s);c.getContext("2d").drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(u);res(c.toDataURL("image/jpeg",qual))};img.onerror=()=>{URL.revokeObjectURL(u);rej(new Err("This image can't be read."))};img.src=u})}
+const asDataUrl=f=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=()=>rej(new Err("This file can't be read."));r.readAsDataURL(f)});
+function persist(){try{localStorage.setItem(KEY,JSON.stringify(S));return true}catch(e){return false}}
+async function saveUpload(){let a;try{a=readAssign("u")}catch(e){return toast(e.message)}
+  const btn=$("#upSave");btn.disabled=true;btn.textContent="Saving…";
+  try{let assetId=null,dataUrl=null;
+    if(ASSETS){try{assetId=(await ASSETS.upload(upFile)).id}catch(e){const c=e&&e.code;
+      if(c=="too_large")throw new Err("That file is too large to store. Take a smaller photo.");
+      if(c=="quota_or_state")throw new Err("Document storage for this artifact is full. Delete old documents first.");
+      if(c=="rate_limited")throw new Err("Too many uploads at once. Wait a moment and save again.");
+      if(c=="unsupported_type")throw new Err("This file type can't be stored. Use JPG, PNG, WebP or PDF.")}}
+    if(!assetId){if(upFile.type.startsWith("image/"))dataUrl=await shrink(upFile);else if(upFile.size<400*1024)dataUrl=await asDataUrl(upFile);
+      else throw new Err("This view can only keep PDFs under 400 KB. Upload a photo of the page instead.")}
+    const batches=[...new Set([...a.batches,...upAdded])];
+    const d={id:nid("doc"),...a,batches,med:a.med||(upAdded.length?S.batches.find(b=>b.id==upAdded[0]).med:null),name:upFile.name,mime:upFile.type,size:upFile.size,assetId,dataUrl,created:nowStr(),user:ctx.user.username};
+    S.docs.push(d);if(!persist()){S.docs.pop();throw new Err("This browser's storage is full. Delete some older documents first.")}
+    const p=d.patient&&patient(d.patient);audit("doc.upload",`${DOC_TYPES[d.type]}${p?" · "+pcode(p.id)+" "+p.name:""}${d.bill?" · bill "+S.bills.find(x=>x.id==d.bill).no:""}${d.med?" · "+med(d.med).name:""} · ${branch(d.branch).code}`);
+    commit();openDoc=d.id;resetUpload();renderDocs();toast("Document saved and linked")}
+  catch(e){toast(e.message||"Couldn't save the document.");btn.disabled=false;btn.textContent="Save document"}}
+
+// ---- AI reader
+const words=s=>String(s||"").toLowerCase().replace(/\bdr\.?\s*/g,"").split(/[^a-z0-9]+/).filter(w=>w.length>1);
+function bestMatch(name,list,key){const w=words(name);if(!w.length)return null;let best=null,bs=0;
+  for(const x of list){const xw=words(key(x)),hit=w.filter(t=>xw.includes(t)).length,sc=hit/Math.max(1,Math.min(w.length,xw.length));if(hit&&sc>bs){bs=sc;best=x}}return bs>=.5?best:null}
+function normExp(s){const m=String(s||"").match(/^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?$/);if(!m)return null;const y=+m[1],mo=+m[2];if(mo<1||mo>12)return null;
+  return m[3]?`${y}-${String(mo).padStart(2,"0")}-${String(+m[3]).padStart(2,"0")}`:iso(new Date(y,mo,0,12).getTime())}
+async function aiRead(){const btn=$("#aiBtn"),out=$("#aiOut");btn.disabled=true;btn.textContent="Reading…";out.innerHTML=alertRow("info","Reading the document. This can take up to a minute.");
+  const prompt=`This image is a document photographed at an Indian hospital, clinic or pharmacy. Read it and reply with only one JSON object in this shape:
+{"doc_type":"bill|invoice|rx|lab|scan|id|other","date":"YYYY-MM-DD or empty","patient_name":"","doctor_name":"","supplier":"","document_no":"","total":0,"summary":"one short sentence","items":[{"medicine":"brand as printed","batch":"","expiry":"YYYY-MM","qty":0,"mrp":0,"cost":0}]}
+doc_type: "bill" = pharmacy sale bill to a patient, "invoice" = distributor/supplier purchase invoice, "rx" = doctor's prescription, "lab" = lab test report, "scan" = X-ray/scan report, "id" = ID or insurance card.
+mrp and cost are rupees per unit (strip or bottle). Leave a field empty, 0 or [] when it is not visible. Do not guess.
+Brands this group stocks (match spelling when the printed name is one of these): ${S.meds.map(m=>m.name).join(", ")}.`;
+  try{const r=await SAMPLE.json(prompt,{images:[upFile]});applyAi(r&&typeof r=="object"?r:{})}
+  catch(e){const c=e&&e.code;out.innerHTML=alertRow("",c=="not_granted"||c=="sampling_disabled"||c=="images_unavailable"?"AI reading isn't available here. Fill in the fields yourself.":c=="rate_limited"?"Too many AI requests just now. Try again in a minute.":c=="image_rejected"?"The AI couldn't read this image. Try a sharper photo.":c=="invalid_json"?"The AI's answer couldn't be read. Try again.":"The AI couldn't read the document this time. Fill in the fields yourself or try again.");
+    if(["not_granted","sampling_disabled","images_unavailable"].includes(c))btn.remove();else{btn.disabled=false;btn.textContent="Read with AI"}return}
+  btn.disabled=false;btn.textContent="Read again"}
+function applyAi(r){const out=$("#aiOut"),q=s=>$("#u"+s),set=(el,v)=>{el.value=v;el.dispatchEvent(new Event("change"))};const filled=[];
+  if(DOC_TYPES[r.doc_type]){q("Type").value=r.doc_type;filled.push("type")}
+  const dt=normExp(r.date);if(dt&&dt<=today()){q("Date").value=dt;filled.push("date")}
+  const p=r.patient_name&&bestMatch(r.patient_name,S.patients,x=>x.name);if(p){set(q("Pat"),`${pcode(p.id)} · ${p.name} · ${p.phone}`);filled.push("patient")}
+  const dr=r.doctor_name&&bestMatch(r.doctor_name,S.users.filter(u=>u.role=="doctor"),x=>x.name);if(dr){q("Doc").value=dr.id;filled.push("doctor")}else if(r.doctor_name){q("Doc").value="ext"}
+  const bl=r.document_no&&S.bills.find(b=>b.no.toLowerCase()==String(r.document_no).toLowerCase().trim());if(bl){q("Br").value=bl.branch;q("Br").dispatchEvent(new Event("change"));q("Bill").value=bl.id;filled.push("bill")}
+  const items=(Array.isArray(r.items)?r.items:[]).slice(0,30).map(it=>({...it,m:bestMatch(it.medicine,S.meds,x=>x.name),exp:normExp(it.expiry),qty:Math.max(0,Math.round(+it.qty||0)),mrp:+it.mrp||0,cost:+it.cost||0}));
+  const first=items.find(i=>i.m);if(first){set(q("Med"),first.m.name);filled.push("stock item")}
+  if(r.supplier&&!q("Note").value)q("Note").value=`${r.supplier}${r.document_no?" · "+r.document_no:""}`;
+  const br=branch(+q("Br").value),stockable=items.filter(i=>i.m&&i.exp&&i.exp>today()&&i.qty>0&&i.mrp>0);
+  const canStock=r.doc_type=="invoice"&&can("stock")&&br.kind.includes("pharmacy")&&stockable.length;
+  out.innerHTML=`<div class="aires">${alertRow("info",`<b>Read by AI.</b> Check every field before saving.${r.summary?"<br>"+esc(r.summary):""}${filled.length?`<br><span class="small">Filled in: ${filled.join(", ")}.</span>`:""}`)}
+    <div class="small" style="display:flex;flex-wrap:wrap;gap:4px 14px;margin:4px 0 8px">${[["Patient on document",r.patient_name],["Doctor on document",r.doctor_name],["Supplier",r.supplier],["Document no.",r.document_no],["Total",+r.total?money(Math.round(+r.total*100)):""]].filter(x=>x[1]).map(([k,v])=>`<span><span class="muted">${k}:</span> ${esc(v)}</span>`).join("")}</div>
+    ${items.length?`<div class="tbl"><table><tr><th>Printed</th><th>Matched</th><th>Batch</th><th>Expiry</th><th class="num">Qty</th><th class="num">MRP</th></tr>${items.map(i=>`<tr><td>${esc(i.medicine)}</td><td>${i.m?`<b>${esc(i.m.name)}</b>`:'<span class="muted small">not in catalogue</span>'}</td><td class="mono">${esc(i.batch||"–")}</td><td class="mono">${i.exp||"–"}${i.exp&&i.exp<=today()?' <span class="pill p-crit">expired</span>':""}</td><td class="num">${i.qty||"–"}</td><td class="num">${i.mrp?money(Math.round(i.mrp*100)):"–"}</td></tr>`).join("")}</table></div>`:""}
+    ${canStock?`<div class="btns"><button class="btn ghost" id="aiStock">Add ${stockable.length} line${stockable.length>1?"s":""} to stock at ${esc(br.name)}</button></div>`:r.doc_type=="invoice"&&items.length&&!stockable.length?'<p class="small muted">No line has a matched medicine, a future expiry, a quantity and an MRP, so nothing can go into stock automatically.</p>':""}</div>`;
+  $("#aiStock")&&($("#aiStock").onclick=e=>{const bid=+q("Br").value;for(const i of stockable){const mrp=Math.round(i.mrp*100),cost=Math.min(mrp,Math.round((i.cost||i.mrp*.7)*100));
+      const b={id:nid("batch"),branch:bid,med:i.m.id,code:String(i.batch||"INV").slice(0,20),expiry:i.exp,opened:null,qty:i.qty,mrp,cost,rack:rackFor(bid,i.m.id)};S.batches.push(b);upAdded.push(b.id)}
+    audit("purchase.create",`From invoice photo${r.supplier?" · "+r.supplier:""}${r.document_no?" · "+r.document_no:""}: ${stockable.map(i=>i.m.name+" ×"+i.qty).join(", ")}`);commit();
+    e.target.disabled=true;e.target.textContent=`Added ${stockable.length} batches to stock`;q("Med").dispatchEvent(new Event("change"));toast("Stock received. The batches will be linked to this document when you save it.")})}
+
+// ---- detail
+function renderDocDetail(){const el=$("#docDetail"),d=openDoc&&S.docs.find(x=>x.id==openDoc);if(!d){el.hidden=true;return}el.hidden=false;
+  const src=docSrc(d),bs=(d.batches||[]).map(id=>S.batches.find(b=>b.id==id)).filter(Boolean);
+  el.innerHTML=`<div class="card-h"><div><h2>${esc(DOC_TYPES[d.type])}</h2><p>${esc(d.name)} · ${kb(d.size)} · added ${esc(d.created)} by ${esc(d.user)}</p></div><button class="btn ghost sm" id="ddClose">Close</button></div>
+  <div class="preview">${isImg(d)?`<img src="${esc(src)}" alt="${esc(DOC_TYPES[d.type])}">`:`<div class="pdfbox"><span class="pdf">PDF</span><a href="${esc(src)}" target="_blank" rel="noopener">Open the PDF in a new tab</a></div>`}</div>
+  <div style="margin-top:10px">${docTags(d)}</div>${bs.length?`<p class="small muted" style="margin:6px 0 0">Linked batches: ${bs.map(b=>`${esc(med(b.med).name)} ${b.code} (${branch(b.branch).code})`).join(", ")}</p>`:""}
+  <h3 style="margin:14px 0 8px">Change assignment</h3>${assignHtml("e",d)}
+  <div class="btns"><button class="btn" id="ddSave">Save changes</button><button class="btn ghost" id="ddDel" style="color:var(--crit);border-color:var(--crit)">Delete document</button></div>`;
+  wireAssign("e",d);$("#ddClose").onclick=()=>{openDoc=null;renderDocs()};
+  $("#ddSave").onclick=()=>{let a;try{a=readAssign("e")}catch(e){return toast(e.message)}const keep=(d.batches||[]).filter(id=>!a.batches.includes(id)&&a.med&&S.batches.find(b=>b.id==id&&b.med==a.med));
+    Object.assign(d,a,{batches:[...a.batches,...keep]});audit("doc.assign",`${DOC_TYPES[d.type]} #${d.id} → ${[d.patient&&pcode(d.patient),d.bill&&S.bills.find(x=>x.id==d.bill).no,d.med&&med(d.med).name,branch(d.branch).code].filter(Boolean).join(" · ")}`);commit();renderDocs();toast("Assignment saved")};
+  $("#ddDel").onclick=async()=>{if(!await ask("Delete this document?","<p>The file and its links are removed for everyone who uses this artifact. This can't be undone.</p>","Delete",true))return;
+    if(d.assetId&&ASSETS){try{await ASSETS.delete(d.assetId)}catch(e){if(e&&e.code=="not_uploader")return toast("Only the person who uploaded this file can delete it.");if(e&&e.code!="not_granted")return toast("Couldn't delete the file right now. Try again.")}}
+    S.docs=S.docs.filter(x=>x.id!=d.id);audit("doc.delete",`${DOC_TYPES[d.type]} #${d.id}`);openDoc=null;commit();renderDocs();toast("Document deleted")}}
+// ================= hospital billing & accounts =================
+const SVC_SEED=[["Registration fee","Admin",50],["OPD consultation, general","Consultation",300],["OPD consultation, specialist","Consultation",600],["Follow-up consultation","Consultation",150],
+["Dressing","Procedure",200],["Injection administration","Procedure",100],["Nebulisation","Procedure",250],["ECG","Diagnostics",350],["CBC blood test","Laboratory",400],
+["Blood sugar (fasting)","Laboratory",120],["Lipid profile","Laboratory",650],["Urine routine","Laboratory",200],["X-ray chest","Imaging",500],["Ultrasound abdomen","Imaging",1400],
+["General ward bed, per day","Inpatient",1500],["Private room, per day","Inpatient",4500],["ICU bed, per day","Inpatient",8000],["Nursing charges, per day","Inpatient",600],["Ambulance, within city","Other",800]];
+const TPAS=["Star Health","HDFC ERGO","ICICI Lombard","Niva Bupa","Medi Assist TPA","Ayushman Bharat (PM-JAY)","CGHS"];
+const MODES={cash:"Cash",upi:"UPI",card:"Card",insurance:"Insurance",credit:"Credit"};
+function seedServices(){S.services=SVC_SEED.map(([name,cat,r],i)=>({id:i+1,name,cat,rate:r*100,gst:0,active:true}));S.seq.svc=S.services.length}
+const svc=id=>S.services.find(s=>s.id==id);
+const paidOf=inv=>inv.payments.reduce((a,p)=>a+p.amount,0);
+const balOf=inv=>Math.max(0,inv.total-paidOf(inv));
+function invStatus(inv){if(inv.cancelled)return"cancelled";const paid=paidOf(inv);if(paid>=inv.total)return"paid";if(inv.ins&&inv.ins.status=="pending")return"insurance";return paid>0?"partial":"due"}
+const ST_LABEL={paid:["Paid","p-ok"],partial:["Part paid","p-warn"],due:["Due","p-crit"],insurance:["Insurance pending","p-info"],cancelled:["Cancelled","p-plain"]};
+const stPill=inv=>{const[l,c]=ST_LABEL[invStatus(inv)];return pill(l,c)};
+function createInvoice(b){const br=needBranch("hospital"),p=patient(b.patient);if(!p)throw new Err("Choose the patient.");
+  if(!b.items.length)throw new Err("Add at least one service.");
+  const items=b.items.map(it=>{const s=svc(it.svc),qty=Math.max(1,Math.round(+it.qty||1)),rate=Math.round(+it.rate),disc=Math.min(qty*rate,Math.max(0,Math.round(+it.disc||0)));
+    if(!(rate>=0))throw new Err(`Check the rate for ${s.name}.`);const net=qty*rate-disc,gst=Math.round(net*s.gst/100);return{svc:s.id,name:s.name,cat:s.cat,qty,rate,disc,gst,amt:net+gst}});
+  const sub=items.reduce((a,i)=>a+i.amt,0),disc=Math.min(sub,Math.max(0,Math.round((+b.discount||0)*100))),total=sub-disc;
+  let ins=null;if(b.ins){if(!b.ins.tpa||!b.ins.policy)throw new Err("Enter the insurer and policy number, or switch insurance off.");
+    const ap=Math.min(total,Math.round((+b.ins.approved||0)*100));if(!(ap>0))throw new Err("Enter the amount the insurer approved.");ins={tpa:b.ins.tpa,policy:b.ins.policy,claim:b.ins.claim||"",approved:ap,status:"pending",settled:0}}
+  const pay=Math.round((+b.payNow||0)*100),cap=total-(ins?ins.approved:0);
+  if(pay<0||pay>cap)throw new Err(`Payment now can be at most ${money(cap)}${ins?" (the rest is the insurance share)":""}.`);
+  if(pay&&(b.mode=="upi"||b.mode=="card")&&!(b.ref||"").trim())throw new Err("Enter the UPI or card transaction reference.");
+  const n=S.invoices.filter(x=>x.branch==br.id).length+1;
+  const inv={id:nid("inv"),no:`${br.code}/H/${String(n).padStart(5,"0")}`,branch:br.id,patient:p.id,visit:b.visit||null,doctor:b.doctor||null,created:nowStr(),user:ctx.user.username,items,sub,discount:disc,total,ins,payments:[],notes:(b.notes||"").trim()};
+  if(pay)inv.payments.push({id:nid("pay"),at:nowStr(),mode:b.mode,amount:pay,ref:(b.ref||"").trim(),user:ctx.user.username});
+  S.invoices.push(inv);audit("invoice.create",`${inv.no} ${pcode(p.id)} ${p.name} ${money(total)}${pay?` · paid ${money(pay)} ${b.mode}`:""}${ins?` · ${ins.tpa} approved ${money(ins.approved)}`:""}`);return inv}
+function receive(inv,mode,amount,ref){const a=Math.round(amount*100),bal=balOf(inv)-(inv.ins&&inv.ins.status=="pending"&&mode!="insurance"?inv.ins.approved:0);
+  if(!(a>0))throw new Err("Enter an amount.");if(a>Math.max(0,bal))throw new Err(`The patient owes at most ${money(Math.max(0,bal))}.`);
+  if((mode=="upi"||mode=="card")&&!(ref||"").trim())throw new Err("Enter the transaction reference.");
+  inv.payments.push({id:nid("pay"),at:nowStr(),mode,amount:a,ref:(ref||"").trim(),user:ctx.user.username});audit("invoice.payment",`${inv.no} ${money(a)} ${mode}${ref?" ref "+ref:""}`)}
+function settleIns(inv,amount){const a=Math.round(amount*100);if(!(a>=0)||a>inv.ins.approved)throw new Err(`Settled amount must be between ₹0 and ${money(inv.ins.approved)}.`);
+  inv.ins.status="settled";inv.ins.settled=a;if(a)inv.payments.push({id:nid("pay"),at:nowStr(),mode:"insurance",amount:a,ref:inv.ins.claim||inv.ins.tpa,user:ctx.user.username});
+  audit("invoice.insurance",`${inv.no} ${inv.ins.tpa} settled ${money(a)} of ${money(inv.ins.approved)}${a<inv.ins.approved?` · short ${money(inv.ins.approved-a)} moves to patient`:""}`)}
+function hbSummary(bid,day){const inv=S.invoices.filter(i=>i.branch==bid&&!i.cancelled),today_=inv.filter(i=>i.created.startsWith(day));
+  const collected=inv.flatMap(i=>i.payments).filter(p=>p.at.startsWith(day)).reduce((a,p)=>a+p.amount,0);
+  return{count:today_.length,billed:today_.reduce((a,i)=>a+i.total,0),collected,dues:inv.filter(i=>i.created.slice(0,10)<=day).reduce((a,i)=>a+balOf(i),0),insPending:inv.filter(i=>i.ins&&i.ins.status=="pending").reduce((a,i)=>a+i.ins.approved,0)}}
+function seedInvoices(){const r=rng(11),pick=a=>a[Math.floor(r()*a.length)];S.invoices=[];S.closings=[];const saved=ctx;
+  for(const br of S.branches.filter(b=>b.kind.includes("hospital"))){ctx={user:S.users[0],branch:br.id};
+    for(let back=9;back>=0;back--)for(let k=0,n=back?2+Math.floor(r()*3):1;k<n;k++){const p=pick(S.patients),items=[{svc:pick([2,3,4]),qty:1}];
+      for(let j=0,m=Math.floor(r()*3);j<m;j++)items.push({svc:pick([5,6,7,8,9,10,11,12,13,14]),qty:1});
+      const total=items.reduce((a,i)=>a+svc(i.svc).rate,0),roll=r(),mode=pick(["cash","cash","upi","card"]);
+      const inv=createInvoice({patient:p.id,doctor:pick(S.users.filter(u=>u.role=="doctor")).id,items:items.map(i=>({...i,rate:svc(i.svc).rate})),payNow:roll<.7?total/100:roll<.9?Math.round(total/200):0,mode,ref:mode=="cash"?"":"TXN"+Math.floor(r()*1e8)});
+      const t=addDays(today(),-back)+" "+String(9+Math.floor(r()*9)).padStart(2,"0")+":"+String(Math.floor(r()*60)).padStart(2,"0");inv.created=t;inv.payments.forEach(p=>p.at=t)}
+    ctx={user:S.users[0],branch:br.id};
+    if(br.id==1){const inv=createInvoice({patient:4,doctor:2,items:[{svc:16,qty:3,rate:svc(16).rate},{svc:18,qty:3,rate:svc(18).rate},{svc:9,qty:1,rate:svc(9).rate},{svc:14,qty:1,rate:svc(14).rate}],
+      ins:{tpa:"Star Health",policy:"SH-2291-7734",claim:"CLM-55120",approved:12000},payNow:2000,mode:"upi",ref:"UPI4471902"});const t=addDays(today(),-2)+" 11:20";inv.created=t;inv.payments.forEach(p=>p.at=t)}}
+  ctx=saved;S.audit=S.audit.filter(a=>!a.action.startsWith("invoice"))}
+
+// ---- UI
+let hbPane="new",hbCart=[],hbOpen=null,hbFilter="open",hbVisit=null;
+function renderHB(){fillSvcList();const panes=[["new","New invoice"],["list","Invoices & dues"],["close","Day closing"],["rates","Services & rates"]];
+  $("#hbSub").innerHTML=panes.map(p=>`<button data-p="${p[0]}" class="${p[0]==hbPane?"on":""}">${p[1]}</button>`).join("");
+  $("#hbSub").querySelectorAll("button").forEach(b=>b.onclick=()=>{hbPane=b.dataset.p;renderHB()});
+  document.querySelectorAll("#t-hbilling .pane").forEach(x=>x.classList.toggle("on",x.id=="h-"+hbPane));
+  const s=hbSummary(ctx.branch,today());
+  $("#hbKpis").innerHTML=kpi("Billed today",money(s.billed),`${s.count} invoice${s.count==1?"":"s"}`)+kpi("Collected today",money(s.collected),"all payment modes")+kpi("Outstanding dues",money(s.dues),"patient and insurance share",s.dues?"warn":"")+kpi("Insurance pending",money(s.insPending),"approved, not yet settled");
+  ({new:hbNew,list:hbList,close:hbClose,rates:hbRates})[hbPane]()}
+function fillSvcList(){$("#svcOpts").innerHTML=S.services.filter(s=>s.active).map(s=>`<option value="${esc(s.name)}">${esc(s.cat)} · ${money(s.rate)}</option>`).join("")}
+const svcByName=n=>S.services.find(s=>s.active&&s.name.toLowerCase()==(n||"").trim().toLowerCase());
+
+function ensureBilling(){if(!S.services)seedServices();if(!S.invoices)seedInvoices();S.closings=S.closings||[];
+  if(!S.histVisits){const r=rng(5),pick=a=>a[Math.floor(r()*a.length)],dx=["Viral fever","Acute bronchitis","Hypertension review","Type 2 diabetes review","Gastritis","Lower back pain","Allergic rhinitis","Urinary tract infection","Migraine"];
+    for(const i of S.invoices)if(i.doctor&&!i.visit&&i.created.slice(0,10)<today()&&i.items.some(x=>x.cat=="Consultation")){const t=r()<.12?"urgent":"normal";
+      const v={id:nid("visit"),patient:i.patient,branch:i.branch,doctor:i.doctor,created:i.created,complaint:"",temp:null,pulse:null,sys:null,dia:null,spo2:null,triage:t,reasons:t=="urgent"?"fever":"",diagnosis:pick(dx),notes:"",followup:null,status:"done",completed:i.created};S.visits.push(v);i.visit=v.id}
+    S.histVisits=true}}
+function hbNew(){$("#hDoc").innerHTML=optH("","None",false)+S.users.filter(u=>u.role=="doctor"&&(u.branch==null||u.branch==ctx.branch)).map(u=>optH(u.id,u.name,false)).join("")+S.users.filter(u=>u.role=="doctor"&&u.branch!=null&&u.branch!=ctx.branch).map(u=>optH(u.id,u.name+" (visiting)",false)).join("");$("#hInsBox").hidden=!$("#hIns").checked;
+  $("#hTpa").innerHTML=TPAS.map(t=>optH(t,t,false)).join("");drawHbCart();hbPatient(false)}
+function hbPatient(reset=true){const pid=pidOf($("#hPat").value),box=$("#hVisit");if(reset){hbVisit=null}
+  if(!pid||!patient(pid)){box.innerHTML="";return}const p=patient(pid);
+  const vs=S.visits.filter(v=>v.patient==pid&&v.branch==ctx.branch&&v.status=="done"&&v.completed>=addDays(today(),-3)&&!S.invoices.some(i=>i.visit==v.id&&!i.cancelled)).reverse();
+  const dues=S.invoices.filter(i=>i.patient==pid&&!i.cancelled&&balOf(i)>0&&invStatus(i)!="insurance");
+  box.innerHTML=(dues.length?alertRow("",`<b>Previous dues:</b> ${dues.map(i=>`${i.no} ${money(balOf(i))}`).join(", ")}. <button class="linkish" id="hSeeDues">Collect now</button>`):"")+
+    vs.map(v=>alertRow("info",`<b>Consultation</b> ${v.completed.slice(0,16)} · ${esc(user(v.doctor).name)} · ${esc(v.diagnosis)}${hbVisit==v.id?' · <span class="pill p-ok">added</span>':` <button class="btn sm" data-visit="${v.id}">Add consultation fee</button>`}`)).join("");
+  box.querySelectorAll("[data-visit]").forEach(b=>b.onclick=()=>{const v=S.visits.find(x=>x.id==+b.dataset.visit),s=svc(2);hbVisit=v.id;$("#hDoc").value=v.doctor;
+    hbCart=hbCart.filter(l=>l.svc!=2&&l.svc!=3&&l.svc!=4);hbCart.unshift({svc:s.id,qty:1,rate:s.rate,disc:0});drawHbCart();hbPatient(false)});
+  $("#hSeeDues")&&($("#hSeeDues").onclick=()=>{hbPane="list";hbFilter="open";$("#hbSearch").value=p.name;renderHB()})}
+function drawHbCart(){let sub=0;
+  $("#hLines").innerHTML=hbCart.length?"<tr><th>Service</th><th class='num'>Qty</th><th class='num'>Rate ₹</th><th class='num'>Disc. ₹</th><th class='num'>Amount</th><th></th></tr>"+hbCart.map((l,i)=>{const s=svc(l.svc),amt=l.qty*l.rate-l.disc;sub+=amt;
+    return`<tr><td><b>${esc(s.name)}</b><div class="small muted">${esc(s.cat)}${s.gst?` · GST ${s.gst}%`:" · GST exempt"}</div></td><td class="num"><input type="number" min="1" value="${l.qty}" data-f="qty" data-i="${i}" style="width:62px" aria-label="Quantity"></td>
+    <td class="num"><input type="number" min="0" step="1" value="${l.rate/100}" data-f="rate" data-i="${i}" style="width:84px" aria-label="Rate" ${can("stock_admin")?"":"readonly title='Only managers can change rates'"}></td>
+    <td class="num"><input type="number" min="0" step="1" value="${l.disc/100}" data-f="disc" data-i="${i}" style="width:72px" aria-label="Discount"></td><td class="num">${money(amt)}</td><td><button class="btn ghost sm" data-rm="${i}">Remove</button></td></tr>`}).join("")
+    :'<tr><td class="empty">Add services, or add the consultation fee from today\'s visit.</td></tr>';
+  $("#hLines").querySelectorAll("input[data-f]").forEach(x=>x.onchange=()=>{const l=hbCart[+x.dataset.i],v=Math.max(0,+x.value||0);if(x.dataset.f=="qty")l.qty=Math.max(1,Math.round(v));else l[x.dataset.f]=Math.round(v*100);l.disc=Math.min(l.disc,l.qty*l.rate);drawHbCart()});
+  $("#hLines").querySelectorAll("[data-rm]").forEach(x=>x.onclick=()=>{hbCart.splice(+x.dataset.rm,1);drawHbCart()});
+  const disc=Math.min(sub,Math.round((+$("#hDisc").value||0)*100)),total=sub-disc,ins=$("#hIns").checked?Math.min(total,Math.round((+$("#hApp").value||0)*100)):0;
+  $("#hTotals").innerHTML=`<div><span>Subtotal</span><b>${money(sub)}</b></div><div><span>Discount</span><b>− ${money(disc)}</b></div>${ins?`<div><span>Insurance share</span><b>− ${money(ins)}</b></div>`:""}<div class="grand"><span>Patient pays</span><b>${money(total-ins)}</b></div>`;
+  $("#hPayNow").placeholder=((total-ins)/100).toFixed(2)}
+$("#hPat").addEventListener("change",()=>hbPatient(true));
+$("#hAddSvc").onclick=()=>{const s=svcByName($("#hSvc").value);if(!s)return toast("Choose a service from the list.");const q=Math.max(1,+$("#hQty").value||1);
+  const ex=hbCart.find(l=>l.svc==s.id);if(ex)ex.qty+=q;else hbCart.push({svc:s.id,qty:q,rate:s.rate,disc:0});$("#hSvc").value="";$("#hQty").value=1;drawHbCart();$("#hSvc").focus()};
+["#hDisc","#hApp"].forEach(s=>$(s).oninput=drawHbCart);
+$("#hIns").onchange=()=>{$("#hInsBox").hidden=!$("#hIns").checked;drawHbCart()};
+$("#hMode").onchange=()=>{$("#hRefBox").hidden=$("#hMode").value=="cash"};
+$("#hPayFull").onclick=()=>{$("#hPayNow").value=$("#hPayNow").placeholder};
+function hbReset(){hbCart=[];hbVisit=null;["#hPat","#hPayNow","#hRef","#hNotes","#hPol","#hClaim","#hApp"].forEach(s=>$(s).value="");$("#hDisc").value=0;$("#hIns").checked=false;$("#hInsBox").hidden=true;$("#hVisit").innerHTML="";drawHbCart()}
+$("#hReset").onclick=hbReset;
+$("#hSave").onclick=()=>{try{const inv=createInvoice({patient:pidOf($("#hPat").value),visit:hbVisit,doctor:+$("#hDoc").value||null,items:hbCart,discount:$("#hDisc").value,
+    ins:$("#hIns").checked?{tpa:$("#hTpa").value,policy:$("#hPol").value.trim(),claim:$("#hClaim").value.trim(),approved:$("#hApp").value}:null,payNow:$("#hPayNow").value||0,mode:$("#hMode").value,ref:$("#hRef").value,notes:$("#hNotes").value});
+    hbReset();commit();hbOpen=inv.id;hbPane="list";hbFilter="all";renderHB();toast(`Invoice ${inv.no} saved · ${stLabel(inv)}`)}catch(e){toast(e.message)}};
+const stLabel=inv=>ST_LABEL[invStatus(inv)][0];
+
+function hbList(){const q=($("#hbSearch").value||"").trim().toLowerCase();
+  const all=S.invoices.filter(i=>i.branch==ctx.branch).slice().reverse(),f={open:i=>["due","partial","insurance"].includes(invStatus(i)),all:()=>true,due:i=>["due","partial"].includes(invStatus(i)),insurance:i=>invStatus(i)=="insurance",paid:i=>invStatus(i)=="paid"}[hbFilter];
+  const rows=all.filter(f).filter(i=>!q||[i.no,patient(i.patient).name,patient(i.patient).phone,pcode(i.patient)].some(s=>s.toLowerCase().includes(q)));
+  const cnt=k=>all.filter({open:i=>["due","partial","insurance"].includes(invStatus(i)),all:()=>true,due:i=>["due","partial"].includes(invStatus(i)),insurance:i=>invStatus(i)=="insurance",paid:i=>invStatus(i)=="paid"}[k]).length;
+  $("#hbChips").innerHTML=[["open","Open"],["due","Patient dues"],["insurance","Insurance pending"],["paid","Paid"],["all","All"]].map(([k,l])=>`<button data-k="${k}" class="${hbFilter==k?"on":""}">${l} <span class="muted">${cnt(k)}</span></button>`).join("");
+  $("#hbChips").querySelectorAll("button").forEach(b=>b.onclick=()=>{hbFilter=b.dataset.k;hbList()});
+  $("#hbTable").innerHTML="<tr><th>Invoice</th><th>Patient</th><th class='num'>Total</th><th class='num'>Balance</th><th>Status</th></tr>"+(rows.map(i=>`<tr class="click${hbOpen==i.id?" selrow":""}" data-i="${i.id}"><td><span class="mono">${i.no}</span><div class="small muted">${i.created}</div></td><td>${esc(patient(i.patient).name)}<div class="small muted">${pcode(i.patient)}</div></td><td class="num">${money(i.total)}</td><td class="num">${balOf(i)?`<b>${money(balOf(i))}</b>`:"–"}</td><td>${stPill(i)}</td></tr>`).join("")||'<tr><td colspan="5" class="empty">No invoices here.</td></tr>');
+  $("#hbTable").querySelectorAll("[data-i]").forEach(tr=>tr.onclick=()=>{hbOpen=+tr.dataset.i;hbList()});
+  const due=all.filter(i=>!i.cancelled).reduce((a,i)=>a+balOf(i),0);$("#hbDueTotal").textContent=`${money(due)} outstanding at ${branch(ctx.branch).code}`;
+  hbView()}
+$("#hbSearch").oninput=()=>hbList();
+function hbView(){const el=$("#hbView"),inv=hbOpen&&S.invoices.find(i=>i.id==hbOpen&&i.branch==ctx.branch);if(!inv){el.innerHTML=`<div class="empty" style="padding:40px 10px"><b>Select an invoice</b><br>See its items and payments, collect a due amount or settle an insurance claim.</div>`;return}
+  const p=patient(inv.patient),br=branch(inv.branch),st=invStatus(inv),insOpen=inv.ins&&inv.ins.status=="pending",patDue=Math.max(0,balOf(inv)-(insOpen?inv.ins.approved:0));
+  el.innerHTML=`<div class="rx-h"><div><b>${esc(br.name)}</b><div class="small muted">${esc(br.name)} Road · GSTIN 29ABCDE1234F1Z5 · Healthcare services exempt from GST</div></div><div style="text-align:right"><b class="mono">${inv.no}</b><div class="small muted">${inv.created}</div><div style="margin-top:4px">${stPill(inv)}</div></div></div>
+  <p class="small" style="margin:0 0 10px"><b>${esc(p.name)}</b> · <span class="mono">${pcode(p.id)}</span> · ${p.age??"?"} yrs · <span class="mono">${esc(p.phone)}</span>${inv.doctor?` · ${esc(user(inv.doctor).name)}`:""} · billed by ${esc(inv.user)}</p>
+  <div class="tbl"><table><tr><th>Service</th><th class="num">Qty</th><th class="num">Rate</th><th class="num">Disc.</th><th class="num">Amount</th></tr>${inv.items.map(i=>`<tr><td>${esc(i.name)}<div class="small muted">${esc(i.cat)}</div></td><td class="num">${i.qty}</td><td class="num">${money(i.rate)}</td><td class="num">${i.disc?money(i.disc):"–"}</td><td class="num">${money(i.amt)}</td></tr>`).join("")}</table></div>
+  <div class="totals" style="margin-top:8px"><div><span>Subtotal</span><b>${money(inv.sub)}</b></div>${inv.discount?`<div><span>Invoice discount</span><b>− ${money(inv.discount)}</b></div>`:""}<div class="grand"><span>Total</span><b>${money(inv.total)}</b></div><div><span>Paid</span><b>${money(paidOf(inv))}</b></div><div><span>Balance</span><b style="color:${balOf(inv)?"var(--crit)":"inherit"}">${money(balOf(inv))}</b></div></div>
+  ${inv.ins?`<div class="alert info" style="margin-top:10px"><span class="ic">i</span><div class="t"><b>Insurance</b> · ${esc(inv.ins.tpa)} · policy <span class="mono">${esc(inv.ins.policy)}</span>${inv.ins.claim?` · claim <span class="mono">${esc(inv.ins.claim)}</span>`:""}<br>Approved ${money(inv.ins.approved)} · ${insOpen?"waiting for settlement":`settled ${money(inv.ins.settled)}`}</div></div>`:""}
+  <h3 style="margin:14px 0 6px">Payments</h3><div class="tbl"><table>${inv.payments.map(x=>`<tr><td class="mono">${x.at}</td><td>${MODES[x.mode]}</td><td class="mono small">${esc(x.ref||"")}</td><td class="small muted">${esc(x.user)}</td><td class="num">${money(x.amount)}</td></tr>`).join("")||'<tr><td class="empty">No payments yet.</td></tr>'}</table></div>
+  ${patDue&&can("hbilling")?`<div class="paybox"><h3>Collect from patient</h3><div class="fields"><div><label for="rvAmt">Amount ₹</label><input id="rvAmt" type="number" min="0" step="1" value="${(patDue/100).toFixed(2)}"></div>
+    <div><label for="rvMode">Mode</label><select id="rvMode">${["cash","upi","card"].map(m=>optH(m,MODES[m],false)).join("")}</select></div><div><label for="rvRef">Reference</label><input id="rvRef" placeholder="UPI / card txn"></div>
+    <div style="align-self:end"><button class="btn" id="rvBtn" style="width:100%;justify-content:center">Receive payment</button></div></div></div>`:""}
+  ${insOpen&&can("hbilling")?`<div class="paybox"><h3>Settle insurance claim</h3><div class="fields"><div><label for="insAmt">Amount received ₹</label><input id="insAmt" type="number" min="0" step="1" value="${(inv.ins.approved/100).toFixed(2)}"></div>
+    <div style="align-self:end"><button class="btn ghost" id="insBtn" style="width:100%;justify-content:center">Mark settled</button></div></div><p class="small muted" style="margin:6px 0 0">If the insurer pays less, the shortfall becomes the patient's due.</p></div>`:""}
+  ${inv.notes?`<p class="small muted">${esc(inv.notes)}</p>`:""}
+  ${!inv.payments.length&&!inv.cancelled&&can("hbilling")?`<div class="btns"><button class="btn ghost sm" id="cnBtn" style="color:var(--crit);border-color:var(--crit)">Cancel invoice</button></div>`:""}`;
+  $("#rvBtn")&&($("#rvBtn").onclick=()=>{try{receive(inv,$("#rvMode").value,+$("#rvAmt").value,$("#rvRef").value);commit();renderHB();toast(`Received. ${stLabel(inv)}`)}catch(e){toast(e.message)}});
+  $("#insBtn")&&($("#insBtn").onclick=()=>{try{settleIns(inv,+$("#insAmt").value);commit();renderHB();toast(`Claim settled. ${stLabel(inv)}`)}catch(e){toast(e.message)}});
+  $("#cnBtn")&&($("#cnBtn").onclick=async()=>{if(!await ask("Cancel this invoice?",`<p>${inv.no} for ${esc(p.name)}, ${money(inv.total)}. It stays in the records marked cancelled.</p><div><label for="cnWhy">Reason</label><input id="cnWhy" placeholder="e.g. billed to wrong patient"></div>`,"Cancel invoice",true))return;
+    const why=$("#cnWhy").value.trim();if(!why)return toast("Enter a reason to cancel.");inv.cancelled={at:nowStr(),why,user:ctx.user.username};audit("invoice.cancel",`${inv.no} · ${why}`);commit();renderHB();toast("Invoice cancelled")})}
+
+function hbClose(){if(!$("#clDate").value)$("#clDate").value=today();const day=$("#clDate").value,bid=ctx.branch,br=branch(bid);
+  const rec=[];for(const i of S.invoices.filter(i=>i.branch==bid))for(const p of i.payments)if(p.at.startsWith(day))rec.push({src:"Hospital",no:i.no,who:patient(i.patient).name,mode:p.mode,amount:p.amount,user:p.user,at:p.at});
+  if(br.kind.includes("pharmacy"))for(const b of S.bills.filter(b=>b.branch==bid&&b.created.startsWith(day))){if(b.pay!="credit")rec.push({src:"Pharmacy",no:b.no,who:b.customer,mode:b.pay,amount:b.total,user:b.user,at:b.created});if(b.refund)rec.push({src:"Pharmacy refund",no:b.no,who:b.customer,mode:"cash",amount:-b.refund,user:b.user,at:b.created})}
+  rec.sort((a,b)=>a.at<b.at?-1:1);const by=m=>rec.filter(r=>r.mode==m).reduce((a,r)=>a+r.amount,0),cash=by("cash"),tot=rec.reduce((a,r)=>a+r.amount,0);
+  const users={};rec.forEach(r=>users[r.user]=(users[r.user]||0)+r.amount);const done=S.closings.find(c=>c.branch==bid&&c.day==day);
+  $("#clBody").innerHTML=`<div class="kpis">${kpi("Cash expected in drawer",money(cash),"after cash refunds")}${kpi("UPI",money(by("upi")))}${kpi("Card",money(by("card")))}${kpi("Total collected",money(tot),by("insurance")?"incl. insurance "+money(by("insurance")):"")}</div>
+  <div class="g-main"><div class="card"><div class="card-h"><div><h2>Receipts</h2><p>${rec.length} entries at ${esc(br.name)} on ${shortDay(day)}</p></div></div><div class="tbl"><table><tr><th>Time</th><th>Source</th><th>Ref.</th><th>From</th><th>Mode</th><th class="num">Amount</th></tr>${rec.map(r=>`<tr><td class="mono">${r.at.slice(11)}</td><td>${r.src}</td><td class="mono small">${r.no}</td><td>${esc(r.who)}</td><td>${MODES[r.mode]}</td><td class="num">${r.amount<0?`<span style="color:var(--crit)">${money(r.amount)}</span>`:money(r.amount)}</td></tr>`).join("")||'<tr><td colspan="6" class="empty">No receipts on this day.</td></tr>'}</table></div></div>
+  <div class="stack"><div class="card"><h2 style="margin-bottom:10px">Close the cash drawer</h2>${done?alertRow(done.diff?"":"info",`Closed by <b>${esc(done.user)}</b> at ${done.at.slice(11)}. Counted ${money(done.counted)} against ${money(done.expected)}: ${done.diff?`<b>${done.diff>0?"excess":"short"} ${money(Math.abs(done.diff))}</b>`:"matches"}.${done.note?"<br>"+esc(done.note):""}`):""}
+    <div class="fields"><div class="span2"><label for="clCounted">Cash counted ₹</label><input id="clCounted" type="number" min="0" step="1" placeholder="${(cash/100).toFixed(2)}"></div><div class="span2"><label for="clNote">Note</label><input id="clNote" placeholder="e.g. ₹500 handed to manager"></div></div>
+    <div id="clDiff" class="small" style="margin-top:8px"></div><div class="btns"><button class="btn" id="clBtn">${done?"Close again":"Close day"}</button></div></div>
+    <div class="card"><h3 style="margin-bottom:8px">Collected by staff</h3>${Object.entries(users).map(([u,a])=>`<div class="totrow"><span>${esc(u)}</span><b>${money(a)}</b></div>`).join("")||'<p class="empty">Nobody collected money.</p>'}</div></div></div>`;
+  const diffEl=()=>{const c=$("#clCounted").value;if(c===""){$("#clDiff").textContent="";return}const d=Math.round(+c*100)-cash;$("#clDiff").innerHTML=d?`<span class="pill ${d>0?"p-warn":"p-crit"}">${d>0?"Excess":"Short"} ${money(Math.abs(d))}</span>`:'<span class="pill p-ok">Matches</span>'};
+  $("#clCounted").oninput=diffEl;$("#clBtn").onclick=()=>{const c=$("#clCounted").value;if(c==="")return toast("Count the cash and enter the amount.");const counted=Math.round(+c*100),diff=counted-cash;
+    S.closings=S.closings.filter(x=>!(x.branch==bid&&x.day==day));S.closings.push({branch:bid,day,expected:cash,counted,diff,note:$("#clNote").value.trim(),user:ctx.user.username,at:nowStr()});
+    audit("cash.close",`${br.code} ${day} expected ${money(cash)} counted ${money(counted)}${diff?` · ${diff>0?"excess":"short"} ${money(Math.abs(diff))}`:""}`);commit();hbClose();toast(diff?`Day closed with ${diff>0?"excess":"shortage"} of ${money(Math.abs(diff))}`:"Day closed. Cash matches.")}}
+$("#clDate").onchange=hbClose;
+
+function hbRates(){const ed=can("stock_admin");
+  $("#rtTable").innerHTML="<tr><th>Service</th><th>Category</th><th class='num'>Rate ₹</th><th class='num'>GST %</th><th>Status</th></tr>"+S.services.map(s=>`<tr><td><b>${esc(s.name)}</b></td><td>${esc(s.cat)}</td>
+    <td class="num">${ed?`<input type="number" min="0" step="1" value="${s.rate/100}" data-rate="${s.id}" style="width:96px" aria-label="Rate for ${esc(s.name)}">`:money(s.rate)}</td><td class="num">${ed?`<select data-gst="${s.id}" aria-label="GST for ${esc(s.name)}" style="width:72px">${[0,5,12,18].map(g=>optH(g,g,s.gst==g)).join("")}</select>`:s.gst}</td>
+    <td>${ed?`<button class="btn ghost sm" data-tg="${s.id}">${s.active?"Active":"Hidden"}</button>`:s.active?"Active":"Hidden"}</td></tr>`).join("");
+  $("#rtNew").hidden=!ed;
+  $("#rtTable").querySelectorAll("[data-rate]").forEach(x=>x.onchange=()=>{const s=svc(+x.dataset.rate),old=s.rate;s.rate=Math.max(0,Math.round(+x.value*100));audit("rate.change",`${s.name} ${money(old)} → ${money(s.rate)}`);commit();toast("Rate updated for new invoices")});
+  $("#rtTable").querySelectorAll("[data-gst]").forEach(x=>x.onchange=()=>{const s=svc(+x.dataset.gst);s.gst=+x.value;audit("rate.change",`${s.name} GST ${s.gst}%`);commit()});
+  $("#rtTable").querySelectorAll("[data-tg]").forEach(x=>x.onclick=()=>{const s=svc(+x.dataset.tg);s.active=!s.active;audit("rate.change",`${s.name} ${s.active?"shown":"hidden"}`);commit();hbRates()})}
+$("#rtAdd").onclick=()=>{const name=$("#rtName").value.trim(),rate=+$("#rtRate").value;if(!name||!(rate>0))return toast("Enter a service name and rate.");
+  if(S.services.some(s=>s.name.toLowerCase()==name.toLowerCase()))return toast("That service already exists.");
+  S.services.push({id:nid("svc"),name,cat:$("#rtCat").value,rate:Math.round(rate*100),gst:0,active:true});audit("rate.add",`${name} ${money(Math.round(rate*100))}`);$("#rtName").value="";$("#rtRate").value="";commit();hbRates();fillSvcList();toast("Service added")};
+
+// ================= racks & stock lookup =================
+const RACK_BY_FORM={Tablet:"A",Capsule:"B",Syrup:"C",Sachet:"D",Injection:"F",Cream:"D",Drops:"D",Other:"D"};
+function defaultRack(mid){const m=med(mid);if(/insulin/.test(m.generic||""))return"FRIDGE-1";const L=RACK_BY_FORM[m.form]||"D",same=S.meds.filter(x=>(RACK_BY_FORM[x.form]||"D")==L&&!/insulin/.test(x.generic||"")),i=Math.max(0,same.findIndex(x=>x.id==mid));return`${L}${Math.floor(i/4)+1}-${i%4+1}`}
+function rackFor(bid,mid){const u=usable(bid,mid)[0]||S.batches.find(b=>b.branch==bid&&b.med==mid&&b.rack);return u&&u.rack?u.rack:defaultRack(mid)}
+function ensureRacks(){for(const b of S.batches)if(!b.rack){const sib=S.batches.find(x=>x.branch==b.branch&&x.med==b.med&&x.rack);b.rack=sib?sib.rack:defaultRack(b.med)}}
+function lookupAll(mid){const m=med(mid),rows=pharmacies().map(o=>{const u=usable(o.id,mid);return[o,u.reduce((a,b)=>a+b.qty,0),[...new Set(u.map(b=>b.rack))]]});
+  return`<div class="sinfo"><div class="sinfo-h"><b>${esc(m.name)}</b> <span class="small muted">${esc(m.generic)} · ${esc(m.form)} · ${m.schedule}</span></div>
+  ${ctx.branch&&!branch(ctx.branch).kind.includes("pharmacy")?`<p class="small muted" style="margin:0">${esc(branch(ctx.branch).name)} has no pharmacy. Stock at the group's pharmacies:</p>`:""}
+  <div class="tbl"><table><tr><th>Pharmacy</th><th class="num">Usable</th><th>Rack</th></tr>${rows.map(([o,q,r])=>`<tr><td>${o.code} · ${esc(o.name)}</td><td class="num">${q?q:'<b style="color:var(--crit)">0</b>'}</td><td>${r.map(x=>`<span class="rack sm">${esc(x)}</span>`).join("")||"–"}</td></tr>`).join("")}</table></div></div>`}
+function stockInfo(mid,bid){if(!bid||!branch(bid).kind.includes("pharmacy"))return lookupAll(mid);
+  const m=med(mid),all=S.batches.filter(b=>b.branch==bid&&b.med==mid&&b.qty>0),use=usable(bid,mid),qty=use.reduce((a,b)=>a+b.qty,0),exp=all.filter(b=>daysLeft(b)<0);
+  const st=qty==0?(exp.length?["Only expired stock","p-crit"]:["Out of stock","p-crit"]):qty<m.reorder?[`Low · ${qty} left`,"p-warn"]:[`In stock · ${qty}`,"p-ok"];
+  const others=pharmacies().filter(o=>o.id!=bid).map(o=>[o,usable(o.id,mid)]).filter(x=>x[1].length);
+  const g=(m.generic||"").split(" ")[0],st2=usableStock(bid),alts=g?S.meds.filter(x=>x.id!=mid&&(x.generic||"").split(" ")[0]==g&&st2[x.id]).map(x=>[x,st2[x.id]]):[];
+  return`<div class="sinfo"><div class="sinfo-h"><b>${esc(m.name)}</b> <span class="small muted">${esc(m.generic)} · ${esc(m.form)} · ${m.schedule}</span> ${pill(st[0],st[1])}</div>
+  ${use.length?`<div class="racks">${use.map((b,i)=>`<div class="rackrow${i==0?" first":""}"><span class="rack">${esc(b.rack||"–")}</span><span class="mono small">${esc(b.code)}</span><span class="small muted">exp ${effExp(b)}</span><b class="small">${b.qty} units</b>${i==0?'<span class="pill p-info p-plain">Pick first</span>':""}</div>`).join("")}</div>`:""}
+  ${exp.map(b=>`<div class="small" style="color:var(--crit)">Batch ${esc(b.code)} on rack ${esc(b.rack||"–")} (${b.qty}) has expired. Don't sell it; write it off.</div>`).join("")}
+  ${qty<m.reorder&&others.length?`<div class="small">${qty?"More at":"Available at"} ${others.map(([o,u])=>`<b>${esc(o.name)}</b> ${u.reduce((a,b)=>a+b.qty,0)} on <span class="rack sm">${esc(u[0].rack)}</span>`).join(", ")}</div>`:""}
+  ${!qty&&!others.length?'<div class="small" style="color:var(--crit)">Not available anywhere in the group. Reorder from the supplier.</div>':""}
+  ${!qty&&alts.length?`<div class="small">Same salt in stock here: ${alts.map(([x,q])=>`<button class="linkish" data-alt="${esc(x.name)}">${esc(x.name)}</button> <span class="muted">${esc(x.form)}, ${q}</span>`).join(" · ")}</div>`:""}</div>`}
+function wireLookup(inputSel,boxSel,bidFn){const inp=$(inputSel),box=$(boxSel);if(!inp||!box)return;
+  const upd=()=>{const m=medByName(inp.value);box.innerHTML=m?stockInfo(m.id,bidFn()):"";box.querySelectorAll("[data-alt]").forEach(b=>b.onclick=()=>{inp.value=b.dataset.alt;upd()})};
+  inp.addEventListener("input",upd);inp.addEventListener("change",upd);return upd}
+wireLookup("#bMed","#bInfo",()=>ctx.branch);
+(()=>{const inp=$("#gLook"),pop=$("#gLookBox");const upd=()=>{const m=medByName(inp.value);if(!m){pop.hidden=true;return}pop.innerHTML=stockInfo(m.id,ctx.branch);pop.hidden=false;
+    pop.querySelectorAll("[data-alt]").forEach(b=>b.onclick=e=>{e.stopPropagation();inp.value=b.dataset.alt;upd()})};
+  inp.addEventListener("input",upd);inp.addEventListener("change",upd);inp.addEventListener("focus",upd);
+  inp.addEventListener("keydown",e=>{if(e.key=="Escape"){inp.value="";pop.hidden=true}});
+  document.addEventListener("click",e=>{if(!e.target.closest(".lookup"))pop.hidden=true})})();
+$("#puMed").addEventListener("change",()=>{const m=medByName($("#puMed").value);if(m)$("#puRack").value=rackFor(ctx.branch,m.id)});
+
+// ================= daily summary report =================
+let DL=null;(async()=>{try{if(window.claude&&window.claude.use)DL=await window.claude.use("downloads")}catch(e){}if(cur=="reports"&&$("#rKind").value=="daily")drawReport()})();
+const CAT_ORDER=["Consultation","Laboratory","Imaging","Diagnostics","Procedure","Inpatient","Admin","Other"];
+function scopeBids(scope){return scope?[scope]:S.branches.map(b=>b.id)}
+function revDay(bids,d){const inv=S.invoices.filter(i=>bids.includes(i.branch)&&!i.cancelled&&i.created.startsWith(d)),bl=S.bills.filter(b=>bids.includes(b.branch)&&b.created.startsWith(d));
+  return{hosp:inv.reduce((a,i)=>a+i.total,0),pharm:bl.reduce((a,b)=>a+b.total-b.refund,0),seen:S.visits.filter(v=>bids.includes(v.branch)&&v.status=="done"&&v.completed.startsWith(d)).length}}
+function dailyData(scope,day){const bids=scopeBids(scope),inS=x=>bids.includes(x.branch);
+  const seenV=S.visits.filter(v=>inS(v)&&v.status=="done"&&v.completed.startsWith(day)),allV=S.visits.filter(v=>inS(v)&&v.created.startsWith(day));
+  const newPts=S.patients.filter(p=>p.created.startsWith(day)&&(scope?p.branch==scope:true)).length;
+  const tri={critical:0,urgent:0,normal:0};allV.forEach(v=>tri[v.triage]++);
+  const inv=S.invoices.filter(i=>inS(i)&&!i.cancelled&&i.created.startsWith(day)),bl=S.bills.filter(b=>inS(b)&&b.created.startsWith(day));
+  const hosp=inv.reduce((a,i)=>a+i.total,0),pharm=bl.reduce((a,b)=>a+b.total-b.refund,0),total=hosp+pharm;
+  const cats={};for(const i of inv){const f=i.sub?i.total/i.sub:1;for(const it of i.items)cats[it.cat]=(cats[it.cat]||0)+Math.round(it.amt*f)}
+  const dept=[...CAT_ORDER.filter(c=>cats[c]).map(c=>[c,cats[c]]),...(pharm?[["Pharmacy",pharm]]:[])].sort((a,b)=>b[1]-a[1]);
+  const modes={cash:0,upi:0,card:0,insurance:0,credit:0};
+  for(const i of S.invoices.filter(inS))for(const p of i.payments)if(p.at.startsWith(day))modes[p.mode]+=p.amount;
+  for(const b of bl){if(b.pay=="credit")modes.credit+=b.total;else modes[b.pay]+=b.total;if(b.refund)modes.cash-=b.refund}
+  const collected=modes.cash+modes.upi+modes.card+modes.insurance;
+  const dues=S.invoices.filter(i=>inS(i)&&!i.cancelled&&i.created.slice(0,10)<=day).reduce((a,i)=>a+balOf(i),0);
+  const docs={};for(const v of seenV){const k=v.doctor;docs[k]=docs[k]||{seen:0,billed:0};docs[k].seen++}
+  for(const i of inv)if(i.doctor){docs[i.doctor]=docs[i.doctor]||{seen:0,billed:0};docs[i.doctor].billed+=i.total}
+  const doctors=Object.entries(docs).map(([id,x])=>({name:user(+id).name,...x})).sort((a,b)=>b.seen-a.seen||b.billed-a.billed);
+  const prev=revDay(bids,addDays(day,-1)),wk=Array.from({length:7},(_,i)=>revDay(bids,addDays(day,-7+i))),avg=k=>wk.reduce((a,x)=>a+(k=="rev"?x.hosp+x.pharm:x[k]),0)/7;
+  const rows=bids.map(id=>{const br=branch(id),r=revDay([id],day),hb=br.kind.includes("hospital")?hbSummary(id,day):null,cl=S.closings.find(c=>c.branch==id&&c.day==day);
+    return{br,seen:r.seen,newPts:S.patients.filter(p=>p.branch==id&&p.created.startsWith(day)).length,hosp:r.hosp,pharm:r.pharm,total:r.hosp+r.pharm,collected:(hb?hb.collected:0)+S.bills.filter(b=>b.branch==id&&b.created.startsWith(day)&&b.pay!="credit").reduce((a,b)=>a+b.total-b.refund,0),dues:hb?hb.dues:0,closing:cl}});
+  const alerts=[];for(const r of rows){const rep=branchReport(r.br.id,day),c=r.br.code;
+    if(rep.expired.length)alerts.push(["high",`${c}: ${rep.expired.length} expired batches on the shelf (${money(rep.expiredValue)} at cost)`]);
+    if(rep.low.length)alerts.push(["",`${c}: ${rep.low.length} medicines low or out of stock`]);
+    if(rep.waiting)alerts.push(["info",`${c}: ${rep.waiting} patients still waiting`]);
+    if(r.closing&&r.closing.diff)alerts.push(["high",`${c}: cash drawer ${r.closing.diff>0?"excess":"short"} by ${money(Math.abs(r.closing.diff))}`]);
+    else if(!r.closing&&r.collected&&day<today())alerts.push(["",`${c}: cash drawer not closed`])}
+  if(dues)alerts.push(["",`Outstanding dues: ${money(dues)}`]);
+  const days=Array.from({length:14},(_,i)=>addDays(day,i-13)),trend=days.map(d=>revDay(bids,d));
+  return{scope,day,bids,seen:seenV.length,newPts,tri,hosp,pharm,total,collected,dues,modes,dept,doctors,rows,alerts,prev,avgRev:avg("rev"),avgSeen:avg("seen"),days,trend,invCount:inv.length,billCount:bl.length}}
+const pct=(a,b)=>b?Math.round((a-b)/b*100):null;
+const deltaHtml=(a,b,label)=>{const p=pct(a,b);return p==null?`<span class="muted">no data ${label}</span>`:`<span style="color:${p>=0?"var(--ok)":"var(--crit)"};font-weight:600">${p>=0?"▲":"▼"} ${Math.abs(p)}%</span> <span class="muted">${label}</span>`};
+const R0=p=>"₹"+Math.round(p/100).toLocaleString("en-IN");
+function dailyText(x){const title=x.scope?`${branch(x.scope).name}`:S.org,dd=new Date(x.day+"T12:00").toLocaleDateString("en-IN",{weekday:"short",day:"numeric",month:"short",year:"numeric"}),p=pct(x.total,x.prev.hosp+x.prev.pharm);
+  const L=[`*${title}: daily report*`,dd,"",`*Patients:* ${x.seen} seen · ${x.newPts} new · ${x.tri.critical} critical`,`*Revenue:* ${R0(x.total)}${p==null?"":` (${p>=0?"up":"down"} ${Math.abs(p)}% vs yesterday)`}`,
+    `  Hospital ${R0(x.hosp)} · Pharmacy ${R0(x.pharm)}`,`*Collected:* ${R0(x.collected)} (Cash ${R0(x.modes.cash)}, UPI ${R0(x.modes.upi)}, Card ${R0(x.modes.card)}${x.modes.insurance?`, Insurance ${R0(x.modes.insurance)}`:""})`,`*Dues outstanding:* ${R0(x.dues)}`];
+  if(x.dept.length)L.push("","*By department:*",...x.dept.slice(0,6).map(([c,v])=>`  ${c}: ${R0(v)}`));
+  if(!x.scope)L.push("","*By branch:*",...x.rows.map(r=>`  ${r.br.code}: ${R0(r.total)} · ${r.seen} patients`));
+  if(x.doctors.length)L.push("","*Doctors:*",...x.doctors.slice(0,5).map(d=>`  ${d.name}: ${d.seen} patients${d.billed?` · ${R0(d.billed)} billed`:""}`));
+  if(x.alerts.length)L.push("","*Needs attention:*",...x.alerts.slice(0,6).map(a=>"  • "+a[1]));
+  L.push("","Sent from MediAssist Pro");return L.join("\n")}
+function dailyCsv(x){const q=v=>`"${String(v).replace(/"/g,'""')}"`,rows=[["Daily report",x.scope?branch(x.scope).name:S.org],["Date",x.day],[],["Metric","Value"],["Patients seen",x.seen],["New registrations",x.newPts],["Critical",x.tri.critical],["Urgent",x.tri.urgent],
+    ["Hospital revenue (Rs)",x.hosp/100],["Pharmacy revenue (Rs)",x.pharm/100],["Total revenue (Rs)",x.total/100],["Collected (Rs)",x.collected/100],["Cash (Rs)",x.modes.cash/100],["UPI (Rs)",x.modes.upi/100],["Card (Rs)",x.modes.card/100],["Insurance (Rs)",x.modes.insurance/100],["Pharmacy credit (Rs)",x.modes.credit/100],["Dues outstanding (Rs)",x.dues/100],
+    [],["Department","Revenue (Rs)"],...x.dept.map(([c,v])=>[c,v/100]),[],["Branch","Patients seen","New","Hospital (Rs)","Pharmacy (Rs)","Total (Rs)","Collected (Rs)","Dues (Rs)","Cash closed"],
+    ...x.rows.map(r=>[r.br.name,r.seen,r.newPts,r.hosp/100,r.pharm/100,r.total/100,r.collected/100,r.dues/100,r.closing?(r.closing.diff?`diff ${r.closing.diff/100}`:"matched"):"no"]),
+    [],["Doctor","Patients seen","Billed (Rs)"],...x.doctors.map(d=>[d.name,d.seen,d.billed/100])];
+  return rows.map(r=>r.map(q).join(",")).join("\r\n")}
+function barsHtml(list,max,fmt=money){max=Math.max(1,max);return`<div class="bars">${list.map(([l,v])=>`<div class="row"><span>${esc(l)}</span><div class="track"><div class="fill" style="width:${(Math.max(0,v)/max*100).toFixed(1)}%"></div></div><span class="v">${fmt(v)}</span></div>`).join("")||'<p class="empty">Nothing recorded.</p>'}</div>`}
+function renderDaily(day){const el=$("#rDaily"),scope=ctx.branch,x=dailyData(scope,day),txt=dailyText(x);let wa="";try{wa=localStorage.getItem("mediassist-wa")||""}catch(e){}
+  const k=(lab,val,sub,cls="")=>`<div class="kpi"><span class="lab">${lab}</span><span class="val ${cls}">${val}</span><span class="sub">${sub}</span></div>`;
+  const modes=[["Cash",x.modes.cash],["UPI",x.modes.upi],["Card",x.modes.card],["Insurance",x.modes.insurance],["Pharmacy credit",x.modes.credit]].filter(m=>m[1]);
+  el.innerHTML=`<div class="card rhead"><div><div class="crumb">${scope?esc(branch(scope).name):"All branches"} · ${new Date(day+"T12:00").toLocaleDateString("en-IN",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</div><h2 style="font-size:22px;margin-top:4px">Daily report</h2><p class="small muted" style="margin:4px 0 0">${day==today()?"So far today, updated live":"Full day"}</p></div>
+    <div class="share"><div><label for="waNum">WhatsApp number</label><input id="waNum" inputmode="tel" placeholder="91 98765 43210" value="${esc(wa)}"></div><a class="btn" id="waBtn" target="_blank" rel="noopener">Send on WhatsApp</a><button class="btn ghost" id="cpBtn">Copy for email</button>${DL?'<button class="btn ghost" id="dlBtn">Download CSV</button>':""}</div></div>
+  <div class="kpis">${k("Patients seen",x.seen,deltaHtml(x.seen,x.prev.seen,"vs yesterday"))}${k("New registrations",x.newPts,`${x.tri.critical} critical · ${x.tri.urgent} urgent at triage`)}
+    ${k("Revenue",money(x.total),deltaHtml(x.total,x.prev.hosp+x.prev.pharm,"vs yesterday")+" · "+deltaHtml(x.total,x.avgRev,"vs 7-day avg"))}${k("Collected",money(x.collected),`dues outstanding ${money(x.dues)}`,x.dues?"":"")}</div>
+  <div class="g-main"><div class="stack">
+    <div class="card"><div class="card-h"><div><h2>Revenue, last 14 days</h2><p>Hospital invoices and pharmacy sales, after refunds</p></div><div class="legend"><span><i style="background:var(--s1)"></i>Hospital</span><span><i style="background:var(--s2)"></i>Pharmacy</span></div></div>
+      <div class="chart" id="dChart"></div><button class="linkish" id="dTblBtn">Show as table</button><div class="tbl" id="dTbl" hidden><table><tr><th>Day</th><th class="num">Hospital</th><th class="num">Pharmacy</th><th class="num">Patients seen</th></tr>${x.days.map((d,i)=>`<tr><td>${shortDay(d)}</td><td class="num">${money(x.trend[i].hosp)}</td><td class="num">${money(x.trend[i].pharm)}</td><td class="num">${x.trend[i].seen}</td></tr>`).join("")}</table></div></div>
+    ${!scope?`<div class="card"><div class="card-h"><div><h2>By branch</h2><p>Revenue, collections and whether the cash drawer was closed</p></div></div><div class="tbl"><table><tr><th>Branch</th><th class="num">Patients</th><th class="num">Hospital</th><th class="num">Pharmacy</th><th class="num">Total</th><th class="num">Collected</th><th class="num">Dues</th><th>Cash drawer</th></tr>
+      ${x.rows.map(r=>`<tr><td><span class="code">${r.br.code}</span> ${esc(r.br.name)}</td><td class="num">${r.seen}</td><td class="num">${r.hosp?money(r.hosp):"–"}</td><td class="num">${r.pharm?money(r.pharm):"–"}</td><td class="num"><b>${money(r.total)}</b></td><td class="num">${money(r.collected)}</td><td class="num">${r.dues?money(r.dues):"–"}</td><td>${r.closing?(r.closing.diff?pill((r.closing.diff>0?"Excess ":"Short ")+money(Math.abs(r.closing.diff)),"p-crit"):pill("Matched","p-ok")):pill("Not closed","p-plain")}</td></tr>`).join("")}
+      <tr><td><b>Total</b></td><td class="num"><b>${x.seen}</b></td><td class="num"><b>${money(x.hosp)}</b></td><td class="num"><b>${money(x.pharm)}</b></td><td class="num"><b>${money(x.total)}</b></td><td class="num"><b>${money(x.collected)}</b></td><td class="num"><b>${money(x.dues)}</b></td><td></td></tr></table></div></div>`:""}
+    <div class="card"><div class="card-h"><div><h2>Doctors</h2><p>Patients seen and amount billed under each doctor</p></div></div><div class="tbl"><table><tr><th>Doctor</th><th class="num">Patients seen</th><th class="num">Billed</th></tr>${x.doctors.map(d=>`<tr><td>${esc(d.name)}</td><td class="num">${d.seen}</td><td class="num">${d.billed?money(d.billed):"–"}</td></tr>`).join("")||'<tr><td colspan="3" class="empty">No consultations recorded.</td></tr>'}</table></div></div>
+  </div><div class="stack">
+    <div class="card"><div class="card-h"><div><h2>Revenue by department</h2><p>${x.invCount} invoices · ${x.billCount} pharmacy bills</p></div></div>${barsHtml(x.dept,Math.max(...x.dept.map(d=>d[1]),1))}</div>
+    <div class="card"><div class="card-h"><div><h2>Collections by payment mode</h2><p>Money received today, including old dues</p></div></div>${barsHtml(modes,Math.max(...modes.map(m=>m[1]),1))}</div>
+    <div class="card"><div class="card-h"><h2>Needs attention</h2></div>${x.alerts.map(([c,t])=>alertRow(c,esc(t))).join("")||'<p class="empty">All clear.</p>'}</div>
+    <div class="card"><div class="card-h"><div><h2>WhatsApp message</h2><p>This text is sent</p></div></div><pre class="rep" id="dTxt">${esc(txt)}</pre></div>
+  </div></div>`;
+  lineChart($("#dChart"),x.days,[{name:"Hospital",color:"--s1",values:x.trend.map(t=>t.hosp)},{name:"Pharmacy",color:"--s2",values:x.trend.map(t=>t.pharm)}]);tableToggle($("#dTblBtn"),$("#dTbl"));
+  const setWa=()=>{const n=$("#waNum").value.replace(/\D/g,"");$("#waBtn").href=`https://wa.me/${n.length>=10?n:""}?text=${encodeURIComponent(txt)}`;try{localStorage.setItem("mediassist-wa",$("#waNum").value)}catch(e){}};setWa();$("#waNum").oninput=setWa;
+  $("#waBtn").onclick=()=>{audit("report.share",`Daily report ${day} ${scope?branch(scope).code:"group"} via WhatsApp`);save();toast("WhatsApp opens in a new tab. Press send there.")};
+  $("#cpBtn").onclick=()=>navigator.clipboard.writeText(txt.replace(/\*/g,"")).then(()=>toast("Report copied. Paste it into an email."),()=>{const r=document.createRange();r.selectNodeContents($("#dTxt"));const s=getSelection();s.removeAllRanges();s.addRange(r);toast("Text selected. Press Ctrl+C to copy.")});
+  $("#dlBtn")&&($("#dlBtn").onclick=async()=>{try{await DL.save({filename:`daily-report-${scope?branch(scope).code:"group"}-${day}.csv`,data:dailyCsv(x)});toast("Report saved")}catch(e){if(e&&e.code!="declined")toast("Download isn't available here.")}})}
+
+// ================= boot =================
+load();S.docs=S.docs||[];ensureBilling();ensureRacks();save();setUser(1,0);tick();renderShell();
+</script>

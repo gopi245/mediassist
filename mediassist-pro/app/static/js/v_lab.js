@@ -1,0 +1,67 @@
+/* Laboratory: worklist, new order, collection, result entry with live flags, verification, report. */
+"use strict";
+const LAB_ST = { ordered: ["Waiting for sample", "p-warn"], collected: ["Sample collected", "p-info"], resulted: ["Needs verification", "p-crit"], verified: ["Verified", "p-ok"], cancelled: ["Cancelled", "p-plain"] };
+const FLAG_TXT = { H: "High", L: "Low", HH: "Critical high", LL: "Critical low", A: "Abnormal", N: "" };
+
+RENDER.lab = async (main, [mode, id]) => {
+  if (mode === "o" && id) return labOrder(main, +id);
+  const st = App.cache.labSt || "open";
+  const [list, tests] = await Promise.all([api("/api/lab/orders?status=" + st + "&since=" + localDay(-7)), api("/api/lab/tests")]);
+  App.cache.labTests = tests;
+  main.innerHTML = `<div class="g-main"><div class="card"><div class="card-h"><div><h2>Worklist</h2><p>STAT and urgent orders first</p></div></div>
+    ${subtabs([["open", "Open"], ["resulted", "Needs verification"], ["verified", "Verified (7 days)"], ["cancelled", "Cancelled"]], st, "labTab")}
+    ${tbl(["Order", "Patient", "Tests", "Priority", "Status", ""], list.map(o => `<tr class="click" data-act="go" data-v="lab" data-p="o/${o.id}"><td class="mono">LAB${o.id}<div class="small muted">${o.created_at.slice(5)}</div></td><td>${esc(o.pname)} <span class="small muted">${o.code} · ${o.age ?? "?"}${(o.gender || " ")[0]}</span></td><td class="small">${esc(o.tests)}</td><td>${o.priority === "routine" ? "Routine" : pill(o.priority.toUpperCase(), "p-crit")}</td><td>${pill(...LAB_ST[o.status])}</td><td><button class="btn sm ghost">Open</button></td></tr>`).join(""), "No orders here.")}</div>
+    ${can("visit_create") || can("lab") ? card("New lab order", "Walk-in tests or a doctor's paper prescription", `<form data-submit="labNew" class="stack"><div class="fields">${patInput()}<div><label>Priority</label><select name="priority"><option value="routine">Routine</option><option value="urgent">Urgent</option><option value="stat">STAT</option></select></div></div>
+      <div class="stack" style="gap:2px">${tests.map(t_ => `<label class="check" style="margin:0"><input type="checkbox" name="t${t_.id}"> ${esc(t_.name)} <span class="muted small">${t_.rate_p ? money(P2R(t_.rate_p)) : ""} · ${t_.sample || ""}</span></label>`).join("")}</div>
+      <div class="btns"><button class="btn">Create order</button></div></form>`) : ""}</div>`;
+};
+on("labTab", el => { App.cache.labSt = el.dataset.k; go("lab"); });
+on("labNew", async f => {
+  const v = vals(f), pid = pidOf(v.patient); if (!pid) return toast("Pick the patient from the list.");
+  const tests = Object.keys(v).filter(k => /^t\d+$/.test(k) && v[k]).map(k => +k.slice(1));
+  if (!tests.length) return toast("Tick at least one test.");
+  const r = await api("/api/lab/orders", { patient_id: pid, tests, priority: v.priority }); toast(`Order LAB${r.id} created. Bill it in Hospital billing.`); go("lab", ["o", r.id]);
+});
+
+function liveFlag(p, v) {
+  if (v === "") return "";
+  const n = Number(v);
+  if (isNaN(n)) return p.ref_text && !p.ref_text.toLowerCase().includes(v.toLowerCase()) ? "A" : "N";
+  if (p.crit_low != null && n < p.crit_low) return "LL"; if (p.crit_high != null && n > p.crit_high) return "HH";
+  if (p.low != null && n < p.low) return "L"; if (p.high != null && n > p.high) return "H"; return "N";
+}
+async function labOrder(main, id) {
+  const o = await api("/api/lab/orders/" + id); App.cache.labOrder = o;
+  const editable = can("lab") && (o.status === "collected" || o.status === "resulted");
+  main.innerHTML = `<div class="card"><div class="card-h"><div><h2>LAB${o.id} · ${esc(o.pname)}</h2><p>${o.code} · ${o.age ?? "?"} yrs · ${esc(o.gender || "")} · ordered ${o.created_at}${o.dname ? " by " + esc(o.dname) : ""} · ${o.priority.toUpperCase()}</p></div>${pill(...LAB_ST[o.status])}</div>
+    ${o.critical ? alertRow("high", "<b>Critical value.</b> The ordering doctor has been alerted. Inform them by phone as well.") : ""}
+    <form data-submit="labSave" class="resgrid">${o.tests.map(t_ => `<h3 style="margin:14px 0 6px">${esc(t_.name)} <span class="small muted">${esc(t_.sample || "")}</span></h3>
+      ${tbl(["Test", "Result", "Unit", "Normal range", "Flag"], t_.params.map(p => `<tr><td>${esc(p.name)}</td><td>${editable ? `<input name="${t_.item_id}:${p.id}" value="${esc(p.value || "")}" data-input="labLive" data-p='${esc(JSON.stringify({ low: p.low, high: p.high, crit_low: p.crit_low, crit_high: p.crit_high, ref_text: p.ref_text }))}'>` : `<b>${esc(p.value || "–")}</b>`}</td><td>${esc(p.unit || "")}</td><td class="small">${esc(p.range || "")}</td><td class="flagcell"><span class="flag-${p.flag || ""}">${FLAG_TXT[p.flag] || ""}</span></td></tr>`).join(""))}`).join("")}
+    <div class="btns">
+      ${o.status === "ordered" && can("lab") ? `<button type="button" class="btn" data-act="labCollect">Sample collected</button>` : ""}
+      ${editable ? `<button class="btn ghost" name="draft" value="1">Save draft</button><button type="button" class="btn" data-act="labSubmit">Submit results</button>` : ""}
+      ${o.status === "resulted" && can("lab_verify") ? `<button type="button" class="btn" data-act="labVerify">Verify and send to patient</button>` : ""}
+      ${["ordered", "collected"].includes(o.status) && can("lab") ? `<button type="button" class="btn ghost" data-act="labCancel">Cancel order</button>` : ""}
+      ${o.status === "verified" ? `<button type="button" class="btn ghost" data-act="labPrint">Print report</button><button type="button" class="btn ghost" data-act="pdfDl" data-p="lab/${o.id}">PDF</button>` : ""}
+      <button type="button" class="btn ghost" data-act="go" data-v="lab">Back to worklist</button></div></form>
+    <p class="small muted">Collected: ${o.collected_at ? `${o.collected_at} by ${esc(o.collected_name)}` : "–"} · Resulted: ${o.resulted_at ? `${o.resulted_at} by ${esc(o.resulted_name)}` : "–"} · Verified: ${o.verified_at ? `${o.verified_at} by ${esc(o.verified_name)}` : "–"}</p></div>`;
+}
+on("labLive", el => { const f = liveFlag(JSON.parse(el.dataset.p), el.value.trim()); el.closest("tr").querySelector(".flagcell").innerHTML = `<span class="flag-${f}">${FLAG_TXT[f] || ""}</span>`; });
+const labValues = () => { const o = {}; $$(".resgrid input[name*=':']").forEach(i => o[i.name] = i.value); return o; };
+on("labSave", async () => { await api(`/api/lab/orders/${App.cache.labOrder.id}/results`, { values: labValues() }); toast("Draft saved"); });
+on("labSubmit", async () => { const r = await api(`/api/lab/orders/${App.cache.labOrder.id}/results`, { values: labValues(), submit: true }); toast(r.critical ? "Submitted. CRITICAL value: doctor alerted." : "Submitted for verification"); go("lab", ["o", App.cache.labOrder.id]); });
+on("labCollect", async () => { await api(`/api/lab/orders/${App.cache.labOrder.id}/collect`, {}); go("lab", ["o", App.cache.labOrder.id]); });
+on("labVerify", async () => {
+  const r = await api(`/api/lab/orders/${App.cache.labOrder.id}/verify`, {});
+  const s = (r.sent || [])[0];
+  toast(s ? (s.ok ? "Verified and sent to the patient on WhatsApp" : "Verified. WhatsApp isn't set up, so the report is logged in Reports > Messages to send by hand.") : "Verified");
+  go("lab", ["o", App.cache.labOrder.id]);
+});
+on("labCancel", async () => { const v = await dialog("Cancel this lab order?", `<label>Reason</label><input name="reason">`, { ok: "Cancel order", danger: true, cancel: "Keep" }); if (v) { await api(`/api/lab/orders/${App.cache.labOrder.id}/cancel`, v); go("lab"); } });
+on("labPrint", () => {
+  const o = App.cache.labOrder;
+  printHtml(`<div class="hdr"><div><h2>${esc(o.bname)}</h2><div>${esc(o.baddr || "")} · ${esc(o.bphone || "")}</div></div><div style="text-align:right"><b>LAB${o.id}</b><div>${o.verified_at}</div></div></div>
+    <p><b>${esc(o.pname)}</b> · ${o.code} · ${o.age ?? "?"} yrs · ${esc(o.gender || "")}${o.dname ? ` · Referred by ${esc(o.dname)}` : ""}<br>Sample collected ${o.collected_at}</p>
+    ${o.tests.map(t_ => `<h3>${esc(t_.name)}</h3><table><tr><th>Test</th><th>Result</th><th>Unit</th><th>Normal range</th><th></th></tr>${t_.params.map(p => `<tr><td>${esc(p.name)}</td><td><b>${esc(p.value || "")}</b></td><td>${esc(p.unit || "")}</td><td>${esc(p.range || "")}</td><td>${FLAG_TXT[p.flag] || ""}</td></tr>`).join("")}</table>`).join("")}
+    <br><p style="text-align:right">Verified by ${esc(o.verified_name || "")} ${o.verified_reg ? "(" + esc(o.verified_reg) + ")" : ""}</p>`);
+});

@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MediAssist AI</title>
+<style>
+:root{--bg:#f4f7fb;--card:#fff;--tx:#1b2433;--mu:#66748a;--pr:#0f7b8a;--red:#d93838;--org:#e08a12;--grn:#2e9b55;--bd:#e2e8f0}
+*{box-sizing:border-box}body{margin:0;font-family:Segoe UI,system-ui,sans-serif;background:var(--bg);color:var(--tx)}
+header{background:var(--pr);color:#fff;padding:14px 20px;font-size:20px;font-weight:600}
+nav{display:flex;flex-wrap:wrap;gap:6px;padding:10px 16px;background:#fff;border-bottom:1px solid var(--bd)}
+nav button{border:0;background:#eef3f7;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:14px}
+nav button.on{background:var(--pr);color:#fff}
+main{padding:16px;max-width:1100px;margin:auto}.tab{display:none}.tab.on{display:block}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin-bottom:12px}
+.kpi b{font-size:28px;display:block}.kpi span{color:var(--mu);font-size:13px}
+label{display:block;font-size:13px;color:var(--mu);margin:8px 0 3px}
+input,textarea,select{width:100%;padding:8px;border:1px solid var(--bd);border-radius:8px;font:inherit}
+textarea{min-height:90px}
+.btn{background:var(--pr);color:#fff;border:0;padding:9px 16px;border-radius:8px;cursor:pointer;margin-top:10px}
+table{width:100%;border-collapse:collapse;font-size:14px}td,th{padding:8px;border-bottom:1px solid var(--bd);text-align:left}
+.tag{padding:3px 9px;border-radius:20px;color:#fff;font-size:12px;font-weight:600}
+.Critical{background:var(--red)}.Urgent{background:var(--org)}.Normal{background:var(--grn)}
+.out{white-space:pre-wrap;background:#f0f6f8;padding:12px;border-radius:8px;margin-top:10px}
+@media print{header,nav,.tab:not(#report),#report>.card:first-child{display:none!important}#report{display:block!important}.card{border:0}}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+</style></head><body>
+<header>🏥 MediAssist AI — Smart Clinic Manager</header>
+<nav id="nav"></nav>
+<main>
+<section class="tab" id="dash"><div class="grid" id="kpis"></div>
+<div class="card"><h3>AI Alerts</h3><div id="alerts"></div></div></section>
+
+<section class="tab" id="triage"><div class="card"><h3>New Patient — AI Triage</h3>
+<div class="row"><div><label>Name</label><input id="pn"></div><div><label>Age</label><input id="pa" type="number"></div>
+<div><label>Temp (°C)</label><input id="pt" type="number" step=".1" value="37"></div><div><label>Pulse</label><input id="pp" type="number" value="80"></div>
+<div><label>Systolic BP</label><input id="pb" type="number" value="120"></div><div><label>SpO₂ %</label><input id="ps" type="number" value="98"></div></div>
+<label>Symptoms</label><textarea id="psy" placeholder="e.g. chest pain, breathlessness"></textarea>
+<button class="btn" onclick="addPatient()">Run AI Triage & Add to Queue</button><div id="tout"></div></div></section>
+
+<section class="tab" id="queue"><div class="card"><h3>Smart Queue (AI-prioritised)</h3><table id="qt"></table></div></section>
+
+<section class="tab" id="appt"><div class="card"><h3>Appointments — No-Show Prediction</h3><table id="at"></table></div></section>
+
+<section class="tab" id="notes"><div class="card"><h3>AI Clinical Notes (SOAP)</h3>
+<label>Doctor's rough notes</label><textarea id="rn">pt c/o fever 3 days, cough, body ache. temp 38.6, throat red. likely viral URTI. give paracetamol 500 tds, fluids, review 3 days</textarea>
+<button class="btn" onclick="soap()">Generate SOAP Note</button><div id="sout"></div></div></section>
+
+<section class="tab" id="drug"><div class="card"><h3>Drug Interaction Checker</h3>
+<label>Medicines (comma separated)</label><input id="dl" value="warfarin, aspirin, paracetamol">
+<button class="btn" onclick="drugs()">Check</button><div id="dout"></div></div></section>
+
+<section class="tab" id="stock"><div class="card"><h3>Inventory Forecast</h3><table id="st"></table></div></section>
+
+<section class="tab" id="expiry"><div class="card"><h3>Add Medicine Batch</h3>
+<div class="row"><div><label>Medicine name</label><input id="mn" placeholder="e.g. Cough syrup"></div>
+<div><label>Type</label><select id="mt"><option>Tablet</option><option>Capsule</option><option>Tonic/Syrup</option><option>Injection</option></select></div>
+<div><label>Batch no.</label><input id="mb"></div><div><label>Quantity</label><input id="mq" type="number" value="100"></div>
+<div><label>Expiry date</label><input id="me" type="date"></div><div><label>Opened on (syrups)</label><input id="mo" type="date"></div></div>
+<button class="btn" onclick="addMed()">Add Batch</button>
+<button class="btn" style="background:#556" onclick="enableNotify()">🔔 Enable Desktop Alerts</button>
+<button class="btn" style="background:#556" onclick="exportCSV()">⬇ Export Expiry Report</button>
+<p style="font-size:13px;color:var(--mu)">Opened tonics/syrups use the earlier of printed expiry or 30 days after opening. Use the oldest-expiry batch first (FEFO).</p></div>
+<div class="card"><h3>Expiry Tracker</h3><table id="et"></table></div></section>
+
+<section class="tab" id="reg"><div class="card"><h3>Register Patient</h3>
+<div class="row"><div><label>Full name *</label><input id="rgName"></div><div><label>Age</label><input id="rgAge" type="number"></div>
+<div><label>Gender</label><select id="rgGen"><option>Male</option><option>Female</option><option>Other</option></select></div>
+<div><label>Phone *</label><input id="rgPhone"></div><div><label>Address</label><input id="rgAddr"></div>
+<div><label>Allergies</label><input id="rgAll" placeholder="e.g. penicillin"></div>
+<div><label>Complaint / diagnosis</label><input id="rgDx"></div><div><label>Doctor</label><input id="rgDoc" placeholder="Dr. ..."></div></div>
+<button class="btn" onclick="regPatient()">Save Patient</button></div>
+<div class="card"><h3>All Patients</h3><input id="rgSearch" placeholder="Search name or phone..." oninput="render()"><table id="rgT"></table></div></section>
+
+<section class="tab" id="sales"><div class="card"><h3>Dispense Medicine</h3>
+<div class="row"><div><label>Patient *</label><select id="slPat"></select></div><div><label>Medicine *</label><select id="slMed"></select></div>
+<div><label>Quantity (tablets / bottles) *</label><input id="slQty" type="number" value="10"></div>
+<div><label>Price per unit (₹)</label><input id="slPrice" type="number" step=".01" value="2"></div>
+<div><label>Dosage</label><input id="slDose" placeholder="1-0-1 after food"></div></div>
+<button class="btn" onclick="dispense()">Dispense & Record</button><div id="slOut"></div>
+<p style="font-size:13px;color:var(--mu)">Stock is taken from the batch that expires first. Expired batches are never dispensed. You'll be warned if the patient's allergies match the medicine.</p></div>
+<div class="card"><h3>Today's Sales</h3><table id="slT"></table></div></section>
+
+<section class="tab" id="report"><div class="card"><h3>End-of-Day Report for Doctor</h3>
+<div class="row"><div><label>Date</label><input id="rpDate" type="date" onchange="render()"></div>
+<div><label>Doctor's email</label><input id="rpEmail" placeholder="doctor@example.com" onchange="try{localStorage.setItem('docEmail',this.value)}catch(e){}"></div>
+<div><label>Doctor's WhatsApp (with country code)</label><input id="rpWa" placeholder="919876543210" onchange="try{localStorage.setItem('docWa',this.value)}catch(e){}"></div></div>
+<button class="btn" onclick="window.print()">🖨 Print / Save PDF</button>
+<button class="btn" onclick="sendEmail()">✉ Email to Doctor</button>
+<button class="btn" style="background:#25a35a" onclick="sendWa()">💬 WhatsApp to Doctor</button>
+<button class="btn" style="background:#556" onclick="reportCSV()">⬇ Download CSV</button></div>
+<div class="card" id="rpBox"></div></section>
+</main>
+<script>
+const tabs={dash:"Dashboard",triage:"AI Triage",queue:"Smart Queue",appt:"Appointments",notes:"AI Notes",drug:"Drug Check",stock:"Inventory",expiry:"Expiry Alerts",reg:"Patient Register",sales:"Dispense / Sales",report:"Daily Report"};
+nav.innerHTML=Object.entries(tabs).map(([k,v])=>`<button data-t="${k}">${v}</button>`).join("");
+nav.onclick=e=>{if(e.target.dataset.t)show(e.target.dataset.t)};
+function show(t){document.querySelectorAll(".tab,nav button").forEach(x=>x.classList.remove("on"));
+document.getElementById(t).classList.add("on");nav.querySelector(`[data-t=${t}]`).classList.add("on");render()}
+
+let patients=[
+{name:"Ravi Kumar",age:62,temp:37.2,pulse:118,bp:165,spo2:91,sym:"chest pain, sweating",t:Date.now()-20*6e4},
+{name:"Lakshmi",age:28,temp:38.9,pulse:102,bp:115,spo2:97,sym:"fever, headache",t:Date.now()-35*6e4},
+{name:"Arjun",age:35,temp:36.9,pulse:76,bp:122,spo2:99,sym:"knee pain",t:Date.now()-50*6e4}];
+const appts=[
+{name:"Meena",time:"10:00",missed:3,days:21,dist:18,sms:false},
+{name:"Suresh",time:"10:30",missed:0,days:2,dist:3,sms:true},
+{name:"Fatima",time:"11:00",missed:1,days:10,dist:12,sms:true},
+{name:"John",time:"11:30",missed:2,days:30,dist:25,sms:false}];
+const stock=[{item:"Paracetamol 500mg",qty:1200,use:150},{item:"Insulin vials",qty:40,use:9},{item:"Gloves (pairs)",qty:900,use:80},{item:"Amoxicillin",qty:300,use:20},{item:"IV saline",qty:60,use:15}];
+
+// AI triage: rule-based scoring of vital signs + red-flag symptoms
+const RED=["chest pain","breathless","unconscious","seizure","bleeding","stroke","slurred","severe"];
+const MOD=["fever","vomit","fracture","abdominal pain","dizzy","sweating"];
+function triage(p){let s=0,r=[];const sy=p.sym.toLowerCase();
+if(p.spo2<92){s+=4;r.push("Low SpO₂ "+p.spo2+"%")}
+if(p.pulse>120||p.pulse<45){s+=3;r.push("Abnormal pulse "+p.pulse)}else if(p.pulse>100){s+=1;r.push("High pulse")}
+if(p.bp>180||p.bp<90){s+=3;r.push("Dangerous BP "+p.bp)}else if(p.bp>160){s+=2;r.push("High BP "+p.bp)}
+if(p.temp>=39.5){s+=2;r.push("High fever")}else if(p.temp>=38){s+=1;r.push("Fever")}
+RED.forEach(k=>{if(sy.includes(k)){s+=4;r.push("Red flag: "+k)}});
+MOD.forEach(k=>{if(sy.includes(k)){s+=1;r.push(k)}});
+if(p.age>65){s+=1;r.push("Elderly")}
+return{score:s,level:s>=6?"Critical":s>=3?"Urgent":"Normal",reasons:r}}
+
+function addPatient(){const p={name:pn.value||"Unnamed",age:+pa.value||0,temp:+pt.value,pulse:+pp.value,bp:+pb.value,spo2:+ps.value,sym:psy.value,t:Date.now()};
+patients.push(p);const r=triage(p);
+tout.innerHTML=`<div class="out"><span class="tag ${r.level}">${r.level}</span> score ${r.score}\nReasons: ${r.reasons.join(", ")||"none"}</div>`}
+
+function noShow(a){let s=10+a.missed*18+a.days*0.8+a.dist*0.9-(a.sms?15:0);return Math.max(3,Math.min(95,Math.round(s)))}
+
+function soap(){const t=rn.value.toLowerCase();const sp=t.split(/[.,]\s*/);
+const S=sp.filter(x=>/c\/o|complain|days|pain|cough|ache/.test(x)),O=sp.filter(x=>/temp|bp|pulse|red|exam|spo2/.test(x)),
+A=sp.filter(x=>/likely|diagnos|suspect|impression/.test(x)),P=sp.filter(x=>/give|tab|review|advise|fluids|mg|refer/.test(x));
+const f=a=>a.length?"• "+a.map(x=>x.replace("pt c/o","Patient complains of").replace("tds","three times daily")).join("\n• "):"—";
+sout.innerHTML=`<div class="out"><b>S (Subjective)</b>\n${f(S)}\n\n<b>O (Objective)</b>\n${f(O)}\n\n<b>A (Assessment)</b>\n${f(A)}\n\n<b>P (Plan)</b>\n${f(P)}</div>`}
+
+const INT={"warfarin+aspirin":"HIGH: major bleeding risk","warfarin+ibuprofen":"HIGH: bleeding risk","metformin+contrast":"HIGH: lactic acidosis risk",
+"sildenafil+nitroglycerin":"HIGH: severe hypotension","simvastatin+clarithromycin":"HIGH: muscle damage risk","lisinopril+spironolactone":"MODERATE: high potassium","ciprofloxacin+theophylline":"MODERATE: toxicity"};
+function drugs(){const d=dl.value.toLowerCase().split(",").map(x=>x.trim()).filter(Boolean),res=[];
+for(let i=0;i<d.length;i++)for(let j=i+1;j<d.length;j++){const k=INT[d[i]+"+"+d[j]]||INT[d[j]+"+"+d[i]];if(k)res.push(`⚠ ${d[i]} + ${d[j]} → ${k}`)}
+dout.innerHTML=`<div class="out">${res.length?res.join("\n"):"✅ No known interactions in database"}</div>`}
+
+// ---- Expiry tracking for tablets, tonics, injections ----
+const DAY=864e5,iso=d=>new Date(d).toISOString().slice(0,10),plus=n=>iso(Date.now()+n*DAY);
+let meds=[
+{name:"Paracetamol 500mg",type:"Tablet",batch:"PC231",qty:400,exp:plus(-3),opened:""},
+{name:"Benadryl cough syrup",type:"Tonic/Syrup",batch:"BS88",qty:12,exp:plus(200),opened:plus(-24)},
+{name:"Amoxicillin 250mg",type:"Capsule",batch:"AM55",qty:300,exp:plus(18),opened:""},
+{name:"Iron tonic (Ferrous)",type:"Tonic/Syrup",batch:"FT12",qty:25,exp:plus(65),opened:""},
+{name:"Insulin",type:"Injection",batch:"IN09",qty:40,exp:plus(150),opened:""},
+{name:"Paracetamol 500mg",type:"Tablet",batch:"PC310",qty:800,exp:plus(420),opened:""}];
+try{const s=JSON.parse(localStorage.getItem("meds"));if(Array.isArray(s))meds=s}catch(e){}
+const saveMeds=()=>{try{localStorage.setItem("meds",JSON.stringify(meds))}catch(e){}};
+function effExpiry(m){let e=new Date(m.exp).getTime();
+if(m.type=="Tonic/Syrup"&&m.opened)e=Math.min(e,new Date(m.opened).getTime()+30*DAY);return e}
+function expStatus(m){const d=Math.ceil((effExpiry(m)-Date.now())/DAY);
+if(d<0)return{d,cls:"Critical",label:"EXPIRED",act:"Remove from shelf, do not dispense, return to supplier"};
+if(d<=30)return{d,cls:"Critical",label:"≤30 days",act:"Dispense first / return to supplier for credit"};
+if(d<=90)return{d,cls:"Urgent",label:"≤90 days",act:"Use this batch first (FEFO), stop reordering"};
+return{d,cls:"Normal",label:"OK",act:"—"}}
+function addMed(){if(!mn.value||!me.value)return alert("Enter medicine name and expiry date");
+meds.push({name:mn.value,type:mt.value,batch:mb.value,qty:+mq.value,exp:me.value,opened:mo.value});saveMeds();render();notifyExpiry(true)}
+function delMed(i){meds.splice(i,1);saveMeds();render()}
+function enableNotify(){if(!("Notification"in window))return alert("This browser does not support notifications");
+Notification.requestPermission().then(p=>{if(p=="granted")notifyExpiry(true)})}
+function notifyExpiry(force){const bad=meds.filter(m=>expStatus(m).d<=30);if(!bad.length)return;
+const today=iso(Date.now());let last;try{last=localStorage.getItem("lastNotify")}catch(e){}
+if(!force&&last==today)return; // once per day
+try{localStorage.setItem("lastNotify",today)}catch(e){}
+const msg=bad.map(m=>{const s=expStatus(m);return`${m.name} (${m.batch}): ${s.d<0?"EXPIRED":s.d+" days left"}`}).join("\n");
+if(window.Notification&&Notification.permission=="granted")new Notification("⚠ Medicine expiry alert",{body:msg})}
+function exportCSV(){const rows=[["Medicine","Type","Batch","Qty","Expiry","Days left","Status","Action"],
+...meds.map(m=>{const s=expStatus(m);return[m.name,m.type,m.batch,m.qty,iso(effExpiry(m)),s.d,s.label,s.act]})];
+const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([rows.map(r=>r.map(c=>`"${c}"`).join(",")).join("\n")],{type:"text/csv"}));
+a.download="expiry-report.csv";a.click()}
+
+// ---- Patient register, dispensing and end-of-day report ----
+const $=id=>document.getElementById(id),esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const load=(k,d)=>{try{const v=JSON.parse(localStorage.getItem(k));return v??d}catch(e){return d}};
+const store=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
+let reg=load("reg",[]),sales=load("sales",[]);
+const today=()=>iso(Date.now()),now=()=>new Date().toTimeString().slice(0,5);
+function regPatient(){const p={id:"P"+String(reg.length+1).padStart(4,"0"),name:rgName.value.trim(),age:rgAge.value,gender:rgGen.value,phone:rgPhone.value.trim(),
+addr:rgAddr.value,allergies:rgAll.value,dx:rgDx.value,doctor:rgDoc.value,date:today(),time:now()};
+if(!p.name||!p.phone)return alert("Name and phone are required");
+reg.push(p);store("reg",reg);["rgName","rgAge","rgPhone","rgAddr","rgAll","rgDx"].forEach(i=>$(i).value="");render();alert("Saved as "+p.id)}
+function stockOf(name){return meds.filter(m=>m.name==name&&expStatus(m).d>=0).reduce((s,m)=>s+m.qty,0)}
+function dispense(){const p=reg.find(x=>x.id==slPat.value),name=slMed.value,q=+slQty.value,price=+slPrice.value||0;
+if(!p||!name||q<=0)return alert("Pick a patient, a medicine and a quantity");
+if(stockOf(name)<q)return alert(`Only ${stockOf(name)} usable units of ${name} in stock`);
+if(p.allergies&&p.allergies.split(",").some(a=>a.trim()&&name.toLowerCase().includes(a.trim().toLowerCase()))&&!confirm(`⚠ ${p.name} is allergic to ${p.allergies}. Dispense anyway?`))return;
+let left=q;const used=[];
+meds.filter(m=>m.name==name&&expStatus(m).d>=0&&m.qty>0).sort((a,b)=>effExpiry(a)-effExpiry(b)).forEach(m=>{if(!left)return;const t=Math.min(left,m.qty);m.qty-=t;left-=t;used.push(m.batch+"×"+t)});
+saveMeds();sales.push({date:today(),time:now(),pid:p.id,patient:p.name,med:name,qty:q,price,total:q*price,dose:slDose.value,batches:used.join(" ")});
+store("sales",sales);slOut.innerHTML=`<div class="out">✅ ${q} × ${esc(name)} to ${esc(p.name)} — ₹${(q*price).toFixed(2)} (batch ${used.join(", ")})</div>`;render()}
+function dayData(d){const pts=reg.filter(p=>p.date==d),sl=sales.filter(s=>s.date==d),byMed={};
+sl.forEach(s=>{byMed[s.med]=(byMed[s.med]||0)+s.qty});
+return{pts,sl,byMed,rev:sl.reduce((a,s)=>a+s.total,0),buyers:new Set(sl.map(s=>s.pid)).size,
+exp:meds.filter(m=>expStatus(m).d<=30),low:[...new Set(meds.map(m=>m.name))].filter(n=>stockOf(n)<50)}}
+function reportText(d){const r=dayData(d);let t=`DAILY CLINIC REPORT — ${d}\n\nNew patients: ${r.pts.length}\nPatients who bought medicine: ${r.buyers}\nTotal sales: ₹${r.rev.toFixed(2)}\n\nPATIENTS\n`;
+t+=r.pts.map(p=>`- ${p.id} ${p.name}, ${p.age||"?"}${p.gender[0]}, ${p.phone} — ${p.dx||"-"}${p.allergies?" (allergy: "+p.allergies+")":""}`).join("\n")||"- none";
+t+="\n\nMEDICINES GIVEN\n"+(r.sl.map(s=>`- ${s.time} ${s.patient}: ${s.med} × ${s.qty} ${s.dose?"("+s.dose+")":""} ₹${s.total.toFixed(2)}`).join("\n")||"- none");
+t+="\n\nTOTAL PER MEDICINE\n"+(Object.entries(r.byMed).map(([m,q])=>`- ${m}: ${q}`).join("\n")||"- none");
+if(r.low.length)t+="\n\nLOW STOCK: "+r.low.map(n=>`${n} (${stockOf(n)})`).join(", ");
+if(r.exp.length)t+="\n\nEXPIRY WARNINGS: "+r.exp.map(m=>`${m.name} ${m.batch} (${expStatus(m).d<0?"expired":expStatus(m).d+"d"})`).join(", ");
+return t}
+function sendEmail(){const d=rpDate.value,em=rpEmail.value.trim();if(!em)return alert("Enter the doctor's email");
+location.href=`mailto:${encodeURIComponent(em)}?subject=${encodeURIComponent("Clinic report "+d)}&body=${encodeURIComponent(reportText(d))}`}
+function sendWa(){const n=rpWa.value.replace(/\D/g,"");if(!n)return alert("Enter the doctor's WhatsApp number");
+window.open(`https://wa.me/${n}?text=${encodeURIComponent(reportText(rpDate.value))}`,"_blank")}
+function reportCSV(){const d=rpDate.value,rows=[["Date","Time","Patient ID","Patient","Medicine","Qty","Price","Total","Dosage","Batches"],
+...sales.filter(s=>s.date==d).map(s=>[s.date,s.time,s.pid,s.patient,s.med,s.qty,s.price,s.total,s.dose,s.batches])];
+const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n")],{type:"text/csv"}));
+a.download=`sales-${d}.csv`;a.click()}
+function renderOps(){
+const q=(rgSearch.value||"").toLowerCase(),list=reg.filter(p=>!q||p.name.toLowerCase().includes(q)||p.phone.includes(q)).slice().reverse();
+rgT.innerHTML="<tr><th>ID</th><th>Name</th><th>Age/Sex</th><th>Phone</th><th>Diagnosis</th><th>Allergies</th><th>Doctor</th><th>Registered</th><th>Medicines bought</th></tr>"+
+list.map(p=>`<tr><td>${p.id}</td><td>${esc(p.name)}</td><td>${esc(p.age)}/${p.gender[0]}</td><td>${esc(p.phone)}</td><td>${esc(p.dx)}</td><td>${esc(p.allergies)}</td><td>${esc(p.doctor)}</td><td>${p.date} ${p.time}</td><td>${sales.filter(s=>s.pid==p.id).map(s=>esc(s.med)+" ×"+s.qty).join(", ")||"—"}</td></tr>`).join("");
+const sp=slPat.value,sm=slMed.value;
+slPat.innerHTML=reg.slice().reverse().map(p=>`<option value="${p.id}">${p.id} — ${esc(p.name)} (${esc(p.phone)})</option>`).join("")||"<option value=''>Register a patient first</option>";
+slMed.innerHTML=[...new Set(meds.map(m=>m.name))].map(n=>`<option value="${esc(n)}">${esc(n)} — ${stockOf(n)} in stock</option>`).join("");
+if(sp)slPat.value=sp;if(sm)slMed.value=sm;
+const ts=sales.filter(s=>s.date==today());
+slT.innerHTML="<tr><th>Time</th><th>Patient</th><th>Medicine</th><th>Qty</th><th>Dosage</th><th>Total</th><th>Batch</th></tr>"+
+ts.map(s=>`<tr><td>${s.time}</td><td>${esc(s.patient)}</td><td>${esc(s.med)}</td><td>${s.qty}</td><td>${esc(s.dose)}</td><td>₹${s.total.toFixed(2)}</td><td>${esc(s.batches)}</td></tr>`).join("")+
+`<tr><th colspan="5">Total</th><th>₹${ts.reduce((a,s)=>a+s.total,0).toFixed(2)}</th><th></th></tr>`;
+if(!rpDate.value)rpDate.value=today();
+rpBox.innerHTML=`<pre style="white-space:pre-wrap;font:14px/1.5 Segoe UI,sans-serif;margin:0">${esc(reportText(rpDate.value))}</pre>`}
+
+function render(){renderOps();
+const tri=patients.map(p=>({...p,...triage(p),wait:Math.round((Date.now()-p.t)/6e4)}));
+const ord={Critical:0,Urgent:1,Normal:2};tri.sort((a,b)=>ord[a.level]-ord[b.level]||b.wait-a.wait);
+const crit=tri.filter(p=>p.level=="Critical").length,avgW=Math.round(tri.reduce((s,p)=>s+p.wait,0)/tri.length);
+const hi=appts.filter(a=>noShow(a)>50).length,low=stock.filter(s=>s.qty/s.use<7);
+kpis.innerHTML=[["Patients waiting",tri.length],["Critical",crit],["Avg wait (min)",avgW],["High no-show risk",hi],["Low stock items",low.length],["Expired / expiring ≤30d",meds.filter(m=>expStatus(m).d<=30).length]]
+.map(([l,v])=>`<div class="card kpi"><b>${v}</b><span>${l}</span></div>`).join("");
+alerts.innerHTML=[...tri.filter(p=>p.level=="Critical").map(p=>`🚨 ${p.name}: ${p.reasons.slice(0,3).join(", ")} — see immediately`),
+...appts.filter(a=>noShow(a)>50).map(a=>`📱 ${a.name} (${a.time}) likely to miss — send reminder call`),
+...low.map(s=>`📦 ${s.item} runs out in ${Math.floor(s.qty/s.use)} days — reorder`),
+...meds.filter(m=>expStatus(m).d<=30).map(m=>{const s=expStatus(m);return`💊 ${m.name} [${m.type}, batch ${m.batch}] ${s.d<0?"EXPIRED "+(-s.d)+" days ago":"expires in "+s.d+" days"} — ${s.act}`})].map(x=>`<p>${x}</p>`).join("")||"No alerts";
+qt.innerHTML="<tr><th>#</th><th>Patient</th><th>Priority</th><th>Wait</th><th>Why</th></tr>"+tri.map((p,i)=>`<tr><td>${i+1}</td><td>${p.name} (${p.age})</td><td><span class="tag ${p.level}">${p.level}</span></td><td>${p.wait} min</td><td>${p.reasons.join(", ")}</td></tr>`).join("");
+at.innerHTML="<tr><th>Patient</th><th>Time</th><th>Past misses</th><th>Booked days ago</th><th>Risk</th><th>AI action</th></tr>"+appts.map(a=>{const r=noShow(a);return`<tr><td>${a.name}</td><td>${a.time}</td><td>${a.missed}</td><td>${a.days}</td><td><span class="tag ${r>50?"Critical":r>25?"Urgent":"Normal"}">${r}%</span></td><td>${r>50?"Call + allow overbooking":r>25?"Send SMS reminder":"None"}</td></tr>`}).join("");
+st.innerHTML="<tr><th>Item</th><th>Stock</th><th>Daily use</th><th>Days left</th><th>Action</th></tr>"+stock.map(s=>{const d=Math.floor(s.qty/s.use);return`<tr><td>${s.item}</td><td>${s.qty}</td><td>${s.use}</td><td>${d}</td><td>${d<7?"🔴 Reorder now":d<14?"🟠 Plan order":"🟢 OK"}</td></tr>`}).join("");
+const ms=meds.map((m,i)=>({m,i,s:expStatus(m)})).sort((a,b)=>a.s.d-b.s.d);
+et.innerHTML="<tr><th>Medicine</th><th>Type</th><th>Batch</th><th>Qty</th><th>Expiry</th><th>Days left</th><th>Status</th><th>Action</th><th></th></tr>"+ms.map(({m,i,s})=>`<tr><td>${m.name}</td><td>${m.type}</td><td>${m.batch}</td><td>${m.qty}</td><td>${iso(effExpiry(m))}${m.opened&&m.type=="Tonic/Syrup"?"<br><small>opened "+m.opened+"</small>":""}</td><td>${s.d}</td><td><span class="tag ${s.cls}">${s.label}</span></td><td>${s.act}</td><td><button onclick="delMed(${i})">✕</button></td></tr>`).join("")}
+try{rpEmail.value=localStorage.getItem("docEmail")||"";rpWa.value=localStorage.getItem("docWa")||""}catch(e){}
+show("dash");setInterval(render,30000);notifyExpiry(false);
+</script></body></html>
