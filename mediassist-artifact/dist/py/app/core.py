@@ -10,6 +10,7 @@ import re
 import secrets
 import sqlite3
 import struct
+import sys
 import threading
 import time
 from datetime import date, datetime, timedelta
@@ -57,7 +58,12 @@ def db():
         c = sqlite3.connect(DB_PATH, timeout=15, isolation_level=None, check_same_thread=False)
         c.row_factory = sqlite3.Row
         c.execute("PRAGMA foreign_keys=ON")
-        c.execute("PRAGMA journal_mode=WAL")
+        if sys.platform == "emscripten":  # in-browser demo: single user on an in-memory filesystem; WAL/shm only slow it down
+            c.execute("PRAGMA journal_mode=MEMORY")
+            c.execute("PRAGMA synchronous=OFF")
+            c.execute("PRAGMA temp_store=MEMORY")
+        else:
+            c.execute("PRAGMA journal_mode=WAL")
         c.execute("PRAGMA busy_timeout=15000")
         _local.conn = c
     return c

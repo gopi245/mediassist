@@ -5,6 +5,7 @@
   const PY = ["server.py", "app/__init__.py", "app/core.py", "app/schema.py", "app/refdata.py", "app/safety.py", "app/notify.py", "app/m_admin.py",
     "app/m_clinical.py", "app/m_pharmacy.py", "app/m_lab.py", "app/m_appointments.py", "app/m_ipd.py", "app/m_billing.py", "app/m_accounts.py",
     "app/m_docs.py", "app/m_pdf.py", "app/m_portal.py", "app/m_reports.py", "app/m_weekly.py", "app/m_upload.py", "app/m_watch.py", "app/m_tracker.py", "app/m_alerts.py", "app/m_assistant.py", "app/m_care.py", "app/setup.py", "bridge.py"];
+  window.MA_DEMO = window.MA_DEMO || {};
   const origFetch = window.fetch.bind(window);
   let token = null; try { token = localStorage.getItem("ma-sid"); } catch (e) {}
 
@@ -92,7 +93,13 @@
     const send = () => { const h = { ...headers }; if (token) h.Cookie = "sid=" + token; const o = JSON.parse(py.globals.get("handle")(method, url.pathname + url.search, JSON.stringify(h), b64));
       if (o.cookie) { const m = o.cookie.match(/^sid=([^;]*)/); token = m && m[1] ? m[1] : null; try { token ? localStorage.setItem("ma-sid", token) : localStorage.removeItem("ma-sid"); } catch (e) {} }
       return o; };
+    const t0 = performance.now();
     let out = send();
+    const ms = performance.now() - t0;
+    (window.MA_DEMO.timings = window.MA_DEMO.timings || []).push({ path: url.pathname, ms: Math.round(ms), status: out.status });
+    if (ms > 1500) console.warn(`[MediAssist demo] ${method} ${url.pathname} took ${(ms / 1000).toFixed(1)}s in the browser server`);
+    if (ms > 4000 && typeof toast === "function") toast(`${url.pathname.replace("/api/", "")} took ${(ms / 1000).toFixed(0)}s: the whole server runs inside this tab, so the first call after a reload can be slow.`);
+    if (out.status === 500) console.error(`[MediAssist demo] ${method} ${url.pathname} failed on the server; see Admin > Error log`);
     // session gone (expired or signed out): sign back in as the owner instead of showing a sign-in screen
     if (out.status === 401 && !url.pathname.startsWith("/api/login") && !url.pathname.startsWith("/api/logout") && signIn("owner")) out = send();
     if (method === "POST") persistSoon();
@@ -105,5 +112,5 @@
   new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(n => { if (n.nodeType !== 1) return; if (n.tagName === "IMG") fixImg(n); n.querySelectorAll && n.querySelectorAll('img[src^="/api/"]').forEach(fixImg); })))
     .observe(document.documentElement, { childList: true, subtree: true });
 
-  window.MA_DEMO = { switchUser: async u => { await ready; signIn(u); await persistNow(); location.reload(); }, reset: async () => { await idbClear(); try { localStorage.removeItem("ma-sid"); } catch (e) {} location.reload(); } };
+  window.MA_DEMO = Object.assign(window.MA_DEMO || {}, { switchUser: async u => { await ready; signIn(u); await persistNow(); location.reload(); }, reset: async () => { await idbClear(); try { localStorage.removeItem("ma-sid"); } catch (e) {} location.reload(); } });
 })();

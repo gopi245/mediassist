@@ -46,6 +46,43 @@ def day_numbers(c, bids, day):
     return {"seen": seen, "new": new, "hosp_p": hosp[0] - credit_lines, "invoices": hosp[1], "pharm_p": pharm[0], "bills": pharm[1], "collected_p": coll + pcoll + settled}
 
 
+EMPTY_DAY = {"seen": 0, "new": 0, "hosp_p": 0, "invoices": 0, "pharm_p": 0, "bills": 0, "collected_p": 0}
+
+
+def day_series(c, bids, first, last, by_branch=False):
+    """day_numbers for every day in [first, last] in eight grouped queries. Returns {day: numbers} or, with
+    by_branch, {(day, branch_id): numbers}. Days with nothing recorded are filled with zeros."""
+    p = ph(len(bids))
+    lo, hi = first, last + "~"
+    key = (lambda r: (r[0], r[1])) if by_branch else (lambda r: r[0])
+    g = "substr(%s,1,10), branch_id" if by_branch else "substr(%s,1,10)"
+    out = {}
+
+    def run(sql, col, field):
+        rowsq = c.execute(sql.replace("{G}", g % col).replace("{P}", p), (*bids, lo, hi)).fetchall()
+        n = 3 if by_branch else 2
+        for r in rowsq:
+            k = key(r)
+            out.setdefault(k, dict(EMPTY_DAY))[field] += r[n - 1] or 0
+    gb = "GROUP BY 1, 2" if by_branch else "GROUP BY 1"
+    run(f"SELECT {{G}}, COUNT(*) FROM visits WHERE branch_id IN ({{P}}) AND status='done' AND completed_at BETWEEN ? AND ? AND complaint IS NOT 'Discharge' {gb}", "completed_at", "seen")
+    run(f"SELECT {{G}}, COUNT(*) FROM patients WHERE branch_id IN ({{P}}) AND created_at BETWEEN ? AND ? {gb}", "created_at", "new")
+    run(f"SELECT {{G}}, COALESCE(SUM(total_p),0) FROM invoices WHERE branch_id IN ({{P}}) AND cancelled_at IS NULL AND created_at BETWEEN ? AND ? {gb}", "created_at", "hosp_p")
+    run(f"SELECT {{G}}, COUNT(*) FROM invoices WHERE branch_id IN ({{P}}) AND cancelled_at IS NULL AND created_at BETWEEN ? AND ? {gb}", "created_at", "invoices")
+    run(f"SELECT {{G}}, -COALESCE(SUM(ii.amount_p),0) FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id WHERE i.branch_id IN ({{P}}) AND i.cancelled_at IS NULL "
+        f"AND i.created_at BETWEEN ? AND ? AND ii.cat='Pharmacy credit' {gb}", "i.created_at", "hosp_p")
+    run(f"SELECT {{G}}, COALESCE(SUM(total_p-returned_p),0) FROM bills WHERE branch_id IN ({{P}}) AND created_at BETWEEN ? AND ? {gb}", "created_at", "pharm_p")
+    run(f"SELECT {{G}}, COUNT(*) FROM bills WHERE branch_id IN ({{P}}) AND created_at BETWEEN ? AND ? {gb}", "created_at", "bills")
+    run(f"SELECT {{G}}, COALESCE(SUM(amount_p),0) FROM payments WHERE branch_id IN ({{P}}) AND at BETWEEN ? AND ? {gb}", "at", "collected_p")
+    run(f"SELECT {{G}}, COALESCE(SUM(total_p),0) FROM bills WHERE branch_id IN ({{P}}) AND created_at BETWEEN ? AND ? AND pay_mode<>'credit' {gb}", "created_at", "collected_p")
+    run(f"SELECT {{G}}, COALESCE(SUM(total_p-returned_p),0) FROM bills WHERE branch_id IN ({{P}}) AND settled_at BETWEEN ? AND ? AND settled_invoice_id IS NULL {gb}", "settled_at", "collected_p")
+    return out
+
+
+def series_get(series, k):
+    return series.get(k) or dict(EMPTY_DAY)
+
+
 def collections(c, bids, day, n):
     """What came in today, with counts: services by category, pharmacy bills, inpatient advances;
     then discounts, refunds and pharmacy returns; and the net cash actually kept."""
@@ -73,8 +110,9 @@ def collections(c, bids, day, n):
 
 def daily_report(c, bids, day, label):
     n = day_numbers(c, bids, day)
-    prev = day_numbers(c, bids, add_days(day, -1))
-    week = [day_numbers(c, bids, add_days(day, -i)) for i in range(1, 8)]
+    ser = day_series(c, bids, add_days(day, -7), add_days(day, -1))
+    prev = series_get(ser, add_days(day, -1))
+    week = [series_get(ser, add_days(day, -i)) for i in range(1, 8)]
     avg_rev = sum(w["hosp_p"] + w["pharm_p"] for w in week) / 7
     p = ph(len(bids))
     tri = {r[0]: r[1] for r in c.execute(f"SELECT triage, COUNT(*) FROM visits WHERE branch_id IN ({p}) AND created_at LIKE ? GROUP BY triage", (*bids, day + "%"))}
@@ -167,20 +205,20 @@ def api_dashboard(h, c, b, q):
     if not h.branch:
         need(all_access(h.user), "Choose a branch")
         bids = [r[0] for r in c.execute("SELECT id FROM branches WHERE active=1 ORDER BY id")]
+        ser = day_series(c, bids, add_days(day, -13), day, by_branch=True)
+        waiting = {r[0]: (r[1], r[2]) for r in c.execute("SELECT branch_id, COUNT(*), SUM(status='waiting' AND triage='critical') FROM visits WHERE status IN ('waiting','in_consult') GROUP BY branch_id")}
+        inpat = {r[0]: r[1] for r in c.execute("SELECT branch_id, COUNT(*) FROM admissions WHERE status='admitted' GROUP BY branch_id")}
         branches = []
         for bid in bids:
             br = branch_row(c, bid)
-            n = day_numbers(c, [bid], day)
-            branches.append({"id": bid, "code": br["code"], "name": br["name"], "kind": br["kind"], **rup(n),
-                             "waiting": c.execute("SELECT COUNT(*) FROM visits WHERE branch_id=? AND status IN ('waiting','in_consult')", (bid,)).fetchone()[0],
-                             "inpatients": c.execute("SELECT COUNT(*) FROM admissions WHERE branch_id=? AND status='admitted'", (bid,)).fetchone()[0],
-                             "critical": c.execute("SELECT COUNT(*) FROM visits WHERE branch_id=? AND status='waiting' AND triage='critical'", (bid,)).fetchone()[0]})
+            branches.append({"id": bid, "code": br["code"], "name": br["name"], "kind": br["kind"], **rup(series_get(ser, (day, bid))),
+                             "waiting": waiting.get(bid, (0, 0))[0], "inpatients": inpat.get(bid, 0), "critical": waiting.get(bid, (0, 0))[1] or 0})
         trend = []
         for i in range(13, -1, -1):
             d = add_days(day, -i)
             row = {"day": d}
             for bid in bids:
-                n = day_numbers(c, [bid], d)
+                n = series_get(ser, (d, bid))
                 row[str(bid)] = R(n["hosp_p"] + n["pharm_p"])
             trend.append(row)
         return {"mode": "org", "branches": branches, "trend": trend, "report": daily_report(c, bids, day, get_settings(c)["org_name"])}
@@ -192,7 +230,8 @@ def api_dashboard(h, c, b, q):
     appts = c.execute("SELECT COUNT(*), SUM(status='booked'), SUM(status IN ('checked_in','in_consult','done')) FROM appointments WHERE branch_id=? AND day=?", (h.branch, day)).fetchone()
     beds = c.execute("SELECT COUNT(*), SUM(status='occupied') FROM beds WHERE branch_id=?", (h.branch,)).fetchone()
     lab = c.execute("SELECT SUM(status='ordered'), SUM(status='collected'), SUM(status='resulted') FROM lab_orders WHERE branch_id=?", (h.branch,)).fetchone()
-    trend = [dict(day=add_days(day, -i), **rup(day_numbers(c, [h.branch], add_days(day, -i)))) for i in range(13, -1, -1)]
+    ser = day_series(c, [h.branch], add_days(day, -13), day)
+    trend = [dict(day=add_days(day, -i), **rup(series_get(ser, add_days(day, -i)))) for i in range(13, -1, -1)]
     return {"mode": "branch", "branch": br, "report": rep, "critical": crit, "waiting": waiting, "followups": fups, "trend": trend,
             "appointments": {"total": appts[0], "booked": appts[1] or 0, "arrived": appts[2] or 0}, "beds": {"total": beds[0], "occupied": beds[1] or 0},
             "lab": {"ordered": lab[0] or 0, "collected": lab[1] or 0, "resulted": lab[2] or 0}}
