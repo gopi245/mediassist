@@ -43,7 +43,7 @@ on("login", async form => {
     $("#lmsg").textContent = ""; start();
   } catch (e) { $("#lmsg").textContent = e.message; }
 });
-on("logout", async () => { await api("/api/logout", {}).catch(() => {}); App.me = null; showLogin(false); });
+on("logout", async () => { const open = App.me && App.me.open_access; await api("/api/logout", {}).catch(() => {}); App.me = null; if (open) return location.reload(); showLogin(false); });
 
 async function start() {
   try { App.me = await api("/api/me"); } catch (e) { return; }

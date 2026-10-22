@@ -171,7 +171,7 @@ def api_me(h, c, b, q):
     return {"id": u["id"], "username": u["username"], "name": u["name"], "role": u["role"], "lang": u["lang"], "reg_no": u["reg_no"],
             "perms": sorted(ROLES[u["role"]]), "all_access": all_access(u), "branch": next((x for x in brs if x["id"] == h.branch), None),
             "branches": brs, "org_name": s["org_name"], "mfa_required": not h.mfa_ok, "has_2fa": bool(u["totp_secret"]),
-            "suggest_2fa": u["role"] == "owner" and not u["totp_secret"]}
+            "suggest_2fa": u["role"] == "owner" and not u["totp_secret"] and not getattr(h, "open_access", False), "open_access": getattr(h, "open_access", False)}
 
 
 @route("POST", "/api/branch", "any")
