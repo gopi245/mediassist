@@ -1094,3 +1094,35 @@ class T26GstOnBills(unittest.TestCase):
         txt = pdf_text(ph.get(f"/api/pdf/bill/{b['id']}")[1])
         for word in (b"CGST", b"SGST", b"HSN", b"Taxable value"):
             self.assertIn(word, txt)
+
+
+class T27BillOnWhatsApp(unittest.TestCase):
+    def test_walkin_bill_shared_with_signed_link(self):
+        ph, pub = Client("pharma.ch"), Client()
+        meds = {m["name"]: m for m in ph.ok("/api/medicines")}
+        self.assertEqual(ph.post("/api/bills", {"pay_mode": "cash", "customer": "Walk In", "customer_phone": "98765", "items": [{"medicine_id": meds["Dolo 650"]["id"], "qty": 1, "unit": "strip"}]})[0], 400, "10 digits")
+        r = ph.ok("/api/bills", {"pay_mode": "cash", "customer": "Walk In", "customer_phone": "9876543210", "items": [{"medicine_id": meds["Dolo 650"]["id"], "qty": 1, "unit": "strip"}]})
+        self.assertTrue(r["shared"] and r["shared"][0]["channel"] == "whatsapp", "a walk-in with a number gets the bill too")
+        self.assertFalse(r["shared"][0]["ok"], "no WhatsApp gateway in tests")
+        self.assertIn("wa.me/919876543210", r["shared"][0]["wa_link"], "so the counter can send it from a phone")
+        d = ph.ok(f"/api/bills/{r['id']}")
+        self.assertEqual((d["customer_phone"], d["wa"]["ok"], bool(d["wa"]["wa_link"])), ("9876543210", False, True))
+        # with a public address the message carries a signed link that opens only this bill
+        core.set_setting(core.db(), "public_url", "https://care.example.com")
+        s = ph.ok(f"/api/bills/{r['id']}/share", {})["sent"][0]
+        import re as _re
+        from urllib.parse import unquote
+        self.assertIn(f"/api/public/bill/{r['id']}?k=", unquote(s["wa_link"]))
+        k = _re.search(r"k=([0-9a-f]+)", unquote(s["wa_link"])).group(1)
+        st, data = pub.get(f"/api/public/bill/{r['id']}?k={k}")
+        self.assertEqual(st, 200)
+        self.assertTrue(data.startswith(b"%PDF"))
+        self.assertEqual(pub.get(f"/api/public/bill/{r['id']}?k=deadbeef")[0], 404, "a guessed link opens nothing")
+        core.set_setting(core.db(), "public_url", "")
+        # resend to a number typed at the counter
+        s2 = ph.ok(f"/api/bills/{r['id']}/share", {"phone": "9000000000"})["sent"][0]
+        self.assertIn("wa.me/919000000000", s2["wa_link"])
+        self.assertEqual(ph.post(f"/api/bills/{r['id']}/share", {"phone": ""})[0], 200, "falls back to the saved customer number")
+        # registered patient: goes through the records link as before
+        rp = ph.ok("/api/bills", {"patient_id": 4, "pay_mode": "upi", "items": [{"medicine_id": meds["Dolo 650"]["id"], "qty": 1, "unit": "strip"}]})
+        self.assertTrue(rp["shared"] is None or rp["shared"][0]["channel"] == "whatsapp")

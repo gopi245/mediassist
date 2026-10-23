@@ -696,11 +696,13 @@ def create_bill(c, h, b):
         disc = min(P(b.get("discount"), "discount"), sub)
         n = c.execute("SELECT COUNT(*) FROM bills WHERE branch_id=?", (br["id"],)).fetchone()[0] + 1
         bill_no = f"{br['code']}-{n:06d}"
-        cur = c.execute("INSERT INTO bills(branch_id,bill_no,created_at,patient_id,customer,visit_id,admission_id,doctor_name,doctor_reg,subtotal_p,discount_p,total_p,pay_mode,user_id,offline_key) "
-                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        cphone = re.sub(r"[^\d+]", "", clean(b, "customer_phone", 20)) or None
+        need(not cphone or len(cphone.lstrip("+")) >= 10, "Customer WhatsApp number must have 10 digits")
+        cur = c.execute("INSERT INTO bills(branch_id,bill_no,created_at,patient_id,customer,visit_id,admission_id,doctor_name,doctor_reg,subtotal_p,discount_p,total_p,pay_mode,user_id,offline_key,customer_phone) "
+                        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         (br["id"], bill_no, bill_time(c, br["id"], clean(b, "created_at", 16)), patient["id"] if patient else None,
                          patient["name"] if patient else (clean(b, "customer", 100) or "Walk-in"), visit["id"] if visit else None, opt_num(b.get("admission_id"), int),
-                         doc_name, doc_reg, sub, disc, sub - disc, pay, h.user["id"], key))
+                         doc_name, doc_reg, sub, disc, sub - disc, pay, h.user["id"], key, cphone))
         bill_id, gst_total, dleft = cur.lastrowid, 0, disc
         for i, (m, bt, take, rx) in enumerate(alloc):
             gross = take * bt["mrp_p"]
@@ -722,14 +724,88 @@ def create_bill(c, h, b):
     return in_tx(c, run)
 
 
+def bill_link(c, bid):
+    """Public address of one bill's PDF for a walk-in customer, signed so it cannot be guessed. None without a public URL."""
+    import hashlib
+    import hmac as _hmac
+    from .core import get_settings, set_setting
+    s = get_settings(c)
+    base = (s.get("public_url") or "").rstrip("/")
+    if not base:
+        return None
+    secret = s.get("app_secret")
+    if not secret:
+        import secrets as _secrets
+        secret = _secrets.token_hex(32)
+        set_setting(c, "app_secret", secret)
+    sig = _hmac.new(secret.encode(), f"bill:{bid}".encode(), hashlib.sha256).hexdigest()[:24]
+    return f"{base}/api/public/bill/{bid}?k={sig}"
+
+
+def share_bill(c, h, bl, phone=None):
+    """Send the bill on WhatsApp: to a registered patient through their records link (PDF attached when the server has a
+    public HTTPS address), or to a walk-in customer's number with a signed link to this bill's PDF. Returns delivery results;
+    when WhatsApp isn't configured each result carries a wa.me link so the counter can send it from a phone."""
+    from .notify import deliver, log_message
+    br = one(c, "SELECT name FROM branches WHERE id=?", (bl["branch_id"],))
+    text = f"{br['name']}: your pharmacy bill {bl['bill_no']} for Rs {R(bl['total_p']):.2f} is ready."
+    if bl["patient_id"] and not phone:
+        from .m_portal import share
+        out = share(c, bl["patient_id"], text, h.user["id"], pdf=("bill", bl["id"]))
+        if out is None:  # portal off, patient erased, or no WhatsApp consent
+            p = one(c, "SELECT phone, whatsapp_ok, erased_at FROM patients WHERE id=?", (bl["patient_id"],))
+            if p and not p["erased_at"] and not p["whatsapp_ok"]:
+                return [{"channel": "whatsapp", "to": p["phone"], "ok": False, "detail": "The patient asked not to receive WhatsApp messages.", "wa_link": None}]
+            phone = p["phone"] if p and not p["erased_at"] else None
+        else:
+            return out
+    phone = phone or bl["customer_phone"]
+    need(phone, "No WhatsApp number: register the patient, or enter the customer's number")
+    link = bill_link(c, bl["id"])
+    body = text + (f"\nYour bill (PDF): {link}" if link else "")
+    return deliver(c, "bill", body, whatsapp=phone, patient_id=bl["patient_id"], media_url=link if link and link.startswith("https://") else None)
+
+
 @route("POST", "/api/bills", "billing")
 def api_bill(h, c, b, q):
     r = create_bill(c, h, b)
-    if b.get("patient_id") and not r.get("duplicate"):
-        from .m_portal import share
-        br = one(c, "SELECT name FROM branches WHERE id=?", (h.branch,))
-        r["shared"] = share(c, as_int(b["patient_id"], "patient"), f"{br['name']}: your pharmacy bill {r['bill_no']} for Rs {r['total']:.2f} is ready.", h.user["id"], pdf=("bill", r["id"]))
+    if not r.get("duplicate"):
+        bl = one(c, "SELECT * FROM bills WHERE id=?", (r["id"],))
+        if bl["patient_id"] or bl["customer_phone"]:
+            try:
+                r["shared"] = share_bill(c, h, bl)
+            except ApiError as e:
+                r["shared"] = [{"channel": "whatsapp", "ok": False, "detail": str(e), "wa_link": None}]
     return r
+
+
+@route("POST", r"/api/bills/(\d+)/share", "billing")
+def api_bill_share(h, c, b, q, bid):
+    """Send (or resend) a bill on WhatsApp, optionally to a number typed at the counter."""
+    bl = one(c, "SELECT * FROM bills WHERE id=? AND branch_id=?", (int(bid), h.branch))
+    need(bl, "Bill not found", 404)
+    phone = re.sub(r"[^\d+]", "", clean(b, "phone", 20)) or None
+    if phone and not bl["customer_phone"] and not bl["patient_id"]:
+        c.execute("UPDATE bills SET customer_phone=? WHERE id=?", (phone, bl["id"]))
+    sent = share_bill(c, h, bl, phone)
+    audit(c, h, "bill.share", f"{bl['bill_no']} -> {phone or 'patient'}: " + ("sent" if any(x["ok"] for x in sent) else "not sent"))
+    return {"sent": sent}
+
+
+@route("GET", r"/api/public/bill/(\d+)")
+def api_public_bill(h, c, b, q, bid):
+    """A walk-in customer's bill PDF, opened from the signed link in their WhatsApp message."""
+    import hashlib
+    import hmac as _hmac
+    from .core import get_settings
+    secret = get_settings(c).get("app_secret") or ""
+    sig = _hmac.new(secret.encode(), f"bill:{int(bid)}".encode(), hashlib.sha256).hexdigest()[:24] if secret else None
+    need(sig and _hmac.compare_digest(sig, qget(q, "k")), "Link is not valid", 404)
+    from .m_pdf import make
+    data, name = make(c, "bill", int(bid))
+    h.download = (name, data, "application/pdf")
+    h.inline = True
+    return None
 
 
 @route("GET", "/api/bills", "billing")
@@ -771,6 +847,14 @@ def bill_detail(c, bid):
                patient_code=pcode(bl["patient_id"]) if bl["patient_id"] else "")
     out["items"] = [dict(i, mrp=R(i["mrp_p"]), net=R(i["net_p"]), gst=R(i["gst_p"]), taxable=R(i["net_p"] - i["gst_p"])) for i in items]
     out["tax"] = tax_breakup(items)
+    last = one(c, "SELECT at, ok, to_addr, detail, body FROM messages WHERE kind IN ('bill','portal') AND body LIKE ? ORDER BY id DESC LIMIT 1", (f"%{bl['bill_no']}%",))
+    if last:
+        from urllib.parse import quote
+        from .notify import wa_number
+        out["wa"] = {"at": last["at"], "ok": bool(last["ok"]), "to": last["to_addr"], "detail": last["detail"],
+                     "wa_link": f"https://wa.me/{wa_number(last['to_addr'])}?text={quote(last['body'] or '')}" if not last["ok"] and last["to_addr"] and last["to_addr"] != "erased" else None}
+    else:
+        out["wa"] = None
     out["cgst"] = round(sum(t["cgst"] for t in out["tax"]), 2)
     out["sgst"] = round(sum(t["sgst"] for t in out["tax"]), 2)
     return out

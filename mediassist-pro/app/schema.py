@@ -251,6 +251,10 @@ ALTER TABLE lab_orders ADD COLUMN interp_reviewed_by INTEGER;
 ALTER TABLE lab_orders ADD COLUMN interp_reviewed_at TEXT;
 ALTER TABLE lab_orders ADD COLUMN interp_patient INTEGER NOT NULL DEFAULT 1
 """,
+# 11: walk-in customers can get their bill on WhatsApp too
+r"""
+ALTER TABLE bills ADD COLUMN customer_phone TEXT
+""",
 ]
 
 

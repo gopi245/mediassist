@@ -16,7 +16,7 @@ RENDER.billing = async (main, [mode, id]) => {
       <div><label>Sell by</label><select id="bUnit"><option value="strip">Strip / pack</option><option value="unit">Loose tablets</option></select></div><div style="align-self:end"><button class="btn ghost" data-act="bAdd" style="width:100%;justify-content:center">Add line</button></div></div>
     <div id="bInfo"></div><div id="bLines" style="margin-top:12px"></div>
     <form data-submit="saveBill" class="stack"><div class="fields" id="bDocBox" hidden><div><label>Prescribing doctor</label><input name="doctor_name"></div><div><label>Doctor reg. no</label><input name="doctor_reg"></div></div>
-      <div class="fields"><div><label>Walk-in name</label><input name="customer"></div><div><label>Discount ₹</label><input name="discount" type="number" min="0" step=".5" value="0" data-input="bRedraw"></div>
+      <div class="fields"><div><label>Walk-in name</label><input name="customer"></div><div><label>Customer WhatsApp</label><input name="customer_phone" inputmode="tel" placeholder="for the bill, if not a patient"></div><div><label>Discount ₹</label><input name="discount" type="number" min="0" step=".5" value="0" data-input="bRedraw"></div>
       <div><label>Payment</label><select name="pay_mode"><option value="cash">Cash</option><option value="upi">UPI</option><option value="card">Card</option><option value="credit">Credit (patient account)</option></select></div></div>
       <div class="btns"><button class="btn">Save bill</button><button type="button" class="btn ghost" data-act="bClear">Clear</button></div></form></div>
   <div class="stack"><div class="card" id="bView" hidden></div>${card("Today's bills", `${bills.length} bills · ${money(bills.reduce((a, b) => a + b.total - b.returned, 0))}`,
@@ -83,12 +83,28 @@ on("saveBill", async f => {
   const body = { ...v, patient_id: pid, visit_id: CART.some(l => l.rx_item_id) ? CART_VISIT : null, rx_admission_id: CART.some(l => l.rx_item_id) ? CART_ADM : null, items: CART.map(l => ({ medicine_id: l.medicine_id, qty: l.qty, unit: l.unit, rx_item_id: l.rx_item_id })), created_at: new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 16).replace("T", " ") };
   const r = await withOverride((ov, reason) => apiSafe("/api/bills", { ...body, override: ov, override_reason: reason }, "Bill"), "Safety warnings at the counter");
   if (!r) return;
-  if (!r.queued) { toast(`Bill ${r.bill_no} saved · ${money(r.total)}`); CART = []; CART_VISIT = null; await RENDER.billing($("#view"), []); ACTIONS.viewBill({ dataset: { id: r.id } }); }
+  if (!r.queued) { toast(`Bill ${r.bill_no} saved · ${money(r.total)}` + waNote(r.shared)); CART = []; CART_VISIT = null; await RENDER.billing($("#view"), []); ACTIONS.viewBill({ dataset: { id: r.id } }); }
   else { CART = []; drawCart(); }
+});
+const waNote = sent => !sent ? "" : !sent.length ? "" : sent.some(x => x.ok) ? " · sent to the customer on WhatsApp" : sent[0].wa_link ? " · WhatsApp isn't set up here: use Send on WhatsApp on the bill" : " · " + (sent[0].detail || "not sent on WhatsApp");
+function waLine(b) {
+  const w = b.wa;
+  if (w && w.ok) return `<span class="small">${pill("Sent on WhatsApp", "p-ok")} ${esc(w.to)} · ${w.at.slice(5, 16)}</span>`;
+  const why = w ? esc(w.detail || "not sent") : (b.patient_id || b.customer_phone ? "not sent yet" : "no number: add the customer's WhatsApp");
+  return `<span class="small">${pill("Not on WhatsApp", "p-warn")} ${why}</span>${w && w.wa_link ? ` <a class="btn sm" href="${esc(w.wa_link)}" target="_blank" rel="noopener">Open WhatsApp to send</a>` : ""}`;
+}
+on("billShare", async el => {
+  const b = App.cache.bill; let phone = null;
+  if (!b.patient_id || el.dataset.ask) { const v = await dialog("Send the bill on WhatsApp", `<label>Customer's WhatsApp number</label><input name="phone" inputmode="tel" value="${esc(b.customer_phone || "")}"><p class="small muted">The bill PDF goes as a link${b.patient_id ? "" : " that only this customer has"}.</p>`, { ok: "Send" }); if (!v) return; phone = v.phone; }
+  const r = await withBusy(el, () => api(`/api/bills/${b.id}/share`, { phone }));
+  const s = r.sent[0];
+  if (s && s.ok) toast("Sent on WhatsApp"); else if (s && s.wa_link) { toast("WhatsApp isn't set up on this server: opening WhatsApp with the message."); window.open(s.wa_link, "_blank", "noopener"); } else toast(s ? s.detail : "Not sent");
+  ACTIONS.viewBill({ dataset: { id: b.id } });
 });
 on("viewBill", async el => {
   const b = await api("/api/bills/" + el.dataset.id), box = $("#bView"); App.cache.bill = b; box.hidden = false;
-  box.innerHTML = `<div class="card-h"><div><h2 class="mono">${b.bill_no}</h2><p>${b.created_at} · ${esc(b.customer)} ${b.patient_code} · ${b.pay_mode.toUpperCase()}${b.doctor_name ? " · Rx " + esc(b.doctor_name) : ""}</p></div><div class="row-actions"><button class="btn sm ghost" data-act="printBill">Print receipt</button><button class="btn sm ghost" data-act="pdfDl" data-p="bill/${b.id}">PDF</button></div></div>
+  box.innerHTML = `<div class="card-h"><div><h2 class="mono">${b.bill_no}</h2><p>${b.created_at} · ${esc(b.customer)} ${b.patient_code} · ${b.pay_mode.toUpperCase()}${b.doctor_name ? " · Rx " + esc(b.doctor_name) : ""}</p></div><div class="row-actions"><button class="btn sm" data-act="billShare" ${b.patient_id ? "" : 'data-ask="1"'}>Send on WhatsApp</button><button class="btn sm ghost" data-act="printBill">Print receipt</button><button class="btn sm ghost" data-act="pdfDl" data-p="bill/${b.id}">PDF</button></div></div>
+    <p style="margin:4px 0 8px">${waLine(b)}</p>
     <form data-submit="billReturn">${tbl(["Item", "Batch / rack", "Qty", "Amount", "Return"], b.items.map(i => `<tr><td>${esc(i.name)} <span class="small muted">${i.schedule}</span></td><td class="small"><span class="mono">${esc(i.batch)}</span> <span class="rack sm">${esc(i.rack || "–")}</span><div class="muted">exp ${i.expiry.slice(0, 7)}</div></td><td class="num">${i.qty}${i.returned ? `<div class="small muted">ret ${i.returned}</div>` : ""}</td><td class="num">${money(i.net)}</td><td>${i.qty - i.returned ? `<input type="number" min="0" max="${i.qty - i.returned}" value="0" name="r${i.id}" style="width:64px">` : "–"}</td></tr>`).join(""))}
     <div class="totals"><div><span>Subtotal (MRP)</span><b>${money(b.subtotal)}</b></div><div><span>Discount</span><b>− ${money(b.discount)}</b></div><div><span>Taxable value</span><b>${money(b.tax.reduce((a, t) => a + t.taxable, 0))}</b></div>${taxRows(b.tax)}<div class="grand"><span>Total</span><b>${money(b.total)}</b></div><div><span>GST included (CGST ${money(b.cgst)} + SGST ${money(b.sgst)})</span><b>${money(b.gst)}</b></div>${b.returned ? `<div><span>Refunded</span><b>${money(b.returned)}</b></div>` : ""}</div>
     ${can("billing") && b.branch_id === App.me.branch.id ? `<div class="fields"><div class="span2"><input name="reason" placeholder="Return reason"></div><div><button class="btn sm ghost">Process return</button></div></div>` : ""}</form>`;
