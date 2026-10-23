@@ -33,16 +33,32 @@ RENDER.billing = async (main, [mode, id]) => {
 };
 function addLine(m, qty, unit, rx) {
   const ex = CART.find(l => l.medicine_id === m.id && !l.rx_item_id && l.unit === unit && !rx);
-  if (ex) ex.qty += qty; else CART.push({ medicine_id: m.id, name: m.name, schedule: m.schedule, pack: m.pack_size || 1, mrp: m.mrp, rack: m.rack, stock: m.stock, qty, unit, rx_item_id: rx || null });
+  if (ex) ex.qty += qty; else CART.push({ medicine_id: m.id, name: m.name, schedule: m.schedule, pack: m.pack_size || 1, mrp: m.mrp, rack: m.rack, stock: m.stock, gst_pct: m.gst_pct, qty, unit, rx_item_id: rx || null });
   drawCart();
 }
+/* GST the way the server will compute it: MRP includes tax, the bill discount is shared across lines, each line's tax
+   is net - net/(1+rate), split half CGST half SGST. Shown live so the counter never does tax maths. */
+function cartTax(lines, discount) {
+  const sub = lines.reduce((a, l) => a + l.amount, 0), by = {};
+  let left = Math.max(0, Math.min(discount || 0, sub));
+  lines.forEach((l, i) => {
+    const d = i === lines.length - 1 ? left : Math.min(left, Math.round(l.amount * (discount || 0) / (sub || 1) * 100) / 100); left -= d;
+    const net = l.amount - d, rate = +l.gst || 0, gst = Math.round((net - net / (1 + rate / 100)) * 100) / 100;
+    const x = by[rate] = by[rate] || { rate, taxable: 0, gst: 0, total: 0 }; x.taxable += net - gst; x.gst += gst; x.total += net;
+  });
+  return Object.values(by).sort((a, b) => a.rate - b.rate).map(x => ({ ...x, cgst: Math.round(x.gst / 2 * 100) / 100, sgst: Math.round(x.gst / 2 * 100) / 100 }));
+}
+const taxRows = tax => tax.map(t => `<div><span>CGST ${t.rate / 2}% + SGST ${t.rate / 2}% <span class="small muted">on ${money(t.taxable)}</span></span><b>${money(t.cgst)} + ${money(t.sgst)}</b></div>`).join("");
 function drawCart() {
   let sub = 0;
-  $("#bLines").innerHTML = CART.length ? tbl(["Medicine", "Qty", "Amount", ""], CART.map((l, i) => {
-    const units = l.qty * (l.unit === "strip" ? l.pack : 1), a = (l.mrp || 0) * units; sub += a;
-    return `<tr><td><b>${esc(l.name)}</b> ${l.rx_item_id ? pill("Rx", "p-info") : ""} <span class="small muted">${l.schedule}</span><div class="small muted">${l.rack ? `<span class="rack sm">${esc(l.rack)}</span>` : ""}${units} tablet(s)/unit(s)${l.stock < units ? ` · <span class="allergy">only ${l.stock} in stock</span>` : ""}</div></td>
-      <td class="num">${l.qty} ${l.unit === "strip" && l.pack > 1 ? "strip" : ""}</td><td class="num">${money(a)}</td><td><button class="btn sm ghost" data-act="bRm" data-i="${i}">Remove</button></td></tr>`;
-  }).join("") + `<tr><td colspan="2"><b>Total</b> <span class="small muted">MRP incl. GST, less discount</span></td><td class="num"><b>${money(Math.max(0, sub - (+($("[name=discount]") || {}).value || 0)))}</b></td><td></td></tr>`) : '<p class="empty">Scan or add medicines, or load a prescription.</p>';
+  const meds = App.cache.meds || [];
+  const lines = CART.map(l => { const units = l.qty * (l.unit === "strip" ? l.pack : 1), m = meds.find(x => x.id === l.medicine_id) || {}; return { amount: (l.mrp || 0) * units, gst: l.gst_pct != null ? l.gst_pct : m.gst_pct, units, hsn: m.hsn }; });
+  const disc = +($("[name=discount]") || {}).value || 0, tax = cartTax(lines, disc), gstTotal = tax.reduce((a, t) => a + t.gst, 0);
+  $("#bLines").innerHTML = CART.length ? tbl(["Medicine", "Qty", "GST", "Amount", ""], CART.map((l, i) => {
+    const units = lines[i].units, a = lines[i].amount; sub += a;
+    return `<tr><td><b>${esc(l.name)}</b> ${l.rx_item_id ? pill("Rx", "p-info") : ""} <span class="small muted">${l.schedule}${lines[i].hsn ? " · HSN " + esc(lines[i].hsn) : ""}</span><div class="small muted">${l.rack ? `<span class="rack sm">${esc(l.rack)}</span>` : ""}${units} tablet(s)/unit(s)${l.stock < units ? ` · <span class="allergy">only ${l.stock} in stock</span>` : ""}</div></td>
+      <td class="num">${l.qty} ${l.unit === "strip" && l.pack > 1 ? "strip" : ""}</td><td class="num small">${lines[i].gst != null ? lines[i].gst + "%" : "–"}</td><td class="num">${money(a)}</td><td><button class="btn sm ghost" data-act="bRm" data-i="${i}">Remove</button></td></tr>`;
+  }).join("") + `<tr><td colspan="5" style="padding:0"><div class="totals" style="margin:6px 0 0"><div><span>Subtotal (MRP)</span><b>${money(sub)}</b></div>${disc ? `<div><span>Discount</span><b>− ${money(Math.min(disc, sub))}</b></div>` : ""}<div><span>Taxable value</span><b>${money(tax.reduce((a, t) => a + t.taxable, 0))}</b></div>${taxRows(tax)}<div class="grand"><span>Total</span><b>${money(Math.max(0, sub - disc))}</b></div><div><span class="small muted">GST included ${money(gstTotal)}, worked out automatically</span><b></b></div></div></td></tr>`) : '<p class="empty">Scan or add medicines, or load a prescription.</p>';
   $("#bDocBox").hidden = !CART.some(l => ["H", "H1"].includes(l.schedule) && !l.rx_item_id);
 }
 on("bRedraw", () => drawCart());
@@ -74,7 +90,7 @@ on("viewBill", async el => {
   const b = await api("/api/bills/" + el.dataset.id), box = $("#bView"); App.cache.bill = b; box.hidden = false;
   box.innerHTML = `<div class="card-h"><div><h2 class="mono">${b.bill_no}</h2><p>${b.created_at} · ${esc(b.customer)} ${b.patient_code} · ${b.pay_mode.toUpperCase()}${b.doctor_name ? " · Rx " + esc(b.doctor_name) : ""}</p></div><div class="row-actions"><button class="btn sm ghost" data-act="printBill">Print receipt</button><button class="btn sm ghost" data-act="pdfDl" data-p="bill/${b.id}">PDF</button></div></div>
     <form data-submit="billReturn">${tbl(["Item", "Batch / rack", "Qty", "Amount", "Return"], b.items.map(i => `<tr><td>${esc(i.name)} <span class="small muted">${i.schedule}</span></td><td class="small"><span class="mono">${esc(i.batch)}</span> <span class="rack sm">${esc(i.rack || "–")}</span><div class="muted">exp ${i.expiry.slice(0, 7)}</div></td><td class="num">${i.qty}${i.returned ? `<div class="small muted">ret ${i.returned}</div>` : ""}</td><td class="num">${money(i.net)}</td><td>${i.qty - i.returned ? `<input type="number" min="0" max="${i.qty - i.returned}" value="0" name="r${i.id}" style="width:64px">` : "–"}</td></tr>`).join(""))}
-    <div class="totals"><div><span>Subtotal</span><b>${money(b.subtotal)}</b></div><div><span>Discount</span><b>− ${money(b.discount)}</b></div><div class="grand"><span>Total</span><b>${money(b.total)}</b></div><div><span>includes GST</span><b>${money(b.gst)}</b></div>${b.returned ? `<div><span>Refunded</span><b>${money(b.returned)}</b></div>` : ""}</div>
+    <div class="totals"><div><span>Subtotal (MRP)</span><b>${money(b.subtotal)}</b></div><div><span>Discount</span><b>− ${money(b.discount)}</b></div><div><span>Taxable value</span><b>${money(b.tax.reduce((a, t) => a + t.taxable, 0))}</b></div>${taxRows(b.tax)}<div class="grand"><span>Total</span><b>${money(b.total)}</b></div><div><span>GST included (CGST ${money(b.cgst)} + SGST ${money(b.sgst)})</span><b>${money(b.gst)}</b></div>${b.returned ? `<div><span>Refunded</span><b>${money(b.returned)}</b></div>` : ""}</div>
     ${can("billing") && b.branch_id === App.me.branch.id ? `<div class="fields"><div class="span2"><input name="reason" placeholder="Return reason"></div><div><button class="btn sm ghost">Process return</button></div></div>` : ""}</form>`;
 });
 on("billReturn", async f => {
@@ -86,8 +102,8 @@ on("printBill", () => {
   const b = App.cache.bill; $("#printArea").classList.add("receipt");
   printHtml(`<div style="text-align:center"><b>${esc(b.branch)}</b><br>${esc(b.baddr || "")}<br>Ph ${esc(b.bphone || "")}<br>GSTIN ${esc(b.gstin || "-")} · DL ${esc(b.dl_no || "-")}</div><hr>
     <div>Bill ${b.bill_no} · ${b.created_at}<br>${esc(b.customer)} ${b.patient_code}${b.doctor_name ? `<br>Rx: ${esc(b.doctor_name)} ${esc(b.doctor_reg || "")}` : ""}</div><hr>
-    <table>${b.items.map(i => `<tr><td>${esc(i.name)}<br><small>${esc(i.batch)} exp ${i.expiry.slice(0, 7)} · ${i.qty} x ${i.mrp.toFixed(2)}</small></td><td class="r">${i.net.toFixed(2)}</td></tr>`).join("")}</table><hr>
-    <table><tr><td>Subtotal</td><td class="r">${b.subtotal.toFixed(2)}</td></tr><tr><td>Discount</td><td class="r">-${b.discount.toFixed(2)}</td></tr><tr><td><b>TOTAL</b></td><td class="r"><b>${b.total.toFixed(2)}</b></td></tr><tr><td>incl. GST</td><td class="r">${b.gst.toFixed(2)}</td></tr><tr><td>Paid by</td><td class="r">${b.pay_mode.toUpperCase()}</td></tr></table>
+    <table>${b.items.map(i => `<tr><td>${esc(i.name)}<br><small>HSN ${esc(i.hsn || "3004")} · ${esc(i.batch)} exp ${i.expiry.slice(0, 7)} · ${i.qty} x ${i.mrp.toFixed(2)} · GST ${i.gst_pct}%</small></td><td class="r">${i.net.toFixed(2)}</td></tr>`).join("")}</table><hr>
+    <table><tr><td>Subtotal</td><td class="r">${b.subtotal.toFixed(2)}</td></tr><tr><td>Discount</td><td class="r">-${b.discount.toFixed(2)}</td></tr><tr><td>Taxable value</td><td class="r">${b.tax.reduce((a, t) => a + t.taxable, 0).toFixed(2)}</td></tr>${b.tax.map(t => `<tr><td>CGST ${t.rate / 2}%</td><td class="r">${t.cgst.toFixed(2)}</td></tr><tr><td>SGST ${t.rate / 2}%</td><td class="r">${t.sgst.toFixed(2)}</td></tr>`).join("")}<tr><td><b>TOTAL</b></td><td class="r"><b>${b.total.toFixed(2)}</b></td></tr><tr><td>Paid by</td><td class="r">${b.pay_mode.toUpperCase()}</td></tr></table>
     <hr><div style="text-align:center">Cashier ${esc(b.cashier || "")} · Get well soon</div>`);
   setTimeout(() => $("#printArea").classList.remove("receipt"), 1500);
 });
@@ -217,7 +233,7 @@ STOCK.master = async el => {
   el.innerHTML = `<div class="g-form">${card("Medicine", "Dose limits power the prescribing checks", `<form data-submit="medSave" id="medForm" class="stack"><input type="hidden" name="id"><div class="fields">
     <div class="span2"><label>Brand name</label><input name="name" required></div><div class="span2"><label>Generic / salt</label><input name="generic"></div>
     <div><label>Form</label><select name="form">${["Tablet", "Capsule", "Syrup", "Injection", "Cream", "Drops", "Sachet", "Other"].map(x => `<option>${x}</option>`).join("")}</select></div>
-    <div><label>Schedule</label><select name="schedule"><option>OTC</option><option>H</option><option>H1</option><option>X</option></select></div><div><label>GST %</label><select name="gst_pct"><option>5</option><option>12</option><option>18</option><option>0</option></select></div>
+    <div><label>Schedule</label><select name="schedule"><option>OTC</option><option>H</option><option>H1</option><option>X</option></select></div><div><label>GST %</label><select name="gst_pct"><option>12</option><option>5</option><option>18</option><option>28</option><option>0</option></select></div>
     <div><label>HSN</label><input name="hsn"></div><div><label>Pack size</label><input name="pack_size" type="number" min="1" value="10"></div><div><label>Reorder level</label><input name="reorder_level" type="number" value="50"></div>
     <div class="span2"><label>Barcode</label><input name="barcode"></div><div><label>Strength mg</label><input name="strength_mg" type="number" step="any"></div><div><label>Max mg/day</label><input name="max_daily_mg" type="number" step="any"></div><div><label>Child mg/kg/day</label><input name="ped_mg_per_kg_day" type="number" step="any"></div></div>
     <label class="check"><input type="checkbox" name="renal_caution"> Caution in kidney disease</label><label class="check"><input type="checkbox" name="pregnancy_avoid"> Avoid in pregnancy</label><label class="check"><input type="checkbox" name="cold_chain"> Keep at 2–8 °C</label>

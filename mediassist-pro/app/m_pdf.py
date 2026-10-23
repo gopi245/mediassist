@@ -277,14 +277,18 @@ def bill_pdf(c, bid):
     letterhead(pdf, c, br, "PHARMACY BILL", [f"Bill no. {b['bill_no']}", _dt(b["created_at"]), "Paid by " + (b["pay_mode"] or "").upper()])
     pdf.kv_box([("Patient", b["customer"]), ("Patient ID", b["patient_code"] or "-"), ("Age / Gender", _age(p) if p else "-"),
                 ("Prescribed by", " - ".join(x for x in (b["doctor_name"], b["doctor_reg"]) if x) or "-")])
-    data = [[str(i + 1), x["name"] + (f" (Sch. {x['schedule']})" if x["schedule"] in ("H", "H1") else ""), x["batch"] or "", (x["expiry"] or "")[:7],
+    data = [[str(i + 1), x["name"] + (f" (Sch. {x['schedule']})" if x["schedule"] in ("H", "H1") else ""), x["hsn"] or "3004", x["batch"] or "", (x["expiry"] or "")[:7],
              str(x["qty"] - (x["returned"] or 0)), rs(x["mrp"]), f"{x['gst_pct']:g}%", rs(x["net"])] for i, x in enumerate(b["items"])]
-    pdf.table([("#", 22, "left"), ("Medicine", 170, "left"), ("Batch", 62, "left"), ("Exp", 46, "left"), ("Qty", 36, "right"), ("MRP", 60, "right"),
-               ("GST", 40, "right"), ("Amount", 79, "right")], data)
+    pdf.table([("#", 20, "left"), ("Medicine", 150, "left"), ("HSN", 38, "left"), ("Batch", 58, "left"), ("Exp", 44, "left"), ("Qty", 32, "right"), ("MRP", 56, "right"),
+               ("GST", 36, "right"), ("Amount", 81, "right")], data)
+    if b.get("tax"):
+        pdf.y -= 4
+        pdf.table([("GST rate", 70, "left"), ("Taxable value", 110, "right"), ("CGST", 90, "right"), ("SGST", 90, "right"), ("Total", 100, "right")],
+                  [[f"{t['rate']:g}%", rs(t["taxable"]), rs(t["cgst"]) + f" ({t['rate'] / 2:g}%)", rs(t["sgst"]) + f" ({t['rate'] / 2:g}%)", rs(t["total"])] for t in b["tax"]], size=8.5)
     _totals(pdf, [("Subtotal (MRP)", rs(b["subtotal"])), ("Discount", "- " + rs(b["discount"])) if b["discount"] else None,
                   ("Returned", "- " + rs(b["returned"])) if b["returned"] else None, ("Total paid", rs(b["total"] - (b["returned"] or 0)), True),
-                  ("GST included", rs(b["gst"]))])
-    pdf.para("Prices include GST. Medicines once sold are taken back only with this bill, unopened and within 7 days. Keep medicines out of reach of children.", 8, color=MUTED)
+                  ("Taxable value", rs(round(sum(t["taxable"] for t in b.get("tax", [])), 2))), ("CGST", rs(b.get("cgst", 0))), ("SGST", rs(b.get("sgst", 0)))])
+    pdf.para("Prices include GST (CGST + SGST shown above). Medicines once sold are taken back only with this bill, unopened and within 7 days. Keep medicines out of reach of children.", 8, color=MUTED)
     return pdf.bytes(f"{br['name']} - {b['bill_no']} - computer generated bill, no signature needed"), f"Bill-{b['bill_no']}.pdf", b
 
 

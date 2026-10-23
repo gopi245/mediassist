@@ -1074,3 +1074,22 @@ class T25FindMedicine(unittest.TestCase):
         self.assertTrue(any(u["batch_id"] == bid for u in r["unassigned"]))
         self.assertGreaterEqual(ph.ok("/api/stock/racks/assign", {})["assigned"], 1)
         self.assertFalse(ph.ok("/api/stock/racks")["unassigned"])
+
+
+class T26GstOnBills(unittest.TestCase):
+    def test_cgst_sgst_split_on_bill_receipt_and_pdf(self):
+        ph = Client("pharma.ch")
+        meds = {m["name"]: m for m in ph.ok("/api/medicines")}
+        self.assertIn("gst_pct", meds["Dolo 650"], "the counter knows each medicine's rate")
+        b = ph.ok("/api/bills", {"pay_mode": "cash", "discount": 10, "items": [{"medicine_id": meds["Dolo 650"]["id"], "qty": 2, "unit": "strip"}, {"medicine_id": meds["Azithral 500"]["id"], "qty": 1, "unit": "strip"}]})
+        d = ph.ok(f"/api/bills/{b['id']}")
+        self.assertTrue(d["tax"], "rate-wise breakup is on the bill")
+        self.assertAlmostEqual(sum(t["cgst"] + t["sgst"] for t in d["tax"]), d["gst"], places=1, msg="CGST + SGST equals the GST included")
+        self.assertAlmostEqual(sum(t["taxable"] + t["gst"] for t in d["tax"]), d["total"], places=1, msg="taxable + tax = what the customer paid")
+        for t in d["tax"]:
+            self.assertAlmostEqual(t["cgst"], t["sgst"], places=2)
+            self.assertAlmostEqual(t["taxable"] * t["rate"] / 100, t["gst"], delta=0.05, msg="tax is the rate on the taxable value")
+        self.assertEqual(d["cgst"] + d["sgst"], d["gst"])
+        txt = pdf_text(ph.get(f"/api/pdf/bill/{b['id']}")[1])
+        for word in (b"CGST", b"SGST", b"HSN", b"Taxable value"):
+            self.assertIn(word, txt)

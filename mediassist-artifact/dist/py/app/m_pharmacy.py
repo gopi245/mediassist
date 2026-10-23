@@ -740,6 +740,27 @@ def api_bills(h, c, b, q):
             for r in rows(c.execute("SELECT * FROM bills WHERE branch_id=? AND created_at LIKE ? ORDER BY id DESC", (br["id"], valid_day(qget(q, "date", today())) + "%")))]
 
 
+def tax_breakup(items):
+    """Rate-wise GST on a bill from its lines: taxable value, CGST and SGST (half each, intra-state), as paise.
+    MRP includes GST in India, so tax = net - net / (1 + rate/100), which is how each line was saved."""
+    by = {}
+    for i in items:
+        q = i["qty"] - (i.get("returned") or 0)
+        if q <= 0 or not i["qty"]:
+            continue
+        net = round(i["net_p"] * q / i["qty"])
+        gst = round(i["gst_p"] * q / i["qty"])
+        x = by.setdefault(i["gst_pct"], {"rate": i["gst_pct"], "taxable_p": 0, "gst_p": 0, "total_p": 0})
+        x["taxable_p"] += net - gst
+        x["gst_p"] += gst
+        x["total_p"] += net
+    out = []
+    for x in sorted(by.values(), key=lambda x: x["rate"]):
+        half = x["gst_p"] // 2
+        out.append({"rate": x["rate"], "taxable": R(x["taxable_p"]), "cgst": R(half), "sgst": R(x["gst_p"] - half), "gst": R(x["gst_p"]), "total": R(x["total_p"])})
+    return out
+
+
 def bill_detail(c, bid):
     bl = one(c, "SELECT b.*, br.name branch, br.address baddr, br.phone bphone, br.gstin, br.dl_no, u.name cashier FROM bills b JOIN branches br ON br.id=b.branch_id "
                 "LEFT JOIN users u ON u.id=b.user_id WHERE b.id=?", (bid,))
@@ -748,7 +769,10 @@ def bill_detail(c, bid):
                            "JOIN batches bt ON bt.id=bi.batch_id WHERE bill_id=?", (bid,)))
     out = dict(bl, subtotal=R(bl["subtotal_p"]), discount=R(bl["discount_p"]), gst=R(bl["gst_p"]), total=R(bl["total_p"]), returned=R(bl["returned_p"]),
                patient_code=pcode(bl["patient_id"]) if bl["patient_id"] else "")
-    out["items"] = [dict(i, mrp=R(i["mrp_p"]), net=R(i["net_p"]), gst=R(i["gst_p"])) for i in items]
+    out["items"] = [dict(i, mrp=R(i["mrp_p"]), net=R(i["net_p"]), gst=R(i["gst_p"]), taxable=R(i["net_p"] - i["gst_p"])) for i in items]
+    out["tax"] = tax_breakup(items)
+    out["cgst"] = round(sum(t["cgst"] for t in out["tax"]), 2)
+    out["sgst"] = round(sum(t["sgst"] for t in out["tax"]), 2)
     return out
 
 
