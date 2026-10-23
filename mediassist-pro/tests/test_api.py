@@ -1288,3 +1288,64 @@ class T31PayAndSetup(unittest.TestCase):
         with self.assertRaises(RuntimeError) as cm:
             notify.send_whatsapp({"whatsapp_provider": "meta"}, "9876543210", "hi")
         self.assertIn("Meta", str(cm.exception))
+
+
+class T32WardAnalyticsInsurance(unittest.TestCase):
+    def test_news2_io_handover_watch(self):
+        from app.m_ward import news2
+        self.assertEqual(news2({"resp_rate": 16, "spo2": 97, "bp_sys": 120, "pulse": 80, "temp": 37.0, "gcs": 15})["score"], 0)
+        hi = news2({"resp_rate": 26, "spo2": 90, "bp_sys": 88, "pulse": 135, "temp": 39.5, "gcs": 13})
+        self.assertGreaterEqual(hi["score"], 7); self.assertEqual(hi["band"], "high")
+        med = news2({"resp_rate": 22, "spo2": 96, "bp_sys": 100, "pulse": 100, "temp": 37.5, "gcs": 15})
+        self.assertEqual(med["band"], "medium", "a score of 5 is medium")
+        self.assertIn("RR", news2({"spo2": 96})["missing"])
+        rec, doc, nurse = Client("reception.ch"), Client("dr.rao"), Client("nurse.ch")
+        beds = [b for b in rec.ok("/api/beds") if b["status"] == "free"]
+        pid = rec.ok("/api/patients", {"name": "Ward Test", "phone": "9000099999", "age": 60, "gender": "Male", "consent": True, "force": True})["id"]
+        a = doc.ok("/api/admissions", {"patient_id": pid, "bed_id": beds[0]["id"], "reason": "Sepsis?", "diagnosis": "Fever for evaluation"})
+        doc.ok(f"/api/admissions/{a['id']}/vitals-plan", {"every_h": 4})
+        self.assertEqual(doc.post(f"/api/admissions/{a['id']}/vitals-plan", {"every_h": 48})[0], 400)
+        nurse.ok(f"/api/admissions/{a['id']}/notes", {"text": "Looks unwell", "temp": 39.6, "pulse": 132, "bp_sys": 88, "bp_dia": 50, "spo2": 90, "resp_rate": 28, "gcs": 14})
+        d = nurse.ok(f"/api/admissions/{a['id']}")
+        self.assertEqual(d["watch"]["news2"]["band"], "high")
+        self.assertEqual(d["watch"]["every_h"], 4)
+        self.assertFalse(d["watch"]["overdue"], "vitals just recorded")
+        w = nurse.ok("/api/ward/watch")
+        self.assertTrue(any(x["admission_id"] == a["id"] and any("NEWS2" in f for f in x["flags"]) for x in w))
+        self.assertEqual(nurse.post(f"/api/admissions/{a['id']}/io", {"kind": "in", "what": "tea", "ml": 200})[0], 400)
+        nurse.ok(f"/api/admissions/{a['id']}/io", {"kind": "in", "what": "iv", "ml": 1000})
+        nurse.ok(f"/api/admissions/{a['id']}/io", {"kind": "out", "what": "urine", "ml": 300})
+        d = nurse.ok(f"/api/admissions/{a['id']}")
+        self.assertEqual((d["io"]["in_24h"], d["io"]["out_24h"], d["io"]["balance_24h"]), (1000, 300, 700))
+        self.assertEqual(nurse.post(f"/api/admissions/{a['id']}/handover", {})[0], 400)
+        nurse.ok(f"/api/admissions/{a['id']}/handover", {"situation": "Febrile, hypotensive", "recommendation": "Hourly vitals, call doctor if SBP < 90"})
+        d = nurse.ok(f"/api/admissions/{a['id']}")
+        self.assertEqual(d["notes"][0]["kind"], "handover")
+        self.assertIn("Recommendation:", d["notes"][0]["text"])
+        doc.ok(f"/api/admissions/{a['id']}/discharge", {"final_diagnosis": "Sepsis, resolved", "course": "IV antibiotics", "advice": "Rest"})
+        st, pdf = doc.get(f"/api/pdf/discharge/{a['id']}")
+        self.assertEqual(st, 200)
+        self.assertIn(b"DISCHARGE SUMMARY", pdf_text(pdf))
+
+    def test_owner_analytics_and_claim_pack(self):
+        own, rec = Client("owner"), Client("reception.ch")
+        own.branch(1)
+        o = own.ok("/api/analytics/owner?days=30")
+        for k in ("doctors", "wards", "margin", "retention", "branches"):
+            self.assertIn(k, o)
+        self.assertTrue(o["doctors"] and all("per_visit" in d and "minutes" in d for d in o["doctors"]))
+        self.assertTrue(o["wards"] and all(0 <= w["occupancy_pct"] <= 100 for w in o["wards"]))
+        self.assertTrue(o["margin"] and all(-100 <= m["margin_pct"] <= 100 for m in o["margin"]))
+        ag = rec.ok("/api/claims/ageing")
+        self.assertEqual([b["range"] for b in ag["buckets"]], ["0-7", "8-15", "16-30", "31+"])
+        cl = rec.ok("/api/claims?status=all")
+        if cl:
+            st, data = rec.get(f"/api/claims/{cl[0]['id']}/pack")
+            self.assertEqual(st, 200)
+            import zipfile as _zf
+            import io as _io
+            z = _zf.ZipFile(_io.BytesIO(data))
+            names = z.namelist()
+            self.assertIn("00-cover-sheet.pdf", names)
+            self.assertIn("01-invoice.pdf", names)
+            self.assertTrue(all(z.read(n).startswith(b"%PDF") for n in names))

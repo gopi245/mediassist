@@ -29,6 +29,7 @@ RENDER.dashboard = async main => {
   if (can("audit")) watchCard(main);
   if (can("consult") && H) criticalCard(main);
   if (H && d.beds.total) bedsCard(main);
+  if (H && d.beds.occupied) wardWatchCard(main);
   if (App.me.role === "doctor" || App.me.all_access || App.me.role === "manager") briefingCard(main);
 };
 on("openBranch", async el => { await api("/api/branch", { branch_id: +el.dataset.id }); App.cache = {}; await start(); });
@@ -78,8 +79,18 @@ REP.analytics = async el => {
   <div class="kpis">${kpi("Patients", a.patients, `${a.repeat} came back (${a.repeat_pct}%)`)}${kpi("Patient rating", a.feedback_avg ? a.feedback_avg + " / 5" : "–", `${a.feedback_n} responses`)}${kpi("No-show rate", a.no_show_pct != null ? a.no_show_pct + "%" : "–", "booked appointments")}${kpi("Top diagnosis", esc((a.diagnoses[0] || {}).diagnosis || "–"), a.diagnoses[0] ? a.diagnoses[0].n + " visits" : "")}</div>
   <div class="g-main">${card("Busiest hours", "Arrivals by weekday and hour: staff the darker cells", `<div class="tbl"><div class="heat" style="min-width:520px"><span></span>${Array.from({ length: 24 }, (_, h) => `<span>${h % 3 ? "" : h}</span>`).join("")}${a.heat.map((row, i) => `<span>${dn[i]}</span>${row.map(v => `<i title="${dn[i]} ${v} arrivals" style="opacity:${v ? (0.12 + 0.88 * v / mx).toFixed(2) : 0.05}"></i>`).join("")}`).join("")}</div></div>`)}
     ${card("Top diagnoses", "", tbl(["Diagnosis", "ICD-10", "Visits"], a.diagnoses.map(x => `<tr><td>${esc(x.diagnosis)}</td><td class="mono">${esc(x.icd)}</td><td class="num">${x.n}</td></tr>`).join("")))}</div>
-  ${card("Doctors", "", tbl(["Doctor", "Visits", "Patients", "Revenue billed"], a.doctors.map(d => `<tr><td>${esc(d.name)}</td><td class="num">${d.visits}</td><td class="num">${d.patients}</td><td class="num">${money(d.revenue)}</td></tr>`).join("")))}`;
+  ${card("Doctors", "", tbl(["Doctor", "Visits", "Patients", "Revenue billed"], a.doctors.map(d => `<tr><td>${esc(d.name)}</td><td class="num">${d.visits}</td><td class="num">${d.patients}</td><td class="num">${money(d.revenue)}</td></tr>`).join("")))}
+  <div id="ownerAn"></div>`;
+  ownerAnalytics($("#ownerAn"), days).catch(() => {});
 };
+async function ownerAnalytics(el, days) {
+  const o = await api("/api/analytics/owner?days=" + days);
+  el.innerHTML = `<div class="kpis" style="margin-top:14px">${kpi("Average stay", o.alos != null ? o.alos + " days" : "–", `${o.discharges} discharges`)}${kpi("Patients who came back", o.retention.pct != null ? o.retention.pct + "%" : "–", `of ${o.retention.cohort} first seen 3-6 months ago`)}${kpi("Pharmacy margin", o.margin.length ? Math.round(o.margin.reduce((a, m) => a + m.sales * m.margin_pct, 0) / Math.max(1, o.margin.reduce((a, m) => a + m.sales, 0))) + "%" : "–", "sales at MRP vs cost of batches sold")}</div>
+    <div class="g2">${card("Doctor productivity", "Done visits, visits per working day, minutes from arrival to completion, revenue billed under the doctor", tbl(["Doctor", "Visits", "Per day", "Min / visit", "Revenue", "Per visit"], o.doctors.map(d => `<tr><td>${esc(d.name)}</td><td class="num">${d.visits}</td><td class="num">${d.per_day}</td><td class="num">${d.minutes}</td><td class="num">${money(d.revenue)}</td><td class="num">${money(d.per_visit)}</td></tr>`).join(""), "No completed visits in this period."))}
+    ${card("Bed occupancy", "Bed-days used over the period, by ward", tbl(["Ward", "Beds", "Occupancy"], o.wards.map(w => `<tr><td>${esc(w.ward)}</td><td class="num">${w.beds}</td><td class="num"><b style="color:${w.occupancy_pct < 40 ? "var(--crit)" : "inherit"}">${w.occupancy_pct}%</b></td></tr>`).join(""), "No beds."))}</div>
+    <div class="g2">${card("Pharmacy margin by supplier", "", tbl(["Supplier", "Sales", "Cost", "Margin"], o.margin.map(m => `<tr><td>${esc(m.supplier)}</td><td class="num">${money(m.sales)}</td><td class="num">${money(m.cost)}</td><td class="num"><b>${m.margin_pct}%</b></td></tr>`).join(""), "No pharmacy sales."))}
+    ${card("Branch benchmarks", "", tbl(["Branch", "Visits", "Hospital", "Pharmacy", "Per visit", "Per bed-day"], o.branches.map(b => `<tr><td><span class="code">${b.code}</span> ${esc(b.name)}</td><td class="num">${b.visits}</td><td class="num">${money(b.hospital)}</td><td class="num">${money(b.pharmacy)}</td><td class="num">${money(b.per_visit)}</td><td class="num">${b.per_bed_day != null ? money(b.per_bed_day) : "–"}</td></tr>`).join("")))}</div>`;
+}
 on("anDays", el => { App.cache.anDays = +el.dataset.n; REP.analytics($("#repBody")); });
 REP.followups = async el => {
   const day = App.cache.fuDay || localDay(), l = await api("/api/followups?date=" + day);

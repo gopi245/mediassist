@@ -192,6 +192,9 @@ def api_admission(h, c, b, q, aid):
     a["procedures"] = rows(c.execute("SELECT pr.*, u.name surgeon FROM procedures pr LEFT JOIN users u ON u.id=pr.surgeon_id WHERE admission_id=? ORDER BY pr.id DESC", (a["id"],)))
     a["imaging"] = rows(c.execute("SELECT * FROM imaging WHERE admission_id=? ORDER BY id DESC", (a["id"],)))
     a["rx"] = rows(c.execute("SELECT r.*, m.name FROM rx_items r JOIN medicines m ON m.id=r.medicine_id WHERE r.admission_id=?", (a["id"],)))
+    from .m_ward import io_summary, vitals_status
+    a["watch"] = vitals_status(c, a)
+    a["io"] = io_summary(c, a["id"])
     a["summary"] = json.loads(a["summary"]) if a["summary"] else None
     a["moves"] = rows(c.execute("SELECT bm.*, bd.ward, bd.number FROM bed_moves bm JOIN beds bd ON bd.id=bm.bed_id WHERE admission_id=? ORDER BY bm.id", (a["id"],)))
     return a
@@ -219,7 +222,7 @@ def api_transfer_bed(h, c, b, q, aid):
 def api_note(h, c, b, q, aid):
     a = adm_or_404(c, h, int(aid))
     kind = clean(b, "kind", 10) or ("round" if h.user["role"] == "doctor" else "nursing")
-    need(kind in ("round", "nursing", "procedure"), "Unknown note type")
+    need(kind in ("round", "nursing", "procedure", "handover"), "Unknown note type")
     text = clean(b, "text", 4000)
     vit = {k: b.get(k) for k in ("temp", "pulse", "bp_sys", "bp_dia", "spo2", "sugar", "weight")}
     need(text or any(v not in (None, "") for v in vit.values()), "Write a note or enter vitals")

@@ -403,8 +403,13 @@ def referral_pdf(c, rid):
     return pdf.bytes(f"{br['name']} - referral for {p['name']}"), f"Referral-{pcode(p['id'])}-{r['at'][:10]}.pdf", r
 
 
-MAKERS = {"lab": lab_pdf, "bill": bill_pdf, "invoice": invoice_pdf, "rx": rx_pdf, "referral": referral_pdf}
-TABLES = {"lab": "lab_orders", "bill": "bills", "invoice": "invoices", "rx": "visits", "referral": "referrals"}
+def discharge_pdf_maker(c, aid):
+    from .m_ward import discharge_pdf
+    return discharge_pdf(c, aid)
+
+
+MAKERS = {"lab": lab_pdf, "bill": bill_pdf, "invoice": invoice_pdf, "rx": rx_pdf, "referral": referral_pdf, "discharge": discharge_pdf_maker}
+TABLES = {"lab": "lab_orders", "bill": "bills", "invoice": "invoices", "rx": "visits", "referral": "referrals", "discharge": "admissions"}
 
 
 def make(c, kind, rid):
@@ -414,7 +419,7 @@ def make(c, kind, rid):
 
 
 # ---------------------------------------------------------------- staff download
-@route("GET", r"/api/pdf/(lab|bill|invoice|rx|referral)/(\d+)", "patients_read")
+@route("GET", r"/api/pdf/(lab|bill|invoice|rx|referral|discharge)/(\d+)", "patients_read")
 def api_pdf(h, c, b, q, kind, rid):
     row = one(c, f"SELECT branch_id FROM {TABLES[kind]} WHERE id=?", (int(rid),))
     need(row, "Not found", 404)

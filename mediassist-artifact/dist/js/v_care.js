@@ -165,3 +165,13 @@ async function setupCard(main) {
   box.innerHTML = card("Finish setting up", `${d.required_left} step${d.required_left > 1 ? "s" : ""} before real patients`, d.items.filter(i => !i.done && !i.optional).slice(0, 5).map(i => alertRow("", `${esc(i.title)} <button class="btn sm ghost" data-act="go" data-v="${i.view}" data-p="${esc(i.param)}">Do it</button>`)).join(""), `<button class="btn sm ghost" data-act="go" data-v="admin" data-p="start">All steps</button>`);
   main.insertBefore(box, main.firstChild.nextSibling);
 }
+
+/* dashboard: inpatients who need eyes on them */
+async function wardWatchCard(main) {
+  let l; try { l = await api("/api/ward/watch"); } catch (e) { return; }
+  if (!l.length) return;
+  const box = document.createElement("div"); box.style.marginTop = "14px";
+  box.innerHTML = card("Ward watch", `${l.length} inpatient${l.length > 1 ? "s" : ""} flagged by early-warning score or overdue vitals`,
+    l.map(x => alertRow(x.band === "high" ? "high" : "", `<b>${esc(x.pname)}</b> <span class="mono small">${x.ip_no}</span> · bed ${esc(x.bed || "–")} · ${x.flags.map(esc).join(" · ")} <button class="btn sm ghost" data-act="go" data-v="ipd" data-p="a/${x.admission_id}">Open</button>`)).join(""));
+  main.insertBefore(box, main.firstChild.nextSibling);
+}

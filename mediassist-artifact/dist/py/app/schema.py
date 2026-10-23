@@ -268,6 +268,13 @@ ALTER TABLE invoices ADD COLUMN pay_link TEXT;
 ALTER TABLE invoices ADD COLUMN pay_link_id TEXT;
 CREATE INDEX ix_inv_paylink ON invoices(pay_link_id)
 """,
+# 14: nursing depth: vitals schedule, intake/output chart
+r"""
+ALTER TABLE admissions ADD COLUMN vitals_every_h INTEGER;
+CREATE TABLE io_chart(id INTEGER PRIMARY KEY, admission_id INTEGER NOT NULL REFERENCES admissions(id), at TEXT NOT NULL, kind TEXT NOT NULL, what TEXT NOT NULL,
+  ml INTEGER NOT NULL, user_id INTEGER, note TEXT);
+CREATE INDEX ix_io_adm ON io_chart(admission_id)
+""",
 ]
 
 
