@@ -5,7 +5,7 @@ import re
 import math
 from datetime import datetime
 
-from .core import (ApiError, P, R, add_days, as_int, audit, clean, in_tx, need, need_branch, now_str, one, opt_num, pcode, qget, route, rows,
+from .core import (ApiError, P, R, add_days, all_access, as_int, audit, can, clean, in_tx, need, need_branch, now_str, one, opt_num, pcode, qget, route, rows,
                    rs, today, valid_day)
 from .safety import dose_units, safety_check
 
@@ -23,14 +23,32 @@ def svc_by_name(c, name):
 
 
 # ---------------------------------------------------------------- beds
-@route("GET", "/api/beds", "patients_read")
+def set_bed(c, bed_id, status, note=None):
+    c.execute("UPDATE beds SET status=?, status_at=?, status_note=? WHERE id=?", (status, now_str(), note, bed_id))
+
+
+@route("GET", "/api/beds", "any")
 def api_beds(h, c, b, q):
-    br = need_branch(h, c, "hospital")
-    out = rows(c.execute("SELECT bd.*, a.id adm_id, a.ip_no, a.admitted_at, a.diagnosis, p.name pname, p.age, p.gender, p.id pid, u.name dname FROM beds bd "
-                         "LEFT JOIN admissions a ON a.bed_id=bd.id AND a.status='admitted' LEFT JOIN patients p ON p.id=a.patient_id "
-                         "LEFT JOIN users u ON u.id=a.doctor_id WHERE bd.branch_id=? ORDER BY bd.ward, bd.number", (br["id"],)))
+    """Every bed with its status, who is in it, how long it has been cleaning and the expected discharge.
+    Any signed-in member of staff can see it; patient names only with patients_read. ?all=1: every branch (owner)."""
+    if qget(q, "all") and not h.branch:
+        need(all_access(h.user), "Choose a branch")
+        where, args = "br.active=1", ()
+    else:
+        br = need_branch(h, c, "hospital")
+        where, args = "bd.branch_id=?", (br["id"],)
+    out = rows(c.execute("SELECT bd.*, br.code bcode, a.id adm_id, a.ip_no, a.admitted_at, a.diagnosis, a.planned_discharge, p.name pname, p.age, p.gender, p.id pid, u.name dname "
+                         "FROM beds bd JOIN branches br ON br.id=bd.branch_id LEFT JOIN admissions a ON a.bed_id=bd.id AND a.status='admitted' "
+                         f"LEFT JOIN patients p ON p.id=a.patient_id LEFT JOIN users u ON u.id=a.doctor_id WHERE {where} ORDER BY br.code, bd.ward, bd.number", args))
+    from datetime import datetime
+    now = datetime.now()
+    names = can(h, "patients_read")
     for x in out:
         x["code"] = pcode(x["pid"]) if x["pid"] else None
+        x["minutes"] = int((now - datetime.fromisoformat(x["status_at"])).total_seconds() // 60) if x["status_at"] else None
+        if not names:
+            for k in ("pname", "diagnosis", "code", "pid", "age", "gender"):
+                x[k] = None
     return out
 
 
@@ -56,7 +74,20 @@ def api_bed_status(h, c, b, q, bid):
     need(st in ("free", "cleaning", "blocked"), "Status must be free, cleaning or blocked")
     bd = one(c, "SELECT * FROM beds WHERE id=? AND branch_id=?", (int(bid), h.branch))
     need(bd and bd["status"] != "occupied", "An occupied bed can't be changed. Transfer or discharge the patient first.")
-    c.execute("UPDATE beds SET status=? WHERE id=?", (st, bd["id"]))
+    set_bed(c, bd["id"], st, clean(b, "reason", 100) or None)
+    audit(c, h, "bed.status", f"{bd['ward']}-{bd['number']} {bd['status']} -> {st}" + (f" ({clean(b, 'reason', 100)})" if b.get("reason") else ""))
+    return {"ok": True}
+
+
+@route("POST", r"/api/admissions/(\d+)/plan", "ipd")
+def api_plan_discharge(h, c, b, q, aid):
+    a = adm_or_404(c, h, int(aid))
+    need(a["status"] == "admitted", "Patient is not admitted")
+    d = clean(b, "planned_discharge", 10) or None
+    if d:
+        valid_day(d, "expected discharge")
+    c.execute("UPDATE admissions SET planned_discharge=? WHERE id=?", (d, a["id"]))
+    audit(c, h, "ipd.plan_discharge", f"{a['ip_no']} {d or 'cleared'}")
     return {"ok": True}
 
 
@@ -82,7 +113,7 @@ def api_admit(h, c, b, q):
                          clean(b, "reason", 300), clean(b, "diagnosis", 300), clean(b, "icd", 10).upper() or None, "admitted", h.user["id"]))
         aid = cur.lastrowid
         c.execute("INSERT INTO bed_moves(admission_id,bed_id,from_at) VALUES(?,?,?)", (aid, bed["id"], now_str()))
-        c.execute("UPDATE beds SET status='occupied' WHERE id=?", (bed["id"],))
+        set_bed(c, bed["id"], "occupied")
         if deposit:
             c.execute("INSERT INTO payments(branch_id,admission_id,at,mode,amount_p,ref,user_id,kind) VALUES(?,?,?,?,?,?,?,?)",
                       (br["id"], aid, now_str(), mode, deposit, clean(b, "ref", 40), h.user["id"], "deposit"))
@@ -176,8 +207,8 @@ def api_transfer_bed(h, c, b, q, aid):
     def run():
         c.execute("UPDATE bed_moves SET to_at=? WHERE admission_id=? AND to_at IS NULL", (now_str(), a["id"]))
         c.execute("INSERT INTO bed_moves(admission_id,bed_id,from_at) VALUES(?,?,?)", (a["id"], bed["id"], now_str()))
-        c.execute("UPDATE beds SET status='cleaning' WHERE id=?", (a["bed_id"],))
-        c.execute("UPDATE beds SET status='occupied' WHERE id=?", (bed["id"],))
+        set_bed(c, a["bed_id"], "cleaning")
+        set_bed(c, bed["id"], "occupied")
         c.execute("UPDATE admissions SET bed_id=? WHERE id=?", (bed["id"], a["id"]))
         audit(c, h, "ipd.transfer", f"{a['ip_no']} -> {bed['ward']}-{bed['number']}")
     in_tx(c, run)
@@ -392,7 +423,7 @@ def api_discharge(h, c, b, q, aid):
         c.execute("UPDATE lab_orders SET invoice_id=? WHERE admission_id=? AND invoice_id IS NULL AND status<>'cancelled'", (inv["id"], a["id"]))
         c.execute("UPDATE admissions SET status='discharged', discharged_at=?, discharge_type=?, summary=?, diagnosis=?, icd=?, invoice_id=? WHERE id=?",
                   (end, dtype, json.dumps(summary), summary["final_diagnosis"], summary["icd"] or a["icd"], inv["id"], a["id"]))
-        c.execute("UPDATE beds SET status='cleaning' WHERE id=?", (a["bed_id"],))
+        set_bed(c, a["bed_id"], "cleaning")
         if dtype == "death":
             c.execute("UPDATE lab_orders SET status='cancelled' WHERE admission_id=? AND status IN ('ordered','collected')", (a["id"],))
         if summary["followup"] and dtype != "death":

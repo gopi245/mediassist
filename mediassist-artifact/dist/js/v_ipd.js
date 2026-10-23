@@ -7,12 +7,12 @@ RENDER.ipd = async (main, [mode, id]) => {
   if (mode === "admit" && id) { const p = await api("/api/patients/" + id); pre = `${p.code} · ${p.name} · ${p.phone}`; }
   const wards = {}; beds.forEach(b => (wards[b.ward] = wards[b.ward] || []).push(b));
   const free = beds.filter(b => b.status === "free");
-  main.innerHTML = `<div class="kpis">${kpi("Occupied", `${beds.filter(b => b.status === "occupied").length} / ${beds.length}`, "beds")}${kpi("Free", free.length, "ready for admission")}${kpi("Cleaning", beds.filter(b => b.status === "cleaning").length, "mark free when ready", "warn")}${kpi("Blocked", beds.filter(b => b.status === "blocked").length, "")}</div>
+  main.innerHTML = `<div class="row-actions" style="margin-bottom:10px"><button class="btn sm ghost" data-act="go" data-v="beds">Open the bed board</button></div><div class="kpis">${kpi("Occupied", `${beds.filter(b => b.status === "occupied").length} / ${beds.length}`, "beds")}${kpi("Free", free.length, "ready for admission")}${kpi("Cleaning", beds.filter(b => b.status === "cleaning").length, "mark free when ready", "warn")}${kpi("Blocked", beds.filter(b => b.status === "blocked").length, "")}</div>
   <div class="g-main"><div class="stack">${Object.entries(wards).map(([w, l]) => card(`${esc(w)} ward`, `${l.filter(b => b.status === "occupied").length} of ${l.length} occupied`, `<div class="beds">${l.map(b => b.status === "occupied"
       ? `<button class="bed occupied" data-act="go" data-v="ipd" data-p="a/${b.adm_id}"><span class="num-tag">${esc(b.number)} · ${b.kind}</span><b>${esc(b.pname)}</b><span class="small muted">${b.age ?? "?"}${(b.gender || " ")[0]} · ${esc(b.diagnosis || "")}</span><span class="small muted">${esc(b.dname || "")} · since ${b.admitted_at.slice(5, 10)}</span></button>`
       : `<div class="bed ${b.status}"><span class="num-tag">${esc(b.number)} · ${b.kind}</span><b>${b.status === "free" ? "Free" : b.status === "cleaning" ? "Cleaning" : "Blocked"}</b>${can("ipd_nursing") ? `<div class="row-actions">${b.status !== "free" ? `<button class="btn sm ghost" data-act="bedStatus" data-id="${b.id}" data-s="free">Mark free</button>` : `<button class="btn sm ghost" data-act="bedStatus" data-id="${b.id}" data-s="blocked">Block</button>`}</div>` : ""}</div>`).join("")}</div>`)).join("") || card("No beds yet", "", `<p class="empty">Add wards and beds below.</p>`)}</div>
   <div class="stack">${can("ipd") ? card("Admit a patient", "A deposit can be taken now", `<form data-submit="admit" class="stack"><div class="fields">${patInput("patient", pre)}
-      <div class="span2"><label>Bed</label><select name="bed_id">${free.map(b => `<option value="${b.id}">${esc(b.ward)} ${esc(b.number)} (${b.kind})</option>`).join("") || "<option value=''>No free bed</option>"}</select></div>
+      <div class="span2"><label>Bed</label><select name="bed_id">${free.map(b => `<option value="${b.id}" ${App.cache.admitBed === b.id ? "selected" : ""}>${esc(b.ward)} ${esc(b.number)} (${b.kind})</option>`).join("") || "<option value=''>No free bed</option>"}</select></div>
       <div><label>Doctor</label>${docSelect(docs, "doctor_id", App.me.role === "doctor" ? App.me.id : "", "")}</div><div class="span2"><label>Reason</label><input name="reason"></div>
       <div class="span2"><label>Provisional diagnosis</label><input name="diagnosis"></div><div><label>ICD-10</label><input name="icd" list="icdOpts" data-input="icdSearch"></div>
       <div><label>Deposit ₹</label><input name="deposit" type="number" min="0"></div><div><label>Mode</label><select name="mode"><option value="cash">Cash</option><option value="upi">UPI</option><option value="card">Card</option></select></div><div><label>Reference</label><input name="ref"></div></div>
@@ -23,7 +23,7 @@ on("bedStatus", async el => { await api(`/api/beds/${el.dataset.id}/status`, { s
 on("addBed", async f => { await api("/api/beds", vals(f)); toast("Bed added"); go("ipd"); });
 on("admit", async f => {
   const v = vals(f), pid = pidOf(v.patient); if (!pid) return toast("Pick the patient from the list.");
-  const r = await api("/api/admissions", { ...v, patient_id: pid }); toast(`Admitted as ${r.ip_no}`); go("ipd", ["a", r.id]);
+  const r = await api("/api/admissions", { ...v, patient_id: pid }); App.cache.admitBed = null; toast(`Admitted as ${r.ip_no}`); go("ipd", ["a", r.id]);
 });
 
 async function admission(main, id) {
@@ -32,7 +32,7 @@ async function admission(main, id) {
   main.innerHTML = `<div class="card" style="margin-bottom:14px"><div class="phead"><div class="avatar">${initials(a.pname)}</div><div style="flex:1;min-width:0"><h2>${esc(a.pname)} <span class="mono small muted">${a.ip_no}</span></h2>
     <div class="small muted">${a.code} · ${a.age ?? "?"} yrs · ${esc(a.gender || "")}${a.weight ? ` · ${a.weight} kg` : ""} · ${esc(a.ward || "")} ${esc(a.bed || "")} · ${esc(a.dname || "")} · admitted ${a.admitted_at}</div></div>${open ? pill("Admitted", "p-info") : pill("Discharged " + (a.discharged_at || ""), "p-ok")}</div>
     ${a.allergies ? `<div class="banner" style="margin-top:10px">Allergic to ${esc(a.allergies)}</div>` : ""}
-    <p class="small" style="margin:8px 0 0"><b>Diagnosis:</b> ${esc(a.diagnosis || "–")} ${a.icd ? `(${esc(a.icd)})` : ""} · <b>Running bill:</b> ${money(a.bill.total)} · deposits ${money(a.bill.deposits)} · <b>${a.bill.balance < 0 ? "advance left " + money(-a.bill.balance) : "balance " + money(a.bill.balance)}</b></p></div>
+    <p class="small" style="margin:8px 0 0">${open ? `<b>Expected discharge:</b> ${a.planned_discharge ? esc(a.planned_discharge) : "not set"} ${isDoc ? `<button class="linkbtn" data-act="planDischarge" data-id="${a.id}" data-d="${esc(a.planned_discharge || "")}">change</button>` : ""} · ` : ""}<b>Diagnosis:</b> ${esc(a.diagnosis || "–")} ${a.icd ? `(${esc(a.icd)})` : ""} · <b>Running bill:</b> ${money(a.bill.total)} · deposits ${money(a.bill.deposits)} · <b>${a.bill.balance < 0 ? "advance left " + money(-a.bill.balance) : "balance " + money(a.bill.balance)}</b></p></div>
   ${subtabs([["care", "Notes and vitals"], ["mar", "Medicines"], ["proc", `Procedures & imaging (${a.procedures.length + a.imaging.length})`], ["bill", "Charges and bill"], ["dc", open ? "Discharge" : "Discharge summary"]], tab, "admTab")}<div id="admBody"></div>`;
   const body = $("#admBody");
   if (tab === "care") {

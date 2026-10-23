@@ -22,6 +22,7 @@ Run the automated tests: double-click **RUN-TESTS.bat** (end-to-end tests of the
 | OPD & appointments | Staff and online booking (`/book?branch=CH`), tokens, check-in, triage board, token TV screen (`/display?branch=CH`), WhatsApp reminders |
 | Consultation | Templates, ICD-10, prescriptions with allergy / interaction / condition / child-dose / max-dose / kidney / pregnancy checks, lab orders, printed prescription |
 | Laboratory | Worklist, sample collection, results with normal ranges and H/L/critical flags, critical-value alert to the doctor, verification, report to the patient on WhatsApp |
+| Bed board | Every bed on one screen for the whole team: free, occupied, cleaning (with timers) and blocked, ward by ward, across branches for the owner, refreshed every 30 s; expected discharges; admit straight from a free bed; dashboard card and alerts for stalled cleaning and no free beds |
 | Inpatients | Bed board, admission with deposit, transfers, doctor rounds and nursing notes, medicine orders and dose record (MAR), charges, running bill, discharge summary and final invoice |
 | Pharmacy | Barcode billing, strip or loose tablets, prescriptions from any branch, Schedule H/H1/X rules, offline billing that syncs later, returns with credit notes, H1 register |
 | Stock | Racks, expiry, reorder and expiry-rescue suggestions, purchase orders, goods received, supplier returns, fridge temperature log, stock counts, medicine master |

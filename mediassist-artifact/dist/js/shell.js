@@ -15,7 +15,7 @@ const H_ = () => kind().includes("hospital"), PH_ = () => kind().includes("pharm
 const VIEWS = [
   ["dashboard", "Dashboard", () => true], ["patients", "Patients", () => can("patients_read")],
   ["opd", "OPD & appointments", () => H_() && (can("appointments") || can("visit_create"))], ["tracker", "Patient tracker", () => H_() && can("patients_read")], ["consult", "Consultation", () => H_() && can("consult")],
-  ["lab", "Laboratory", () => H_() && (can("lab") || can("lab_verify"))], ["ipd", "Inpatients", () => H_() && can("ipd")],
+  ["lab", "Laboratory", () => H_() && (can("lab") || can("lab_verify"))], ["beds", "Bed board", () => H_() || (App.me && !App.me.branch && App.me.all_access)], ["ipd", "Inpatients", () => H_() && can("ipd")],
   ["billing", "Pharmacy billing", () => PH_() && can("billing")], ["stock", "Stock", () => (PH_() || (App.me && !App.me.branch && App.me.all_access)) && (can("stock") || can("billing"))],
   ["hbilling", "Hospital billing", () => H_() && can("hbilling")], ["docs", "Documents", () => can("documents")],
   ["accounts", "Accounts", () => can("accounts")], ["reports", "Reports", () => can("reports")], ["admin", "Admin", () => can("admin") || can("audit")],
@@ -43,7 +43,7 @@ on("login", async form => {
     $("#lmsg").textContent = ""; start();
   } catch (e) { $("#lmsg").textContent = e.message; }
 });
-on("logout", async () => { await api("/api/logout", {}).catch(() => {}); App.me = null; showLogin(false); });
+on("logout", async () => { const open = App.me && App.me.open_access; await api("/api/logout", {}).catch(() => {}); App.me = null; if (open) return location.reload(); showLogin(false); });
 
 async function start() {
   try { App.me = await api("/api/me"); } catch (e) { return; }

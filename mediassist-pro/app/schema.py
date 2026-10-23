@@ -236,6 +236,12 @@ ALTER TABLE documents ADD COLUMN deleted_by INTEGER;
 CREATE TABLE growth_ref(sex TEXT NOT NULL, kind TEXT NOT NULL, age_months REAL NOT NULL, l REAL NOT NULL, m REAL NOT NULL, s REAL NOT NULL,
   PRIMARY KEY(sex, kind, age_months))
 """,
+# 9: bed board: when a bed's status last changed (cleaning timers), expected discharge date
+r"""
+ALTER TABLE beds ADD COLUMN status_at TEXT;
+ALTER TABLE beds ADD COLUMN status_note TEXT;
+ALTER TABLE admissions ADD COLUMN planned_discharge TEXT
+""",
 ]
 
 

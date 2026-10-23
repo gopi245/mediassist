@@ -18,7 +18,7 @@ RENDER.dashboard = async main => {
   }
   const H = d.branch.kind.includes("hospital"), tr = d.trend, MONEY = can("reports") || can("hbilling") || can("billing");
   main.innerHTML = `<div class="kpis">${H ? kpi("Patients seen", r.seen, `${d.appointments.arrived} of ${d.appointments.total} appointments arrived`, "", sparkline(tr.map(x => x.seen))) + kpi("Waiting now", d.waiting, d.critical.length ? `${d.critical.length} critical` : "no critical", d.critical.length ? "crit" : "") : ""}
-    ${H && d.beds.total ? kpi("Beds", `${d.beds.occupied} / ${d.beds.total}`, "occupied") : ""}${H ? kpi("Lab", d.lab.ordered + d.lab.collected, `${d.lab.resulted} waiting for verification`, d.lab.resulted ? "warn" : "") : ""}
+    ${H && d.beds.total ? kpi("Beds free", d.beds.free, `${d.beds.occupied} occupied · ${d.beds.cleaning} cleaning · ${d.beds.total} total`, d.beds.free ? "" : "crit") : ""}${H ? kpi("Lab", d.lab.ordered + d.lab.collected, `${d.lab.resulted} waiting for verification`, d.lab.resulted ? "warn" : "") : ""}
     ${MONEY ? kpi("Revenue today", money(r.total), delta(r.total, r.prev_total), "", sparkline(tr.map(x => x.hosp + x.pharm))) + kpi("Collected", money(r.collected), `dues ${money(r.dues)}`) : ""}</div>
   <div class="g-main"><div class="stack">
     ${H ? card("Critical patients waiting", "", d.critical.map(v => alertRow("high", `<b>${esc(v.name)}</b> · ${esc(v.triage_reasons || "")} · since ${v.created_at.slice(11)} ${can("consult") ? `<button class="btn danger sm" data-act="go" data-v="consult" data-p="${v.id}">See now</button>` : ""}`)).join("") || '<p class="empty">None waiting.</p>') : ""}
@@ -27,6 +27,7 @@ RENDER.dashboard = async main => {
     ${MONEY ? card("Today's report so far", "Sent automatically in the evening", `<pre class="rep">${esc(r.text.replace(/\*/g, ""))}</pre>`) : ""}</div>`;
   if (can("audit")) watchCard(main);
   if (can("consult") && H) criticalCard(main);
+  if (H && d.beds.total) bedsCard(main);
   if (App.me.role === "doctor" || App.me.all_access || App.me.role === "manager") briefingCard(main);
 };
 on("openBranch", async el => { await api("/api/branch", { branch_id: +el.dataset.id }); App.cache = {}; await start(); });

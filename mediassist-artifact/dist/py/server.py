@@ -24,6 +24,9 @@ from app.setup import init
 STATIC = os.path.join(BASE, "app", "static")
 PORT = int(os.environ.get("PORT", "8000"))
 TRUST_PROXY = os.environ.get("TRUST_PROXY", "") in ("1", "true", "yes")
+# MEDIASSIST_OPEN=1: no sign-in screen; every visitor is the owner (two-step sign-in skipped). For a single
+# trusted computer during setup and training only. Unset it (START.bat) before real use.
+OPEN_ACCESS = os.environ.get("MEDIASSIST_OPEN", "") in ("1", "true", "yes")
 PUBLIC_PAGES = {"/my": "my.html", "/up": "up.html", "/book": "book.html", "/display": "display.html", "/feedback": "feedback.html"}
 BIG_BODY = ("/api/documents", "/api/ai/", "/api/import/", "/api/public/upload")
 CSP = ("default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
@@ -76,7 +79,7 @@ class Handler(BaseHTTPRequestHandler):
     def load_session(self, c):
         jar = SimpleCookie(self.headers.get("Cookie", ""))
         self.token = jar["sid"].value if "sid" in jar else ""
-        self.user, self.branch, self.mfa_ok = None, 0, False
+        self.user, self.branch, self.mfa_ok, self.open_access = None, 0, False, OPEN_ACCESS
         if self.token:
             row = c.execute("SELECT s.branch_id sb, s.mfa_ok, u.* FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=? AND s.expires>? AND u.active=1",
                             (self.token, time.time())).fetchone()
@@ -84,6 +87,19 @@ class Handler(BaseHTTPRequestHandler):
                 self.user = dict(row)
                 self.mfa_ok = bool(row["mfa_ok"])
                 self.branch = row["sb"] if all_access(self.user) else (row["branch_id"] or 0)
+        if OPEN_ACCESS and not self.user:
+            self.open_session(c)
+
+    def open_session(self, c):
+        """Open access: sign the visitor in as the owner without a password and hand them a session cookie."""
+        import secrets
+        u = c.execute("SELECT * FROM users WHERE role='owner' AND active=1 ORDER BY id LIMIT 1").fetchone()
+        if not u:
+            return
+        self.token = secrets.token_urlsafe(32)
+        c.execute("INSERT INTO sessions VALUES(?,?,?,?,?)", (self.token, u["id"], 0, time.time() + 24 * 3600, 1))
+        self.user, self.mfa_ok, self.branch, self.open_access = dict(u), True, 0, True
+        self.set_cookie = f"sid={self.token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={24 * 3600}"
 
     # ------------------------------------------------------------ dispatch
     def handle_any(self, method):
@@ -184,6 +200,8 @@ def main():
     reset_conn()
     threading.Thread(target=m_reports.scheduler_loop, daemon=True).start()
     host = os.environ.get("HOST", "0.0.0.0")
+    if OPEN_ACCESS:
+        print("OPEN ACCESS: no sign-in, every visitor is the owner. Remove MEDIASSIST_OPEN from START.bat before real use.")
     print(f"MediAssist running\n  this computer:   http://localhost:{PORT}\n  other computers: http://{lan_ip()}:{PORT}\n"
           f"  token screen:    http://localhost:{PORT}/display?branch=CH\n  online booking:  http://localhost:{PORT}/book?branch=CH\nPress Ctrl+C to stop.")
     srv = ThreadingHTTPServer((host, PORT), Handler)

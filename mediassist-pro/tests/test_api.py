@@ -954,3 +954,28 @@ class T21Operations(unittest.TestCase):
         b = ph.ok("/api/bills", {"pay_mode": "cash", "created_at": yday + " 18:30", "offline_key": "late-" + yday,
                                  "items": [{"medicine_id": meds["Dolo 650"]["id"], "qty": 1, "unit": "unit"}]})
         self.assertTrue(ph.ok(f"/api/bills/{b['id']}")["created_at"].startswith(core.today()), "a bill synced after the day was closed counts today")
+
+
+class T22BedBoard(unittest.TestCase):
+    def test_board_for_everyone_timers_and_expected_discharge(self):
+        rec, doc, lab, own = Client("reception.ch"), Client("dr.rao"), Client("lab.ch"), Client("owner")
+        board = rec.ok("/api/beds")
+        self.assertTrue(board and all("minutes" in b for b in board))
+        self.assertEqual(lab.get("/api/beds")[0], 200, "every signed-in role can see the board")
+        self.assertTrue(len(own.ok("/api/beds?all=1")) >= len(board), "owner sees every branch")
+        free = [b for b in board if b["status"] == "free"][0]
+        a = doc.ok("/api/admissions", {"patient_id": 6, "bed_id": free["id"], "reason": "Observation", "diagnosis": "Gastroenteritis"})
+        self.assertEqual(doc.post(f"/api/admissions/{a['id']}/plan", {"planned_discharge": "2020-13-45"})[0], 400)
+        doc.ok(f"/api/admissions/{a['id']}/plan", {"planned_discharge": core.today()})
+        b = [x for x in rec.ok("/api/beds") if x["id"] == free["id"]][0]
+        self.assertEqual((b["status"], b["planned_discharge"]), ("occupied", core.today()))
+        self.assertIsNotNone(b["minutes"], "status time is stamped when the bed is taken")
+        doc.ok(f"/api/admissions/{a['id']}/discharge", {"final_diagnosis": "Gastroenteritis, resolved"})
+        b = [x for x in rec.ok("/api/beds") if x["id"] == free["id"]][0]
+        self.assertEqual(b["status"], "cleaning")
+        self.assertEqual(Client("nurse.ch").post(f"/api/beds/{free['id']}/status", {"status": "blocked", "reason": "repair"})[0], 200)
+        self.assertEqual(rec.post(f"/api/beds/{free['id']}/status", {"status": "free"})[0], 403, "reception can see but not change beds")
+        Client("nurse.ch").ok(f"/api/beds/{free['id']}/status", {"status": "free"})
+        self.assertEqual([x for x in rec.ok("/api/beds") if x["id"] == free["id"]][0]["status"], "free")
+        d = rec.ok("/api/dashboard")
+        self.assertIn("free", d["beds"])

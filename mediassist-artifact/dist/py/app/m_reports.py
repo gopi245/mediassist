@@ -189,6 +189,12 @@ def branch_alerts(c, bids, day):
                              "WHERE o.branch_id=? AND o.status='resulted' AND r.flag IN ('LL','HH')", (bid,)).fetchone()[0]
             if crit:
                 out.append({"level": "high", "text": f"{code}: {crit} critical lab values waiting for verification"})
+            stale = c.execute("SELECT COUNT(*) FROM beds WHERE branch_id=? AND status='cleaning' AND status_at<datetime('now','localtime','-60 minutes')", (bid,)).fetchone()[0]
+            if stale:
+                out.append({"level": "", "text": f"{code}: {stale} bed(s) marked cleaning for over an hour: free them if ready"})
+            full = c.execute("SELECT COUNT(*), SUM(status='free') FROM beds WHERE branch_id=?", (bid,)).fetchone()
+            if full[0] and not full[1]:
+                out.append({"level": "high", "text": f"{code}: no free beds"})
             pend = c.execute("SELECT COUNT(*) FROM claims cl JOIN invoices i ON i.id=cl.invoice_id WHERE i.branch_id=? AND cl.status IN ('preauth','query') AND cl.created_at<?",
                              (bid, add_days(day, -7))).fetchone()[0]
             if pend:
@@ -228,12 +234,12 @@ def api_dashboard(h, c, b, q):
     waiting = c.execute("SELECT COUNT(*) FROM visits WHERE branch_id=? AND status IN ('waiting','in_consult')", (h.branch,)).fetchone()[0]
     fups = rows(c.execute("SELECT p.name, p.phone, v.diagnosis FROM visits v JOIN patients p ON p.id=v.patient_id WHERE v.branch_id=? AND v.followup=?", (h.branch, day)))
     appts = c.execute("SELECT COUNT(*), SUM(status='booked'), SUM(status IN ('checked_in','in_consult','done')) FROM appointments WHERE branch_id=? AND day=?", (h.branch, day)).fetchone()
-    beds = c.execute("SELECT COUNT(*), SUM(status='occupied') FROM beds WHERE branch_id=?", (h.branch,)).fetchone()
+    beds = c.execute("SELECT COUNT(*), SUM(status='occupied'), SUM(status='free'), SUM(status='cleaning') FROM beds WHERE branch_id=?", (h.branch,)).fetchone()
     lab = c.execute("SELECT SUM(status='ordered'), SUM(status='collected'), SUM(status='resulted') FROM lab_orders WHERE branch_id=?", (h.branch,)).fetchone()
     ser = day_series(c, [h.branch], add_days(day, -13), day)
     trend = [dict(day=add_days(day, -i), **rup(series_get(ser, add_days(day, -i)))) for i in range(13, -1, -1)]
     return {"mode": "branch", "branch": br, "report": rep, "critical": crit, "waiting": waiting, "followups": fups, "trend": trend,
-            "appointments": {"total": appts[0], "booked": appts[1] or 0, "arrived": appts[2] or 0}, "beds": {"total": beds[0], "occupied": beds[1] or 0},
+            "appointments": {"total": appts[0], "booked": appts[1] or 0, "arrived": appts[2] or 0}, "beds": {"total": beds[0], "occupied": beds[1] or 0, "free": beds[2] or 0, "cleaning": beds[3] or 0},
             "lab": {"ordered": lab[0] or 0, "collected": lab[1] or 0, "resulted": lab[2] or 0}}
 
 
