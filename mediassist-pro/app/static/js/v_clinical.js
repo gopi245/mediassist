@@ -16,6 +16,7 @@ function patientForm(p, act) {
     <div><label>Date of birth</label><input name="dob" type="date" value="${esc(p.dob)}"></div><div><label>Age</label><input name="age" type="number" min="0" max="130" value="${p.age ?? ""}"></div>
     <div><label>Gender</label><select name="gender">${["Male", "Female", "Other"].map(g => `<option ${p.gender === g ? "selected" : ""}>${g}</option>`).join("")}</select></div>
     <div><label>Weight (kg)</label><input name="weight" type="number" step=".1" value="${p.weight ?? ""}"></div><div><label>Blood group</label><input name="blood_group" value="${esc(p.blood_group)}"></div>
+    <div><label>Language for messages</label><select name="lang">${[["en", "English"], ["hi", "हिन्दी"], ["te", "తెలుగు"], ["ta", "தமிழ்"]].map(([k, l]) => `<option value="${k}" ${(p.lang || "en") === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
     <div class="span2"><label>ABHA number (14 digits)</label><input name="abha" inputmode="numeric" value="${esc(p.abha)}"></div><div class="span2"><label>Address</label><input name="address" value="${esc(p.address)}"></div>
     <div class="span2"><label>Allergies</label><input name="allergies" value="${esc(p.allergies)}" placeholder="penicillin, sulfa, nsaid"></div>
     <div class="span2"><label>Conditions</label><input name="conditions" value="${esc(p.conditions)}" placeholder="asthma, kidney disease, ulcer, heart failure"></div>
@@ -232,8 +233,20 @@ RENDER.consult = async (main, [vid]) => {
       <div class="btns"><button class="btn">Save and complete</button><button type="button" class="btn ghost" data-act="printRx" data-id="${v.id}">Print ℞</button>${v.status === "done" ? `<button type="button" class="btn ghost" data-act="pdfDl" data-p="rx/${v.id}">PDF</button>` : ""}</div></form></div></div>`;
   drawCx();
 };
+/* shorthand -> words for the doctor's own eyes; the server does the patient's language */
+function rxWords(it) {
+  const f = (it.freq || "").trim().toUpperCase(), nums = (f.match(/\d+(?:\.\d+)?/g) || []).map(Number);
+  const dose = (it.dose || "1").trim(), unit = /^\d+(?:\.\d+)?\s*(ml|mg|g|mcg|drops?|puffs?)/i.test(dose) ? dose : null;
+  const d = n => unit ? unit : (n === 0.5 ? "½" : n === 1.5 ? "1½" : String(n)) + (n === 1 ? " tablet" : " tablets");
+  const per = unit ? 1 : (dose.includes("/") ? +dose.split("/")[0] / +dose.split("/")[1] : +dose || 1);
+  let s;
+  if (f.includes("-") && nums.length) { const slots = nums.length === 4 ? ["morning", "afternoon", "evening", "night"] : ["morning", "afternoon", "night"]; s = nums.map((n, i) => n ? `${slots[i]} ${d(n * per)}` : "").filter(Boolean).join(", ") || "only when needed"; }
+  else s = ({ OD: "morning", BD: "morning, night", TDS: "morning, afternoon, night", QID: "morning, afternoon, evening, night", HS: "at bedtime", SOS: "only when needed", STAT: "once, now" }[f] || f.toLowerCase()) + (f === "SOS" || f === "STAT" ? "" : ` ${d(per)}`);
+  const days = it.days && !["SOS", "STAT"].includes(f) ? `, for ${it.days} day${it.days > 1 ? "s" : ""}` : "";
+  return s + days;
+}
 async function drawCx() {
-  $("#cxRx").innerHTML = CX.items.length ? tbl(["Medicine", "Dose", "Freq", "Days", ""], CX.items.map((it, i) => `<tr><td><b>${esc(it.name)}</b>${it.instructions ? `<div class="small muted">${esc(it.instructions)}</div>` : ""}</td><td>${esc(it.dose)}</td><td class="mono">${esc(it.freq)}</td><td>${it.days}</td><td><button type="button" class="btn sm ghost" data-act="cxRm" data-i="${i}">Remove</button></td></tr>`).join("")) : "";
+  $("#cxRx").innerHTML = CX.items.length ? tbl(["Medicine", "Dose", "Freq", "Days", ""], CX.items.map((it, i) => `<tr><td><b>${esc(it.name)}</b><div class="small muted">${esc(rxWords(it))}${it.instructions ? " · " + esc(it.instructions) : ""}</div></td><td>${esc(it.dose)}</td><td class="mono">${esc(it.freq)}</td><td>${it.days}</td><td><button type="button" class="btn sm ghost" data-act="cxRm" data-i="${i}">Remove</button></td></tr>`).join("")) : "";
   if (!CX.items.length) { $("#cxWarn").innerHTML = ""; return; }
   const r = await api("/api/rx/check", { patient_id: CX.pid, visit_id: CX.vid, weight: CX.weight, items: CX.items });
   $("#cxWarn").innerHTML = r.warnings.length ? warnHtml(r.warnings) : alertRow("info", "No allergy, interaction, dose or condition conflicts found.");
@@ -285,6 +298,6 @@ on("printRx", async el => {
     <p><b>${esc(p.name)}</b> · ${p.code} · ${p.age ?? "?"} yrs · ${esc(p.gender || "")}${p.weight ? ` · ${p.weight} kg` : ""} · <b>Allergies:</b> ${esc(p.allergies || "none")}</p>
     <p><b>Vitals:</b> ${v.temp ?? "–"}°C, pulse ${v.pulse ?? "–"}, BP ${v.bp_sys ?? "–"}/${v.bp_dia ?? "–"}, SpO₂ ${v.spo2 ?? "–"}%</p>
     <p><b>Complaint:</b> ${esc(v.complaint || "–")}${v.history ? `<br><b>History:</b> ${esc(v.history)}` : ""}${v.examination ? `<br><b>Examination:</b> ${esc(v.examination)}` : ""}<br><b>Diagnosis:</b> ${esc(v.diagnosis || "–")} ${v.icd ? "(" + esc(v.icd) + ")" : ""}</p>
-    <h2 style="font-size:22px">℞</h2><table><tr><th>Medicine</th><th>Dose</th><th>Frequency</th><th>Days</th><th>Qty</th><th>Instructions</th></tr>${d.rx.map(r => `<tr><td>${esc(r.name)}<br><small>${esc(r.generic || "")}</small></td><td>${esc(r.dose || "1")}</td><td>${esc(r.freq)}</td><td>${r.days}</td><td>${r.qty}</td><td>${esc(r.instructions || "")}</td></tr>`).join("")}</table>
+    <h2 style="font-size:22px">℞</h2><table><tr><th>Medicine</th><th>Dose</th><th>Frequency</th><th>Days</th><th>Qty</th><th>How to take</th></tr>${d.rx.map(r => `<tr><td>${esc(r.name)}<br><small>${esc(r.generic || "")}</small></td><td>${esc(r.dose || "1")}</td><td>${esc(r.freq)}</td><td>${r.days}</td><td>${r.qty}</td><td>${esc(r.how || r.instructions || "")}${r.how_lang ? `<br><b>${esc(r.how_lang)}</b>` : ""}</td></tr>`).join("")}</table>
     ${d.labs.length ? `<p><b>Tests:</b> ${d.labs.map(l => esc(l.name)).join(", ")}</p>` : ""}<p>${esc(v.notes || "")}</p>${v.followup ? `<p><b>Follow-up:</b> ${v.followup}</p>` : ""}<br><br><p style="text-align:right">Signature ____________________</p>`);
 });

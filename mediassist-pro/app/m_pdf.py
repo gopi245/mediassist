@@ -321,7 +321,8 @@ def rx_pdf(c, vid):
     v = one(c, "SELECT v.*, u.name dname, u.reg_no dreg FROM visits v LEFT JOIN users u ON u.id=v.doctor_id WHERE v.id=?", (vid,))
     need(v and v["status"] == "done", "Prescription not found", 404)
     br, p = _br(c, v["branch_id"]), _pt(c, v["patient_id"])
-    items = rows(c.execute("SELECT r.*, m.name, m.generic, m.schedule FROM rx_items r JOIN medicines m ON m.id=r.medicine_id WHERE r.visit_id=?", (vid,)))
+    items = rows(c.execute("SELECT r.*, m.name, m.generic, m.schedule, m.form FROM rx_items r JOIN medicines m ON m.id=r.medicine_id WHERE r.visit_id=?", (vid,)))
+    from .rx_words import how_to_take
     pdf = Pdf(f"Prescription - {p['name']}")
     letterhead(pdf, c, br, "PRESCRIPTION", [v["dname"] or "", ("Reg. " + v["dreg"]) if v["dreg"] else "", _dt(v["completed_at"] or v["created_at"])])
     pdf.kv_box([("Patient", p["name"]), ("Patient ID", pcode(p["id"])), ("Age / Gender", _age(p)), ("Allergies", p["allergies"] or "None recorded")])
@@ -340,8 +341,8 @@ def rx_pdf(c, vid):
     pdf.y -= 26
     if items:
         sched = lambda x: f" [Sch. {x['schedule']}]" if (x["schedule"] or "OTC") != "OTC" else ""
-        pdf.table([("Medicine", 165, "left"), ("Dose", 50, "left"), ("When", 80, "left"), ("Days", 35, "right"), ("Qty", 35, "right"), ("Instructions", 150, "left")],
-                  [[x["name"] + sched(x) + (f"\n{x['generic']}" if x["generic"] else ""), x["dose"] or "", x["freq"] or "", str(x["days"] or ""), str(x["qty"] or ""), x["instructions"] or ""] for x in items],
+        pdf.table([("Medicine", 150, "left"), ("Dose", 40, "left"), ("When", 55, "left"), ("Days", 32, "right"), ("Qty", 32, "right"), ("How to take", 206, "left")],
+                  [[x["name"] + sched(x) + (f"\n{x['generic']}" if x["generic"] else ""), x["dose"] or "", x["freq"] or "", str(x["days"] or ""), str(x["qty"] or ""), how_to_take(x, "en")] for x in items],
                   row_style=lambda i, r: {"bold0": True})
     else:
         pdf.para("No medicines prescribed.", 10, color=MUTED)

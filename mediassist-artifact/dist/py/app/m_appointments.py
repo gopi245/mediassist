@@ -209,6 +209,11 @@ def send_reminders(c):
     for v in rows(c.execute("SELECT v.*, u.name dname, br.name bname, br.code bcode FROM visits v JOIN users u ON u.id=v.doctor_id JOIN branches br ON br.id=v.branch_id "
                             "WHERE v.followup=? AND NOT EXISTS (SELECT 1 FROM appointments a WHERE a.patient_id=v.patient_id AND a.day=v.followup)", (tmr,))):
         link = f" Book a time: {s['public_url'].rstrip('/')}/book?branch={v['bcode']}" if s.get("public_url") else ""
-        send_patient(c, v["patient_id"], "followup", f"{v['bname']}: {v['dname']} asked to see you again tomorrow ({v['followup']}) for {v['diagnosis']}.{link}")
+        lang = (one(c, "SELECT lang FROM patients WHERE id=?", (v["patient_id"],)) or {"lang": None})["lang"] or "en"
+        text = {"hi": f"{v['bname']}: {v['dname']} ने आपको कल ({v['followup']}) दोबारा बुलाया है ({v['diagnosis']}).",
+                "te": f"{v['bname']}: {v['dname']} మిమ్మల్ని రేపు ({v['followup']}) మళ్ళీ రమ్మన్నారు ({v['diagnosis']}).",
+                "ta": f"{v['bname']}: {v['dname']} உங்களை நாளை ({v['followup']}) மீண்டும் வரச் சொன்னார் ({v['diagnosis']})."}.get(
+            lang, f"{v['bname']}: {v['dname']} asked to see you again tomorrow ({v['followup']}) for {v['diagnosis']}.")
+        send_patient(c, v["patient_id"], "followup", text + link)
         n += 1
     return n

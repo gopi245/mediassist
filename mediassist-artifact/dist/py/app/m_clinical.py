@@ -348,6 +348,10 @@ def api_visit(h, c, b, q, vid):
     rx = rows(c.execute("SELECT r.*, m.name, m.generic, m.form, m.schedule FROM rx_items r JOIN medicines m ON m.id=r.medicine_id WHERE visit_id=?", (v["id"],)))
     labs = rows(c.execute("SELECT o.id, o.status, t.name, t.code FROM lab_orders o JOIN lab_order_items i ON i.order_id=o.id JOIN lab_tests t ON t.id=i.test_id WHERE o.visit_id=?", (v["id"],)))
     prof = profile(c, v["patient_id"])
+    from .rx_words import how_to_take
+    for r in rx:
+        r["how"] = how_to_take(r, "en")
+        r["how_lang"] = how_to_take(r, prof.get("lang") or "en") if (prof.get("lang") or "en") != "en" else None
     prof["current_meds"] = [{"name": m["name"], "since": (m.get("vdate") or "")[:10], "days": m.get("days")} for m in current_meds(c, v["patient_id"], v["id"])]
     return {"visit": v, "rx": rx, "labs": labs, "patient": prof, "creatinine": latest_creatinine(c, v["patient_id"])}
 
@@ -434,7 +438,11 @@ def api_complete(h, c, b, q, vid):
     if not v["completed_at"]:  # first save only; corrections don't message again
         from .m_portal import share
         dname = one(c, "SELECT name FROM users WHERE id=?", (h.user["id"],))["name"]
-        share(c, p["id"], f"Your prescription from {dname} is ready" + (f" (follow-up on {followup})." if followup else "."), h.user["id"], pdf=("rx", v["id"]))
+        from .rx_words import rx_message
+        br = one(c, "SELECT name FROM branches WHERE id=?", (v["branch_id"],))
+        rx_rows = rows(c.execute("SELECT r.*, m.name, m.form FROM rx_items r JOIN medicines m ON m.id=r.medicine_id WHERE r.visit_id=?", (v["id"],)))
+        tnames = [r[0] for r in c.execute("SELECT t.name FROM lab_orders o JOIN lab_order_items i ON i.order_id=o.id JOIN lab_tests t ON t.id=i.test_id WHERE o.visit_id=? AND o.status<>'cancelled'", (v["id"],))]
+        share(c, p["id"], rx_message(rx_rows, p0["lang"], dname, br["name"], followup, tnames, clean(b, "notes", 3000)), h.user["id"], pdf=("rx", v["id"]))
     return {"ok": True, "lab_order_id": order_id}
 
 

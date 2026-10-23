@@ -1192,3 +1192,37 @@ class T29LabBillingMatch(unittest.TestCase):
         lab.ok(f"/api/lab/orders/{o['id']}/collect", {})
         d = lab.ok(f"/api/lab/orders/{o['id']}")
         self.assertTrue(d["collected_at"] and d["collected_name"] and d["billing"] and d["sent"] is None)
+
+
+class T30PrescriptionInWords(unittest.TestCase):
+    def test_words_in_patient_language_and_on_pdf(self):
+        from app.rx_words import how_to_take, schedule, rx_message
+        self.assertEqual(schedule("1-0-1", "1", "Tablet"), "morning 1 tablet, night 1 tablet")
+        self.assertEqual(schedule("1-1-1", "1/2", "Tablet"), "morning ½ tablet, afternoon ½ tablet, night ½ tablet")
+        self.assertEqual(schedule("TDS", "5 ml", "Syrup"), "morning 5 ml, afternoon 5 ml, night 5 ml")
+        self.assertEqual(schedule("Q6H", "1", "Tablet"), "1 tablet every 6 hours")
+        self.assertEqual(schedule("SOS", "1", "Tablet"), "1 tablet only when needed")
+        self.assertEqual(schedule("1-0-1", "1", "Tablet", "hi"), "सुबह 1 गोली, रात 1 गोली")
+        self.assertIn("ఉదయం", schedule("OD", "1", "Tablet", "te"))
+        self.assertIn("இரவு", schedule("BD", "1", "Tablet", "ta"))
+        self.assertEqual(how_to_take({"freq": "1-0-1", "dose": "1", "form": "Tablet", "days": 5, "instructions": "after food"}), "morning 1 tablet, night 1 tablet, after food, for 5 days")
+        self.assertNotIn("for", how_to_take({"freq": "SOS", "dose": "1", "form": "Tablet", "days": 3}), "no duration for as-needed medicines")
+        msg = rx_message([{"name": "Dolo 650", "freq": "1-0-1", "dose": "1", "form": "Tablet", "days": 3}], "hi", "Dr. Rao", "City Hospital", "2026-11-01", ["CBC"], "Rest")
+        self.assertIn("Dolo 650: सुबह 1 गोली, रात 1 गोली, 3 दिन तक", msg)
+        self.assertIn("2026-11-01 को दोबारा आएँ", msg)
+        # end to end: a Telugu-speaking patient gets the prescription in Telugu on WhatsApp
+        rec, doc, own = Client("reception.ch"), Client("dr.rao"), Client("owner")
+        meds = {m["name"]: m for m in doc.ok("/api/medicines")}
+        pid = rec.ok("/api/patients", {"name": "Lakshmi Words", "phone": "9000088888", "age": 35, "gender": "Female", "lang": "te", "consent": True, "force": True})["id"]
+        self.assertEqual(rec.ok(f"/api/patients/{pid}")["lang"], "te")
+        v = rec.ok("/api/visits", {"patient_id": pid, "complaint": "fever"})
+        doc.ok(f"/api/visits/{v['id']}/complete", {"diagnosis": "Viral fever", "items": [{"medicine_id": meds["Dolo 650"]["id"], "dose": "1", "freq": "1-0-1", "days": 3, "instructions": "after food"}],
+                                                    "lab_tests": [], "followup": core.add_days(core.today(), 3), "notes": "Drink fluids"})
+        msgs = [m for m in own.ok("/api/messages?kind=portal") if m.get("patient_id") == pid]
+        self.assertTrue(msgs, "a prescription message was logged")
+        self.assertIn("Dolo 650: ఉదయం 1 మాత్ర, రాత్రి 1 మాత్ర, after food, 3 రోజులు", msgs[0]["body"])
+        self.assertIn("మళ్ళీ రండి", msgs[0]["body"])
+        d = doc.ok(f"/api/visits/{v['id']}")
+        self.assertEqual(d["rx"][0]["how"], "morning 1 tablet, night 1 tablet, after food, for 3 days")
+        self.assertIn("ఉదయం", d["rx"][0]["how_lang"])
+        self.assertIn(b"morning 1 tablet, night 1 tablet", pdf_text(doc.get(f"/api/pdf/rx/{v['id']}")[1]))
