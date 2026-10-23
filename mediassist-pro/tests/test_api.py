@@ -1052,3 +1052,25 @@ class T24Suppliers(unittest.TestCase):
         self.assertTrue(any(x.get("supplier") == "ABC Pharma Test" and x["batch"] == "BTH-2487" for x in sv["batches"]), "batch list names the supplier")
         ph.ok(f"/api/suppliers/{s1}", {"phone": "9000002222"})
         self.assertEqual(ph.ok(f"/api/suppliers/{s1}/history")["supplier"]["phone"], "9000002222")
+
+
+class T25FindMedicine(unittest.TestCase):
+    def test_partial_search_and_rack_map(self):
+        ph, rec = Client("pharma.ch"), Client("reception.ch")
+        self.assertEqual(ph.get("/api/stock/find?q=d")[0], 400, "two letters at least")
+        l = ph.ok("/api/stock/find?q=parac")
+        self.assertTrue(l and all("paracetamol" in (x["generic"] or "").lower() or "parac" in x["name"].lower() for x in l), "salt search finds brands")
+        dolo = [x for x in l if x["name"] == "Dolo 650"][0]
+        self.assertTrue(dolo["qty"] > 0 and dolo["rack"], "quantity and the rack to pick from")
+        self.assertEqual(l[0]["qty"] > 0, True, "in-stock matches come first")
+        self.assertEqual(ph.ok("/api/stock/find?q=dolo")[0]["name"], "Dolo 650", "brand prefix first")
+        self.assertEqual(rec.ok("/api/stock/find?q=dolo")[0]["name"], "Dolo 650", "reception at a hospital+pharmacy branch searches too")
+        r = ph.ok("/api/stock/racks")
+        self.assertTrue(r["racks"] and all(x["items"] for x in r["racks"]))
+        # take a rack away, see it reported, give it back in one click
+        bid = ph.ok("/api/stock")["batches"][0]["id"]
+        core.db().execute("UPDATE batches SET rack=NULL WHERE id=?", (bid,))  # as an import without racks would leave it
+        r = ph.ok("/api/stock/racks")
+        self.assertTrue(any(u["batch_id"] == bid for u in r["unassigned"]))
+        self.assertGreaterEqual(ph.ok("/api/stock/racks/assign", {})["assigned"], 1)
+        self.assertFalse(ph.ok("/api/stock/racks")["unassigned"])

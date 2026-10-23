@@ -50,3 +50,17 @@ on("traceBatch", async el => {
     ${p && p.supplier_id ? `<div class="btns"><button type="button" class="btn sm ghost" data-act="traceSup" data-id="${p.supplier_id}">Supplier history</button></div>` : ""}`, { ok: "", cancel: "Close", wide: true });
 });
 on("traceSup", el => { $("#mCancel").click(); App.cache.supSel = +el.dataset.id; go("stock", ["suppliers"]); });
+
+
+/* ---------- rack map: every rack and what is on it, for the wall and for new staff ---------- */
+STOCK.racks = async el => {
+  const d = await api("/api/stock/racks"), q = (App.cache.rackQ || "").toLowerCase();
+  const racks = q ? d.racks.map(r => ({ ...r, items: r.items.filter(i => i.medicine.toLowerCase().includes(q) || (i.generic || "").toLowerCase().includes(q)) })).filter(r => r.items.length || r.rack.toLowerCase().includes(q)) : d.racks;
+  el.innerHTML = `<div class="kpis">${kpi("Racks in use", d.racks.length, `${d.racks.reduce((a, r) => a + r.items.length, 0)} medicine positions`)}${kpi("Without a rack", d.unassigned.length, d.unassigned.length ? "can't be found by staff" : "every batch has a place", d.unassigned.length ? "crit" : "")}${kpi("Expired on racks", d.racks.reduce((a, r) => a + r.expired, 0), "units to pull out", d.racks.some(r => r.expired) ? "warn" : "")}</div>
+    ${d.unassigned.length ? alertRow("high", `<b>${d.unassigned.length} batch${d.unassigned.length > 1 ? "es have" : " has"} no rack:</b> ${d.unassigned.slice(0, 6).map(u => `${esc(u.medicine)} (${u.qty})`).join(", ")}${d.unassigned.length > 6 ? "…" : ""} ${can("stock") ? `<button class="btn sm" data-act="rackAssign">Give them their usual racks</button>` : ""}`) : ""}
+    <div class="row-actions" style="margin:10px 0"><input data-input="rackQ" value="${esc(App.cache.rackQ || "")}" placeholder="Find a medicine or rack on the map" style="width:auto;min-width:260px"><button class="btn sm ghost" data-act="rackPrint">Print for the wall</button><span class="small muted">Change a rack in Batches & racks, or while receiving goods.</span></div>
+    <div class="rackmap" id="rackMap">${racks.map(r => `<div class="rackcard"><h3><span class="rack">${esc(r.rack)}</span><span class="small muted">${r.qty} units${r.expired ? ` · <span class="allergy">${r.expired} expired</span>` : ""}</span></h3><ul>${r.items.map(i => `<li><span><b>${esc(i.medicine)}</b><div class="small muted">${esc(i.generic || "")}</div></span><span class="num">${i.qty}${i.soonest != null && i.soonest <= 90 ? ` <span class="allergy small">${i.soonest < 0 ? "exp" : i.soonest + "d"}</span>` : ""}</span></li>`).join("")}</ul></div>`).join("") || '<p class="empty">No racks yet. Receive goods or set racks in Batches & racks.</p>'}</div>`;
+};
+on("rackQ", debounce(el => { App.cache.rackQ = el.value; STOCK.racks($("#stockBody") || $("#view")); }, 250));
+on("rackAssign", async el => { const r = await withBusy(el, () => api("/api/stock/racks/assign", {})); toast(`${r.assigned} batches now have a rack`); go("stock", ["racks"]); });
+on("rackPrint", () => { const m = $("#rackMap"); printHtml(`<h2>Rack map · ${esc(App.me.branch ? App.me.branch.name : "")}</h2><p class="small">${new Date().toLocaleDateString("en-IN")} · medicine, quantity</p><div class="rackmap">${m.innerHTML}</div>`); });

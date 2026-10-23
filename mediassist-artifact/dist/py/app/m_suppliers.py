@@ -105,3 +105,82 @@ def api_trace(h, c, b, q, bid):
                                "due_date": p["due_date"]},
             "received": received, "sold": sold, "left": bt["qty"], "moves": moves, "same_batch_elsewhere": same_batch_elsewhere,
             "note": None if p else "This batch was entered without a goods receipt (opening stock or import), so there is no supplier invoice to trace."}
+
+
+# ---------------------------------------------------------------- find a medicine, rack map
+@route("GET", "/api/stock/find", "patients_read")
+def api_find(h, c, b, q):
+    """Search by part of a brand name, salt or barcode: each match with usable quantity, the rack to pick from
+    first (soonest expiry), other racks, MRP and stock at other branches. For the top-bar search and the counter."""
+    from .core import like
+    from .m_pharmacy import days_left, eff_expiry, pharmacies, usable_batches
+    term = qget(q, "q").strip()
+    need(len(term) >= 2, "Type at least 2 letters")
+    lk = like(term)
+    meds = rows(c.execute("SELECT * FROM medicines WHERE active=1 AND (name LIKE ? ESCAPE '\\' OR generic LIKE ? ESCAPE '\\' OR barcode=?) ORDER BY "
+                          "CASE WHEN lower(name) LIKE lower(?) THEN 0 WHEN lower(generic) LIKE lower(?) THEN 1 ELSE 2 END, name LIMIT 25", (lk, lk, term, term + "%", term + "%")))
+    phs = pharmacies(c)
+    here = h.branch if any(o["id"] == h.branch for o in phs) else None
+    out = []
+    for m in meds:
+        use = usable_batches(c, here, m["id"]) if here else []
+        first = use[0] if use else None
+        racks = []
+        for x in use:
+            if x["rack"] and x["rack"] not in racks:
+                racks.append(x["rack"])
+        others = []
+        for o in phs:
+            if o["id"] != here:
+                u = usable_batches(c, o["id"], m["id"])
+                if u:
+                    others.append({"code": o["code"], "qty": sum(x["qty"] for x in u), "rack": u[0]["rack"]})
+        out.append({"id": m["id"], "name": m["name"], "generic": m["generic"], "form": m["form"], "schedule": m["schedule"], "pack_size": m["pack_size"],
+                    "qty": sum(x["qty"] for x in use), "rack": first["rack"] if first else None, "racks": racks, "pick_batch": first["batch"] if first else None,
+                    "pick_expiry": eff_expiry(first).isoformat() if first else None, "days_left": days_left(first) if first else None,
+                    "mrp": R(first["mrp_p"]) if first else None, "others": others, "no_pharmacy": here is None})
+    out.sort(key=lambda x: (x["qty"] == 0, x["name"].lower().find(term.lower()) != 0))
+    return out
+
+
+@route("GET", "/api/stock/racks", "patients_read")
+def api_rack_map(h, c, b, q):
+    """Every rack at this pharmacy with what is on it, plus batches that have no rack yet."""
+    br = need_branch(h, c, "pharmacy")
+    from .m_pharmacy import days_left
+    racks, unassigned = {}, []
+    for bt in rows(c.execute("SELECT bt.*, m.name medicine, m.generic, m.form FROM batches bt JOIN medicines m ON m.id=bt.medicine_id WHERE bt.branch_id=? AND bt.qty>0 ORDER BY m.name", (br["id"],))):
+        if not bt["rack"]:
+            unassigned.append({"batch_id": bt["id"], "medicine": bt["medicine"], "batch": bt["batch"], "qty": bt["qty"], "medicine_id": bt["medicine_id"]})
+            continue
+        r = racks.setdefault(bt["rack"], {"rack": bt["rack"], "items": {}, "qty": 0, "expired": 0})
+        it = r["items"].setdefault(bt["medicine_id"], {"medicine": bt["medicine"], "generic": bt["generic"], "form": bt["form"], "qty": 0, "batches": 0, "soonest": None})
+        it["qty"] += bt["qty"]; it["batches"] += 1; r["qty"] += bt["qty"]
+        d = days_left(bt)
+        if d < 0:
+            r["expired"] += bt["qty"]
+        if it["soonest"] is None or d < it["soonest"]:
+            it["soonest"] = d
+
+    def rack_key(k):
+        import re
+        parts = re.split(r"(\d+)", k)
+        return [int(p) if p.isdigit() else p.upper() for p in parts]
+    out = []
+    for k in sorted(racks, key=rack_key):
+        r = racks[k]
+        out.append({"rack": k, "qty": r["qty"], "expired": r["expired"], "items": sorted(r["items"].values(), key=lambda x: x["medicine"])})
+    return {"racks": out, "unassigned": unassigned, "branch": br["code"]}
+
+
+@route("POST", "/api/stock/racks/assign", "stock")
+def api_rack_assign(h, c, b, q):
+    """Give every batch without a rack its medicine's usual rack (or a default by form), so nothing is unfindable."""
+    br = need_branch(h, c, "pharmacy")
+    from .m_pharmacy import rack_for
+    n = 0
+    for bt in rows(c.execute("SELECT * FROM batches WHERE branch_id=? AND qty>0 AND (rack IS NULL OR rack='')", (br["id"],))):
+        c.execute("UPDATE batches SET rack=? WHERE id=?", (rack_for(c, br["id"], bt["medicine_id"]), bt["id"]))
+        n += 1
+    audit(c, h, "rack.assign", f"{n} batches given a rack")
+    return {"ok": True, "assigned": n}

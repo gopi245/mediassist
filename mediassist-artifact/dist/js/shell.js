@@ -103,11 +103,18 @@ function stockCard(s) {
   ${s.alternatives.length ? `<div class="small">Same salt in stock here: ${s.alternatives.map(a => `${esc(a.name)} (${a.stock})`).join(", ")}</div>` : ""}</div>`;
 }
 on("gLook", debounce(async el => {
-  const box = $("#gLookBox"), m = medByName(el.value);
+  const box = $("#gLookBox"), q = el.value.trim();
   if (!App.cache.meds) await loadMeds();
-  if (!m) { box.hidden = true; return; }
-  box.innerHTML = stockCard(await api("/api/stock/lookup?id=" + m.id)); box.hidden = false;
+  const m = medByName(q);
+  if (m) { box.innerHTML = stockCard(await api("/api/stock/lookup?id=" + m.id)); box.hidden = false; return; }
+  if (q.length < 2) { box.hidden = true; return; }
+  let l; try { l = await api("/api/stock/find?q=" + encodeURIComponent(q)); } catch (e) { box.hidden = true; return; }
+  box.innerHTML = l.length ? `<div class="sinfo">${l.map(x => `<button type="button" class="findrow" data-act="findPick" data-id="${x.id}"><span class="rack">${esc(x.rack || (x.no_pharmacy ? "" : "no rack"))}</span><span><b>${esc(x.name)}</b> <span class="small muted">${esc(x.generic || "")} · ${esc(x.form || "")}</span></span>
+      <span class="small">${x.no_pharmacy ? (x.others.length ? x.others.map(o => `${esc(o.code)} ${o.qty}`).join(", ") : '<span class="allergy">none</span>') : x.qty ? `<b>${x.qty}</b> in stock${x.racks.length > 1 ? ` · also ${x.racks.slice(1).join(", ")}` : ""}${x.days_left != null && x.days_left <= 90 ? ` · <span class="allergy">exp ${x.pick_expiry}</span>` : ""}` : `<span class="allergy">out</span>${x.others.length ? ` · at ${x.others.map(o => `${esc(o.code)} ${o.qty}`).join(", ")}` : ""}`}</span></button>`).join("")}</div>`
+    : `<div class="sinfo"><p class="small muted">Nothing matches "${esc(q)}". Try part of the brand or the salt name.</p></div>`;
+  box.hidden = false;
 }, 200));
+on("findPick", async el => { const box = $("#gLookBox"); const m = (App.cache.meds || []).find(x => x.id === +el.dataset.id); if (m) $("#gLook").value = m.name; box.innerHTML = stockCard(await api("/api/stock/lookup?id=" + el.dataset.id)); box.hidden = false; });
 document.addEventListener("click", e => { if (!e.target.closest(".lookup")) $("#gLookBox").hidden = true; });
 
 /* ---------------- my account ---------------- */

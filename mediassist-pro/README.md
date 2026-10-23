@@ -27,6 +27,7 @@ Run the automated tests: double-click **RUN-TESTS.bat** (end-to-end tests of the
 | Inpatients | Bed board, admission with deposit, transfers, doctor rounds and nursing notes, medicine orders and dose record (MAR), charges, running bill, discharge summary and final invoice |
 | Pharmacy | Barcode billing, strip or loose tablets, prescriptions from any branch, Schedule H/H1/X rules, offline billing that syncs later, returns with credit notes, H1 register |
 | Suppliers | One record per supplier: last purchase, items, total, paid, pending and overdue; full purchase history with invoice, batches, prices, payment status, payments and returns; compare what each supplier last charged for a medicine; trace any batch on the shelf back to its supplier, invoice, date and price |
+| Find a medicine | Top-bar search by part of a brand, salt or barcode lists every match with the rack to pick from first, quantity, expiry and stock at other branches; rack map of every rack and what is on it, printable for the wall, with one click to give rack-less batches their usual place |
 | Stock | Racks, expiry, reorder and expiry-rescue suggestions, purchase orders, goods received, supplier returns, fridge temperature log, stock counts, medicine master |
 | Hospital billing | Invoices, part payments and dues, refunds, insurance claims (pre-auth → query → approved → settled/rejected), day-end cash closing, service rates |
 | Documents | Photos/PDFs linked to patient, doctor, bill, invoice, admission, lab order, claim or stock; optional AI reader |

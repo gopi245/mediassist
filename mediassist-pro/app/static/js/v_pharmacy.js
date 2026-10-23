@@ -102,7 +102,7 @@ RENDER.stock = async (main, [pane]) => {
     return;
   }
   pane = pane || App.cache.stockPane || "overview"; App.cache.stockPane = pane;
-  const panes = [["overview", "Overview"]].concat(can("stock") ? [["edit", "Edit stock & photos"]] : [], [["insights", "Reorder & expiry"], ["batches", "Batches & racks"]]).concat(can("stock") ? [["po", "Purchase orders"], ["grn", "Receive goods"], ["suppliers", "Suppliers"], ["dues", "Supplier dues"], ["returns", "Supplier returns"], ["cold", "Fridge log"], ["count", "Stock count"], ["weekly", "Weekly summary"], ["master", "Medicine master"]] : []);
+  const panes = [["overview", "Overview"]].concat(can("stock") ? [["edit", "Edit stock & photos"]] : [], [["insights", "Reorder & expiry"], ["batches", "Batches & racks"], ["racks", "Rack map"]]).concat(can("stock") ? [["po", "Purchase orders"], ["grn", "Receive goods"], ["suppliers", "Suppliers"], ["dues", "Supplier dues"], ["returns", "Supplier returns"], ["cold", "Fridge log"], ["count", "Stock count"], ["weekly", "Weekly summary"], ["master", "Medicine master"]] : []);
   main.innerHTML = subtabs(panes, pane, "stockTab") + `<div id="stockBody"><p class="empty">Loading…</p></div>`;
   await (STOCK[pane] || STOCK.overview)($("#stockBody"));
 };
