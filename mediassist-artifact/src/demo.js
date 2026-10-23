@@ -40,6 +40,20 @@ LAB_AI.rewrite = async oid => {
   return api(`/api/lab/orders/${oid}/interpret`, { ai_text: out });
 };
 
+/* Voice casesheet in the demo: the server has no key, so the structuring is asked of Claude through the viewer
+   (consent asked first); only the dictation, age, gender and the medicine/test name lists go out, then the server maps names. */
+CASESHEET_AI.run = async (pid, text) => {
+  const info = await api("/api/assistant/info").catch(() => ({}));
+  if (info.server_ai) return api("/api/ai/casesheet", { patient_id: pid, text });
+  const s = window.claude && window.claude.use ? await window.claude.use("sample") : null;
+  if (!s) throw new Error("AI drafting isn't available in this view. Type the note by hand.");
+  await loadMeds();
+  const tests = (CX && CX.tests ? CX.tests : []).map(t => t.name).join(", "), meds = (App.cache.meds || []).map(m => m.name).join(", ");
+  const prompt = `A doctor in an Indian clinic dictated this consultation, possibly mixing English with Telugu, Hindi or Tamil. Turn it into a structured casesheet in English. Keep the doctor's clinical content; do not add findings or medicines that were not said. Prefer a brand from this list when the doctor's word matches it: ${meds}. Test names from this list when they match: ${tests}.\nDictation:\n${text}\nAnswer with JSON only: {"complaint":"","history":"","examination":"","diagnosis":"","icd_hint":"","medicines":[{"name":"","dose":"1","freq":"1-0-1","days":5,"instructions":""}],"tests":[""],"advice":"","followup_days":0}`;
+  const out = await s.json(prompt, { cache: false });
+  return api("/api/ai/casesheet", { patient_id: pid, structured: out });
+};
+
 /* Printing isn't allowed inside the viewer: show the printable page instead. */
 printHtml = html => dialog("Print preview", `<div class="printprev">${html}</div><p class="small muted">Printing works in the installed version.</p>`, { ok: "", cancel: "Close", wide: true });
 

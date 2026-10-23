@@ -13,6 +13,7 @@ RENDER.dashboard = async main => {
       ${card("Needs attention", `${r.alerts.length} items`, alerts)}</div>`;
     if (can("audit")) watchCard(main);
     briefingCard(main);
+    if (can("admin")) setupCard(main);
     lineChart($("#orgChart"), d.trend.map(t_ => t_.day), series);
     return;
   }

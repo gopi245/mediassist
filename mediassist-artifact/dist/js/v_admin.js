@@ -1,18 +1,24 @@
 /* Admin: branches, staff, settings, import, backups, audit, error log. */
 "use strict";
 RENDER.admin = async (main, [pane]) => {
-  const tabs = [["branches", "Branches"], ["staff", "Staff"], ["settings", "Settings"], ["import", "Import data"], ["backups", "Backups"], ["audit", "Audit trail"], ["errors", "Error log"]].filter(x => can("admin") || x[0] === "audit");
+  const tabs = [["start", "Getting started"], ["branches", "Branches"], ["staff", "Staff"], ["settings", "Settings"], ["import", "Import data"], ["backups", "Backups"], ["audit", "Audit trail"], ["errors", "Error log"]].filter(x => can("admin") || x[0] === "audit");
   pane = pane || App.cache.admPane || tabs[0][0]; App.cache.admPane = pane;
   main.innerHTML = subtabs(tabs, pane, "admTab2") + `<div id="admBody2"></div>`;
   await ADM[pane]($("#admBody2"));
 };
 on("admTab2", el => go("admin", [el.dataset.k]));
 const ADM = {};
+ADM.start = async el => {
+  const d = await api("/api/setup/checklist");
+  el.innerHTML = card("Getting started", `${d.done} of ${d.total} done${d.required_left ? ` · ${d.required_left} needed before real patients` : " · ready for real patients"}`,
+    `<div class="timeline">${d.items.map(i => `<div class="tl ${i.done ? "done" : "todo"}"><b>${esc(i.title)}</b>${i.optional && !i.done ? ' <span class="small muted">optional</span>' : ""}${!i.done ? ` <button class="btn sm ghost" data-act="go" data-v="${i.view}" data-p="${esc(i.param)}">Do it</button>` : ""}</div>`).join("")}</div>
+    <p class="small muted">Read DEPLOY.md before real patients: HTTPS, backups off this computer, and the legal checklist.</p>`);
+};
 ADM.branches = async el => {
   const brs = await api("/api/branches"); App.cache.brs = brs;
   el.innerHTML = `<div class="g-form">${card("Branch", "", `<form data-submit="brSave" id="brForm" class="stack"><input type="hidden" name="id"><div class="fields"><div><label>Code</label><input name="code" placeholder="CH"></div><div class="span2"><label>Name</label><input name="name"></div>
     <div><label>Type</label><select name="kind"><option value="hospital+pharmacy">Hospital + pharmacy</option><option value="hospital">Hospital / clinic</option><option value="pharmacy">Medical shop</option></select></div><div><label>Phone</label><input name="phone"></div><div class="span2"><label>Address</label><input name="address"></div>
-    <div><label>GSTIN</label><input name="gstin"></div><div><label>Drug licence no.</label><input name="dl_no"></div><div class="span2"><label>Daily report email</label><input name="report_email"></div><div><label>Daily report WhatsApp</label><input name="report_whatsapp"></div></div>
+    <div><label>GSTIN</label><input name="gstin"></div><div><label>Drug licence no.</label><input name="dl_no"></div><div><label>UPI ID (pay-by-UPI QR on bills)</label><input name="upi_id" placeholder="hospital@upi"></div><div class="span2"><label>Daily report email</label><input name="report_email"></div><div><label>Daily report WhatsApp</label><input name="report_whatsapp"></div></div>
     <label class="check"><input type="checkbox" name="active" checked> Active</label><div class="btns"><button class="btn">Save branch</button><button type="button" class="btn ghost" data-act="brNew">New</button></div></form>`)}
   ${card("Branches", "", tbl(["Code", "Name", "Type", "Reports to", ""], brs.map(b => `<tr><td><span class="code">${b.code}</span></td><td>${esc(b.name)}${b.active ? "" : " (closed)"}</td><td>${b.kind}</td><td class="small">${esc(b.report_email || "")} ${esc(b.report_whatsapp || "")}</td><td><button class="btn sm ghost" data-act="brEdit" data-id="${b.id}">Edit</button></td></tr>`).join("")))}</div>`;
 };
@@ -49,7 +55,11 @@ ADM.settings = async el => {
     ${card("Staff watch", "What gets flagged to the owner and managers", `<div class="fields">${F("watch_amount", "Flag amounts from (Rs)", "number")}${F("watch_discount_pct", "Flag discounts from (%)", "number")}</div>`)}
     ${card("Evening reports and backups", "", `<div class="fields">${F("report_time", "Send reports at", "time")}<div><label>Automatic sending</label><select name="auto_send"><option value="1" ${s.auto_send === "1" ? "selected" : ""}>On</option><option value="0" ${s.auto_send === "0" ? "selected" : ""}>Off</option></select></div>${F("backup_keep_days", "Keep daily backups (days)", "number")}</div>`)}
     ${card("Email (SMTP)", "Gmail: turn on 2-step verification, create an App password, host smtp.gmail.com port 587", `<div class="fields">${F("smtp_host", "Host")}${F("smtp_port", "Port", "number")}${F("smtp_user", "Login email")}${F("smtp_pass", "App password", "password")}${F("smtp_from", "From address")}</div>`)}
-    ${card("WhatsApp (Twilio)", "Production use needs approved message templates from Meta", `<div class="fields">${F("twilio_sid", "Account SID")}${F("twilio_token", "Auth token", "password")}${F("twilio_from", "Twilio WhatsApp number")}</div>`)}
+    ${card("WhatsApp", "Meta Cloud API (through a BSP such as Gupshup or Interakt, or directly) is the Indian default; Twilio also works. Messages outside the 24-hour window need approved templates.",
+      `<div class="fields"><div><label>Send through</label><select name="whatsapp_provider">${[["auto", "Meta if set up, else Twilio"], ["meta", "Meta Cloud API"], ["twilio", "Twilio"]].map(([k, l]) => `<option value="${k}" ${(s.whatsapp_provider || "auto") === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+      ${F("meta_phone_id", "Meta phone number ID")}${F("meta_token", "Meta access token", "password")}${F("twilio_sid", "Twilio account SID")}${F("twilio_token", "Twilio auth token", "password")}${F("twilio_from", "Twilio WhatsApp number")}</div>`)}
+    ${card("Payments", "Every bill and invoice carries a pay-by-UPI QR from the branch's UPI ID (Admin > Branches). Razorpay adds online payment links that mark the invoice paid by themselves.",
+      `<div class="fields">${F("razorpay_key_id", "Razorpay key ID")}${F("razorpay_key_secret", "Razorpay key secret", "password")}${F("razorpay_webhook_secret", "Razorpay webhook secret", "password")}<div class="span2 small muted">Webhook URL to set in Razorpay: <span class="mono">${esc((s.public_url || "https://your-address").replace(/\/$/, ""))}/api/public/razorpay</span>, event payment_link.paid</div></div>`)}
     ${card("AI document reader", "Optional. Uses Claude to read bills and invoices. Needs  pip install anthropic  on the server.", `<div class="fields">${F("anthropic_api_key", "Anthropic API key", "password")}</div>`)}
     <div class="btns"><button class="btn">Save settings</button></div></form>`;
 };

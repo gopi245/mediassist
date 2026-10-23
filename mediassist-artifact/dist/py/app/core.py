@@ -218,6 +218,7 @@ DEFAULT_SETTINGS = {
     "report_time": "20:00", "auto_send": "1", "reminder_time": "09:00",
     "smtp_host": "smtp.gmail.com", "smtp_port": "587", "smtp_user": "", "smtp_pass": "", "smtp_from": "",
     "twilio_sid": "", "twilio_token": "", "twilio_from": "", "anthropic_api_key": "",
+    "whatsapp_provider": "auto", "meta_phone_id": "", "meta_token": "", "razorpay_key_id": "", "razorpay_key_secret": "", "razorpay_webhook_secret": "",
     "public_url": "", "online_booking": "1", "slot_minutes": "10", "opd_hours": "09:00-13:00,17:00-20:00", "backup_keep_days": "30",
     "portal_auto": "1", "portal_days": "180", "welcome_msg": "1",
     "weekly_pharmacy": "1", "weekly_day": "mon", "last_weekly": "",
@@ -227,7 +228,7 @@ DEFAULT_SETTINGS = {
     "alert_critical": "1", "alert_booking": "1", "alert_wait": "1", "alert_admit": "1",
     "last_auto": "", "last_reminders": "", "last_backup": "",
 }
-SECRET_SETTINGS = {"smtp_pass", "twilio_token", "anthropic_api_key"}
+SECRET_SETTINGS = {"smtp_pass", "twilio_token", "anthropic_api_key", "meta_token", "razorpay_key_secret", "razorpay_webhook_secret"}
 
 
 def get_settings(c):

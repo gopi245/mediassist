@@ -1226,3 +1226,65 @@ class T30PrescriptionInWords(unittest.TestCase):
         self.assertEqual(d["rx"][0]["how"], "morning 1 tablet, night 1 tablet, after food, for 3 days")
         self.assertIn("ఉదయం", d["rx"][0]["how_lang"])
         self.assertIn(b"morning 1 tablet, night 1 tablet", pdf_text(doc.get(f"/api/pdf/rx/{v['id']}")[1]))
+
+
+class T31PayAndSetup(unittest.TestCase):
+    def test_upi_links_webhook_and_checklist(self):
+        own, rec, doc, ph = Client("owner"), Client("reception.ch"), Client("dr.rao"), Client("pharma.ch")
+        from app.m_pay import upi_link
+        link = upi_link("cityhosp@upi", "City Hospital", 125050, "CH/H/00012", "CH-H-00012")
+        self.assertTrue(link.startswith("upi://pay?") and "am=1250.50" in link and "pa=cityhosp%40upi" in link and "cu=INR" in link)
+        self.assertIsNone(upi_link("", "x", 100, "n", "r"))
+        # UPI ID on the branch: validated, saved, shown on invoices
+        br = [b for b in own.ok("/api/branches") if b["code"] == "CH"][0]
+        self.assertEqual(own.post("/api/branches", {**br, "upi_id": "not an id"})[0], 400)
+        own.ok("/api/branches", {**br, "upi_id": "cityhosp@okaxis"})
+        svc = [s for s in rec.ok("/api/services") if s["name"].startswith("OPD consultation")][0]
+        inv = rec.ok("/api/invoices", {"patient_id": 5, "items": [{"service_id": svc["id"], "qty": 1, "rate": svc["rate_p"] / 100, "disc": 0}], "pay_now": 0})
+        po = rec.ok(f"/api/invoices/{inv['id']}/pay-options")
+        self.assertEqual(po["upi_id"], "cityhosp@okaxis")
+        self.assertIn("upi://pay?", po["upi_link"])
+        self.assertEqual(po["due"], svc["rate_p"] / 100)
+        r = rec.ok(f"/api/invoices/{inv['id']}/paylink", {"send": True})
+        self.assertIsNone(r["pay_link"], "no Razorpay keys: no online link, UPI still offered")
+        self.assertIn("upi://", r["upi_link"])
+        # Razorpay webhook: bad signature refused, good one records the payment once
+        core.set_setting(core.db(), "razorpay_webhook_secret", "whsec_test")
+        core.db().execute("UPDATE invoices SET pay_link_id='plink_test1', pay_link='https://rzp.io/x' WHERE id=?", (inv["id"],))
+        import hashlib, hmac as _hmac
+        body = json.dumps({"event": "payment_link.paid", "payload": {"payment_link": {"entity": {"id": "plink_test1", "amount_paid": int(svc["rate_p"])}}, "payment": {"entity": {"id": "pay_test1", "amount": int(svc["rate_p"]), "method": "upi"}}}})
+        pub = Client()
+        st, _ = pub.call("/api/public/razorpay", json.loads(body), {"X-Razorpay-Signature": "bad"})
+        self.assertEqual(st, 403)
+        sig = _hmac.new(b"whsec_test", body.encode(), hashlib.sha256).hexdigest()
+        # the server signs the raw body it receives: send the exact same bytes
+        req = urllib.request.Request(f"http://127.0.0.1:{PORT}/api/public/razorpay", data=body.encode(), headers={"Content-Type": "application/json", "X-Razorpay-Signature": sig})
+        with urllib.request.urlopen(req) as resp:
+            out = json.loads(resp.read())
+        self.assertEqual(out["result"], "recorded")
+        with urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{PORT}/api/public/razorpay", data=body.encode(), headers={"Content-Type": "application/json", "X-Razorpay-Signature": sig})) as resp:
+            self.assertEqual(json.loads(resp.read())["result"], "duplicate")
+        self.assertEqual(rec.ok(f"/api/invoices/{inv['id']}")["status"], "paid")
+        core.set_setting(core.db(), "razorpay_webhook_secret", "")
+        # checklist knows what is missing
+        cl = own.ok("/api/setup/checklist")
+        self.assertTrue(cl["total"] >= 12 and any(i["key"] == "upi" for i in cl["items"]))
+        self.assertEqual(Client("nurse.ch").get("/api/setup/checklist")[0], 403)
+
+    def test_casesheet_mapping_and_meta_provider(self):
+        doc = Client("dr.rao")
+        structured = {"complaint": "fever 3 days", "history": "High grade fever with chills", "examination": "Temp 101F, throat congested", "diagnosis": "Acute pharyngitis", "icd_hint": "J02.9",
+                      "medicines": [{"name": "dolo 650", "dose": "1", "freq": "1-1-1", "days": 3, "instructions": "after food"}, {"name": "Unknownocin", "dose": "1", "freq": "OD", "days": 5, "instructions": ""}],
+                      "tests": ["CBC", "Vitamin Z level"], "advice": "Warm fluids", "followup_days": 3}
+        r = doc.ok("/api/ai/casesheet", {"patient_id": 5, "structured": structured})
+        self.assertEqual(r["items"][0]["name"], "Dolo 650")
+        self.assertEqual(r["unknown_medicines"], ["Unknownocin"])
+        self.assertEqual(len(r["lab_tests"]), 1)
+        self.assertEqual(r["unknown_tests"], ["Vitamin Z level"])
+        self.assertEqual(r["followup_days"], 3)
+        self.assertEqual(doc.post("/api/ai/casesheet", {"patient_id": 5, "text": "fever since 3 days, give dolo"})[0], 400, "no API key: clear message")
+        self.assertEqual(Client("reception.ch").post("/api/ai/casesheet", {"patient_id": 5, "structured": structured})[0], 403)
+        from app import notify
+        with self.assertRaises(RuntimeError) as cm:
+            notify.send_whatsapp({"whatsapp_provider": "meta"}, "9876543210", "hi")
+        self.assertIn("Meta", str(cm.exception))

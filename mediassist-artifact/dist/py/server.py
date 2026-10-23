@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, urlparse
 
 from app import (m_accounts, m_admin, m_appointments, m_billing, m_clinical, m_docs, m_ipd, m_lab, m_pharmacy,  # noqa: F401  (register routes)
-                 m_pdf, m_portal, m_reports, m_alerts, m_assistant, m_tracker, m_upload, m_watch, m_weekly, m_care, m_suppliers, notify)
+                 m_pdf, m_portal, m_reports, m_alerts, m_assistant, m_tracker, m_upload, m_watch, m_weekly, m_care, m_suppliers, m_pay, notify)
 from app.core import BASE, ROLES, ROUTES, ApiError, all_access, db, now_str, reset_conn, to_json
 from app.setup import init
 
@@ -142,7 +142,8 @@ class Handler(BaseHTTPRequestHandler):
                     if n > limit:
                         raise ApiError(413, "Request too large")
                     try:
-                        body = json.loads(self.rfile.read(n) or b"{}")
+                        self.raw_body = self.rfile.read(n) or b"{}"
+                        body = json.loads(self.raw_body)
                     except ValueError:
                         raise ApiError(400, "Invalid JSON")
                     if not isinstance(body, dict):

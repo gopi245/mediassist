@@ -40,7 +40,31 @@ def wa_number(n):
     return d
 
 
+def send_whatsapp_meta(s, to, body, media_url=None):
+    """WhatsApp Business Platform (Meta Cloud API, usually through an Indian BSP). Free-form text works inside the
+    24-hour customer window; outside it Meta requires an approved template, which the gateway reports back."""
+    pid, tok = s.get("meta_phone_id"), s.get("meta_token")
+    if not (pid and tok):
+        raise RuntimeError("WhatsApp (Meta) is not set up (Admin > Settings)")
+    if media_url:
+        payload = {"messaging_product": "whatsapp", "to": wa_number(to), "type": "document", "document": {"link": media_url, "caption": body[:1024]}}
+    else:
+        payload = {"messaging_product": "whatsapp", "to": wa_number(to), "type": "text", "text": {"preview_url": True, "body": body[:4096]}}
+    req = Request(f"https://graph.facebook.com/v21.0/{pid}/messages", data=json.dumps(payload).encode(), headers={"Content-Type": "application/json", "Authorization": "Bearer " + tok})
+    try:
+        with urlopen(req, timeout=30) as r:
+            return "WhatsApp id " + ((json.load(r).get("messages") or [{}])[0].get("id") or "?")
+    except HTTPError as e:
+        err = (json.loads(e.read() or b"{}").get("error") or {})
+        raise RuntimeError("WhatsApp (Meta): " + (err.get("message") or str(e)) + (" (outside the 24-hour window: an approved template is needed)" if err.get("code") == 131047 else ""))
+    except URLError as e:
+        raise RuntimeError(f"No internet connection ({e.reason})")
+
+
 def send_whatsapp(s, to, body, media_url=None):
+    prov = s.get("whatsapp_provider") or "auto"
+    if prov == "meta" or (prov == "auto" and s.get("meta_token") and s.get("meta_phone_id")):
+        return send_whatsapp_meta(s, to, body, media_url)
     if not all(s.get(k) for k in ("twilio_sid", "twilio_token", "twilio_from")):
         raise RuntimeError("WhatsApp is not set up (Admin > Settings)")
     if len(body) > 1500:

@@ -261,6 +261,13 @@ CREATE TABLE adverse_reactions(id INTEGER PRIMARY KEY, patient_id INTEGER NOT NU
   reaction TEXT NOT NULL, severity TEXT NOT NULL DEFAULT 'moderate', reacted_on TEXT, visit_id INTEGER, notes TEXT, recorded_by INTEGER, created_at TEXT NOT NULL);
 CREATE INDEX ix_adr_pat ON adverse_reactions(patient_id)
 """,
+# 13: pay by UPI / payment links
+r"""
+ALTER TABLE branches ADD COLUMN upi_id TEXT;
+ALTER TABLE invoices ADD COLUMN pay_link TEXT;
+ALTER TABLE invoices ADD COLUMN pay_link_id TEXT;
+CREATE INDEX ix_inv_paylink ON invoices(pay_link_id)
+""",
 ]
 
 

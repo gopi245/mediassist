@@ -271,6 +271,7 @@ a.btn{text-decoration:none}
 .bed{border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--surface);text-align:left;color:inherit;cursor:pointer;display:flex;flex-direction:column;gap:4px;min-height:92px}
 .bed.free{border-style:dashed;background:var(--surface-2)}.bed.occupied{border-left:4px solid var(--accent)}.bed.stale{outline:2px solid var(--crit)}
 .interp textarea{font:inherit;font-size:13px}
+.dictate textarea{width:100%;margin-top:6px}.btn.on{background:var(--crit);color:#fff}
 .timeline .tl.todo{opacity:.55}.timeline .tl.todo b::before{content:"○ "}.timeline .tl.done b::before{content:"● ";color:var(--ok)}
 .findrow{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);padding:8px 4px;color:inherit;cursor:pointer;font:inherit}
 .findrow:hover{background:var(--surface-2)}.findrow .rack{min-width:64px;text-align:center}

@@ -10,7 +10,7 @@ import json
 import re
 import secrets
 
-from .core import ApiError, all_access, audit, can, clean, get_settings, need, now_str, one, pcode, route, rows, today, valid_day
+from .core import ApiError, all_access, as_int, audit, can, clean, get_settings, need, now_str, one, pcode, route, rows, today, valid_day
 
 MODEL = "claude-opus-5-5"
 MAX_ROUNDS = 8
@@ -337,3 +337,82 @@ def api_info(h, c, b, q):
         allowed = False
     return {"enabled": on and allowed, "server_ai": bool(s.get("anthropic_api_key")), "patients": s.get("assistant_patients", "1") == "1",
             "system": SYSTEM, "voice_note": VOICE_NOTE, "tools": tool_defs()}
+
+
+# ---------------------------------------------------------------- voice casesheet: dictation -> structured note
+CASESHEET_SCHEMA = {"type": "object", "properties": {
+    "complaint": {"type": "string"}, "history": {"type": "string"}, "examination": {"type": "string"}, "diagnosis": {"type": "string"},
+    "icd_hint": {"type": "string", "description": "ICD-10 code if confident, else empty"},
+    "medicines": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}, "dose": {"type": "string"}, "freq": {"type": "string", "description": "1-0-1 style or OD/BD/TDS/SOS"},
+                                                                             "days": {"type": "integer"}, "instructions": {"type": "string"}}, "required": ["name", "dose", "freq", "days", "instructions"], "additionalProperties": False}},
+    "tests": {"type": "array", "items": {"type": "string"}}, "advice": {"type": "string"}, "followup_days": {"type": "integer"}},
+    "required": ["complaint", "history", "examination", "diagnosis", "icd_hint", "medicines", "tests", "advice", "followup_days"], "additionalProperties": False}
+
+
+def casesheet_prompt(c, text, patient):
+    meds = ", ".join(r[0] for r in c.execute("SELECT name FROM medicines WHERE active=1 ORDER BY name"))
+    tests = ", ".join(r[0] for r in c.execute("SELECT name FROM lab_tests WHERE active=1 ORDER BY name"))
+    who = f"{patient.get('age') or '?'}-year-old {patient.get('gender') or ''}" + (f", known: {patient['conditions']}" if patient.get("conditions") else "") + (f", allergies: {patient['allergies']}" if patient.get("allergies") else "")
+    return ("A doctor in an Indian clinic dictated this consultation, possibly mixing English with Telugu, Hindi or Tamil. Turn it into a structured casesheet in English. "
+            "Keep the doctor's clinical content; do not add findings or medicines that were not said. complaint: presenting complaint in a few words. history and examination: "
+            "the doctor's words tidied into sentences. diagnosis: as stated. medicines: only those the doctor named, with dose (e.g. 1, 1/2, 5 ml), freq as 1-0-1 / 1-1-1 / OD / BD / TDS / SOS, "
+            "days, and instructions such as after food; prefer a brand from this list when the doctor's word matches it: " + meds + ". tests: names from this list when they match: " + tests +
+            ". advice: lifestyle or care advice said. followup_days: 0 if none.\n"
+            f"Patient: {who}.\nDictation:\n" + text)
+
+
+def casesheet_map(c, out):
+    """Resolve the model's medicine and test names to records so the form can be filled; unknown ones are kept as text for the doctor."""
+    meds = rows(c.execute("SELECT id, name, generic, pack_size FROM medicines WHERE active=1"))
+    items, unknown = [], []
+    for m in out.get("medicines") or []:
+        nm = (m.get("name") or "").strip().lower()
+        hit = next((x for x in meds if x["name"].lower() == nm), None) or next((x for x in meds if nm and (nm in x["name"].lower() or (x["generic"] or "") and nm in x["generic"].lower())), None)
+        if hit:
+            items.append({"medicine_id": hit["id"], "name": hit["name"], "dose": m.get("dose") or "1", "freq": m.get("freq") or "1-0-1", "days": int(m.get("days") or 5), "instructions": m.get("instructions") or ""})
+        else:
+            unknown.append(m.get("name"))
+    tests = rows(c.execute("SELECT id, name, code FROM lab_tests WHERE active=1"))
+    tids, tunknown = [], []
+    for t in out.get("tests") or []:
+        tn = (t or "").strip().lower()
+        hit = next((x for x in tests if x["name"].lower() == tn or x["code"].lower() == tn), None) or next((x for x in tests if tn and tn in x["name"].lower()), None)
+        (tids.append(hit["id"]) if hit else tunknown.append(t))
+    icd = (out.get("icd_hint") or "").strip().upper()
+    if icd and not one(c, "SELECT 1 FROM icd10 WHERE code=?", (icd,)):
+        icd = ""
+    return {"complaint": out.get("complaint") or "", "history": out.get("history") or "", "examination": out.get("examination") or "", "diagnosis": out.get("diagnosis") or "",
+            "icd": icd, "items": items, "unknown_medicines": unknown, "lab_tests": tids, "unknown_tests": tunknown, "advice": out.get("advice") or "",
+            "followup_days": int(out.get("followup_days") or 0)}
+
+
+@route("POST", r"/api/ai/casesheet", "consult")
+def api_casesheet(h, c, b, q):
+    """Dictated consultation -> structured note and prescription draft. {text} uses the server's API key;
+    {structured: {...}} (from the in-browser demo) is just mapped. The doctor reviews everything before saving."""
+    p = one(c, "SELECT age, gender, conditions, allergies FROM patients WHERE id=?", (as_int(b.get("patient_id"), "patient"),))
+    need(p, "Patient not found", 404)
+    if isinstance(b.get("structured"), dict):
+        return casesheet_map(c, b["structured"])
+    text = clean(b, "text", 6000)
+    need(len(text) >= 10, "Dictate or type the consultation first")
+    anthropic, client = _client(c)
+    try:
+        resp = client.beta.messages.create(model=MODEL, max_tokens=4000, betas=["server-side-fallback-2026-07-01"], fallbacks="default",
+                                           output_config={"effort": "low", "format": {"type": "json_schema", "schema": CASESHEET_SCHEMA}},
+                                           messages=[{"role": "user", "content": casesheet_prompt(c, text, dict(p))}])
+    except anthropic.AuthenticationError:
+        raise ApiError(400, "The Anthropic API key was rejected. Check it in Admin > Settings.")
+    except anthropic.RateLimitError:
+        raise ApiError(429, "The AI service is busy. Try again in a minute.")
+    except anthropic.APIStatusError as e:
+        raise ApiError(502, f"AI service error ({e.status_code}). Try again later.")
+    except anthropic.APIConnectionError:
+        raise ApiError(502, "No connection to the AI service. Check the internet connection.")
+    txt = next((blk.text for blk in resp.content if blk.type == "text"), "")
+    try:
+        out = json.loads(txt)
+    except ValueError:
+        raise ApiError(502, "The AI gave an unreadable answer. Try again.")
+    audit(c, h, "ai.casesheet", f"{len(text)} chars -> {len(out.get('medicines') or [])} medicines")
+    return casesheet_map(c, out)

@@ -214,14 +214,16 @@ def api_branches(h, c, b, q):
 def api_save_branch(h, c, b, q):
     code, name, kind = clean(b, "code", 8).upper(), clean(b, "name", 100), clean(b, "kind", 20)
     need(re.fullmatch(r"[A-Z0-9]{2,8}", code) and name and kind in BRANCH_KINDS, "Code (2-8 letters/numbers), name and type are required")
+    upi = clean(b, "upi_id", 60)
+    need(not upi or re.fullmatch(r"[A-Za-z0-9._-]{2,}@[A-Za-z0-9.-]{2,}", upi), "UPI ID looks wrong (name@bank)")
     vals = (code, name, kind, clean(b, "address"), clean(b, "phone", 20), clean(b, "gstin", 20), clean(b, "dl_no", 60),
             clean(b, "report_email"), clean(b, "report_whatsapp", 20), 0 if b.get("active") is False else 1)
     try:
         if b.get("id"):
-            c.execute("UPDATE branches SET code=?,name=?,kind=?,address=?,phone=?,gstin=?,dl_no=?,report_email=?,report_whatsapp=?,active=? WHERE id=?",
-                      (*vals, as_int(b["id"], "id")))
+            c.execute("UPDATE branches SET code=?,name=?,kind=?,address=?,phone=?,gstin=?,dl_no=?,report_email=?,report_whatsapp=?,active=?,upi_id=? WHERE id=?",
+                      (*vals, upi or None, as_int(b["id"], "id")))
         else:
-            c.execute("INSERT INTO branches(code,name,kind,address,phone,gstin,dl_no,report_email,report_whatsapp,active) VALUES(?,?,?,?,?,?,?,?,?,?)", vals)
+            c.execute("INSERT INTO branches(code,name,kind,address,phone,gstin,dl_no,report_email,report_whatsapp,active,upi_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)", (*vals, upi or None))
     except sqlite3.IntegrityError:
         raise ApiError(400, "Branch code already used")
     audit(c, h, "branch.save", f"{code} {name}")

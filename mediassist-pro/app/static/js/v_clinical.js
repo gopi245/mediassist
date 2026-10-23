@@ -215,6 +215,7 @@ RENDER.consult = async (main, [vid]) => {
       <button type="button" class="btn sm ghost" data-act="adrAdd" data-pid="${p.id}" data-vid="${v.id}">Record a reaction</button>`)}
   </div>
   <div class="card"><div class="card-h"><div><h2>Consultation</h2><p>Warnings update as you prescribe</p></div><select data-change="applyTpl" style="width:auto"><option value="">Apply a template…</option>${tpl.map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join("")}</select></div>
+    <div class="dictate" style="margin-bottom:10px"><div class="row-actions"><button type="button" class="btn sm" data-act="cxDictate" id="cxDictBtn">🎤 Dictate</button><select id="cxDictLang" style="width:auto"><option value="en-IN">English</option><option value="te-IN">Telugu</option><option value="hi-IN">Hindi</option><option value="ta-IN">Tamil</option></select><button type="button" class="btn sm ghost" data-act="cxStructure">Fill the casesheet with AI</button><span class="small muted">Speak the complaint, findings, diagnosis and medicines; AI drafts the note and prescription, you review.</span></div><textarea id="cxDictText" rows="2" placeholder="Dictation appears here (or type)"></textarea></div>
     <form data-submit="saveConsult" id="cxForm" class="stack"><div class="fields">
       <div class="span2"><label>Presenting complaint</label><input name="complaint" value="${esc(v.complaint || "")}"></div>
       <div class="span2"><label>Vitals</label><div class="small muted" style="padding-top:8px">${v.temp ?? "–"}°C · P ${v.pulse ?? "–"} · BP ${v.bp_sys ?? "–"}/${v.bp_dia ?? "–"} · RR ${v.resp_rate ?? "–"} · SpO₂ ${v.spo2 ?? "–"} · GCS ${v.gcs ?? "–"} · pain ${v.pain ?? "–"}</div></div>
@@ -259,6 +260,29 @@ on("cxAdd", () => {
   $("#cxMed").value = ""; $("#cxIns").value = ""; $("#cxInfo").innerHTML = ""; drawCx(); $("#cxMed").focus();
 });
 on("cxRm", el => { CX.items.splice(+el.dataset.i, 1); drawCx(); });
+let DICT = null;
+on("cxDictate", el => {
+  if (DICT) { const d = DICT; DICT = null; try { d.stop(); } catch (e) {} el.classList.remove("on"); el.textContent = "🎤 Dictate"; return; }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition; if (!SR) return toast("Dictation needs Chrome or Edge. Type into the box instead.");
+  const box = $("#cxDictText"), base = box.value ? box.value + " " : "";
+  DICT = new SR(); DICT.lang = $("#cxDictLang").value; DICT.continuous = true; DICT.interimResults = true;
+  DICT.onresult = e => { box.value = base + [...e.results].map(r => r[0].transcript).join(" "); };
+  DICT.onerror = e => { if (e.error === "not-allowed") { toast("Microphone is blocked in this view. Type the dictation instead."); DICT = null; el.classList.remove("on"); el.textContent = "🎤 Dictate"; } };
+  DICT.onend = () => { if (DICT) { try { DICT.start(); } catch (e) {} } };
+  try { DICT.start(); el.classList.add("on"); el.textContent = "■ Stop"; } catch (e) { toast("Couldn't start the microphone."); DICT = null; }
+});
+const CASESHEET_AI = { run: async (pid, text) => api("/api/ai/casesheet", { patient_id: pid, text }) };
+on("cxStructure", async el => {
+  const text = $("#cxDictText").value.trim(); if (text.length < 10) return toast("Dictate or type the consultation first.");
+  let r; try { r = await withBusy(el, () => CASESHEET_AI.run(CX.pid, text)); } catch (e) { return toast(e.message); }
+  const f = $("#cxForm"); const put = (n, v) => { if (!v || !f[n]) return; f[n].value = f[n].value && f[n].value !== v ? f[n].value + "\n" + v : v; };
+  put("complaint", r.complaint); put("history", r.history); put("examination", r.examination); if (r.diagnosis) f.diagnosis.value = r.diagnosis; if (r.icd) f.icd.value = r.icd; put("notes", r.advice);
+  if (r.followup_days) f.followup.value = localDay(r.followup_days);
+  r.items.forEach(i => { if (!CX.items.some(x => x.medicine_id === i.medicine_id)) CX.items.push(i); });
+  r.lab_tests.forEach(id => { CX.labs.add(id); const cb = $(`input[data-change=cxLab][value="${id}"]`); if (cb) cb.checked = true; });
+  const notes = [r.unknown_medicines.length ? `not in the medicine master: ${r.unknown_medicines.join(", ")}` : "", r.unknown_tests.length ? `tests not in the catalogue: ${r.unknown_tests.join(", ")}` : ""].filter(Boolean).join("; ");
+  toast(`Draft filled: ${r.items.length} medicines, ${r.lab_tests.length} tests. Review everything before saving.` + (notes ? " " + notes : "")); drawCx();
+});
 on("cxRepeat", el => {
   const visit = CX_VISITS.find(v => v.id === +el.dataset.vid); if (!visit) return;
   let n = 0;
