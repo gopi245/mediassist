@@ -26,6 +26,7 @@ Run the automated tests: double-click **RUN-TESTS.bat** (end-to-end tests of the
 | Bed board | Every bed on one screen for the whole team: free, occupied, cleaning (with timers) and blocked, ward by ward, across branches for the owner, refreshed every 30 s; expected discharges; admit straight from a free bed; dashboard card and alerts for stalled cleaning and no free beds |
 | Inpatients | Bed board, admission with deposit, transfers, doctor rounds and nursing notes, medicine orders and dose record (MAR), charges, running bill, discharge summary and final invoice |
 | Pharmacy | Barcode billing, strip or loose tablets, prescriptions from any branch, Schedule H/H1/X rules, offline billing that syncs later, returns with credit notes, H1 register |
+| Suppliers | One record per supplier: last purchase, items, total, paid, pending and overdue; full purchase history with invoice, batches, prices, payment status, payments and returns; compare what each supplier last charged for a medicine; trace any batch on the shelf back to its supplier, invoice, date and price |
 | Stock | Racks, expiry, reorder and expiry-rescue suggestions, purchase orders, goods received, supplier returns, fridge temperature log, stock counts, medicine master |
 | Hospital billing | Invoices, part payments and dues, refunds, insurance claims (pre-auth → query → approved → settled/rejected), day-end cash closing, service rates |
 | Documents | Photos/PDFs linked to patient, doctor, bill, invoice, admission, lab order, claim or stock; optional AI reader |

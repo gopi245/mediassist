@@ -1,0 +1,52 @@
+/* Suppliers: one organised record per supplier, purchase history with invoices and batches, price comparison,
+   payment status, and tracing a batch on the shelf back to where it came from. */
+"use strict";
+const SUP_PILL = { paid: ["Paid", "p-ok"], partial: ["Partial", "p-warn"], pending: ["Pending", "p-warn"], overdue: ["Overdue", "p-crit"], none: ["No purchases", "p-plain"] };
+const supPill = s => pill(...(SUP_PILL[s] || [s, "p-plain"]));
+
+STOCK.suppliers = async el => {
+  if (App.cache.supSel) return supplierHistory(el, App.cache.supSel);
+  const days = App.cache.supDays || 365, d = await api("/api/suppliers/overview?days=" + days);
+  el.innerHTML = `<div class="kpis">${kpi("Pending to suppliers", money(d.pending), d.overdue ? `${money(d.overdue)} overdue` : "nothing overdue", d.overdue ? "crit" : d.pending ? "warn" : "")}${kpi("Suppliers", d.suppliers.length, `${d.active} bought from in ${days} days`)}${kpi("Bought", money(d.suppliers.reduce((a, s) => a + s.total, 0)), `last ${days} days`)}</div>
+    <div class="g-main"><div class="stack">${card("Supplier management", "Last purchase, items, total, paid and what is pending. Open one for its full history.", `<div class="row-actions" style="margin-bottom:8px">${[90, 365, 1095].map(n => `<button class="btn sm ${n === days ? "" : "ghost"}" data-act="supDays" data-n="${n}">${n === 1095 ? "3 years" : n + " days"}</button>`).join("")}<input data-input="supFilter" placeholder="Filter suppliers" style="width:auto;margin-left:auto"></div>
+      ${tbl(["Supplier", "Last purchase", "Items", "Total", "Paid", "Pending", "Status", ""], d.suppliers.map(s => `<tr class="sup-row" data-name="${esc(s.name.toLowerCase())}"><td><b>${esc(s.name)}</b><div class="small muted">${esc(s.phone || "")}${s.gstin ? " · " + esc(s.gstin) : ""}</div></td><td class="mono">${s.last_purchase || "–"}</td><td class="num">${s.items}</td><td class="num">${money(s.total)}</td><td class="num">${money(s.paid)}</td><td class="num"><b>${money(s.pending)}</b>${s.returns_open ? `<div class="small muted">${s.returns_open} return${s.returns_open > 1 ? "s" : ""} awaiting credit</div>` : ""}</td><td>${supPill(s.status)}</td>
+        <td class="row-actions"><button class="btn sm" data-act="supOpen" data-id="${s.id}">History</button>${s.pending && can("stock_admin") ? `<button class="btn sm ghost" data-act="go" data-v="stock" data-p="dues">Pay</button>` : ""}</td></tr>`).join(""), "No suppliers yet. Add one below or while receiving goods.")}
+      ${can("stock") ? `<form data-submit="supAdd" class="fields" style="margin-top:10px"><div><label>New supplier</label><input name="name" placeholder="Name" required></div><div><label>Phone</label><input name="phone"></div><div><label>GSTIN</label><input name="gstin"></div><div style="align-self:end"><button class="btn sm">Add supplier</button></div></form>` : ""}`)}</div>
+    <div class="stack">${card("Compare supplier prices", "What each supplier last charged for a medicine", `<input id="cmpMed" list="medOpts" placeholder="Medicine" data-input="cmpMed"><div id="cmpOut" style="margin-top:10px"><p class="small muted">Type a medicine to compare.</p></div>`)}</div></div>`;
+  await loadMeds();
+};
+on("supDays", el => { App.cache.supDays = +el.dataset.n; go("stock", ["suppliers"]); });
+on("supFilter", el => { const q = el.value.trim().toLowerCase(); $$(".sup-row").forEach(r => r.hidden = q && !r.dataset.name.includes(q)); });
+on("supAdd", async f => { await api("/api/suppliers", vals(f)); toast("Supplier added"); go("stock", ["suppliers"]); });
+on("supOpen", el => { App.cache.supSel = +el.dataset.id; go("stock", ["suppliers"]); });
+on("supBack", () => { App.cache.supSel = null; go("stock", ["suppliers"]); });
+on("cmpMed", debounce(async el => {
+  const m = medByName(el.value); const out = $("#cmpOut"); if (!m) { out.innerHTML = '<p class="small muted">Pick a medicine from the list.</p>'; return; }
+  const d = await api("/api/stock/compare?medicine_id=" + m.id);
+  out.innerHTML = d.suppliers.length ? tbl(["Supplier", "Last price / unit", "Per pack", "Last bought", "Times", "Qty", ""], d.suppliers.map((s, i) => `<tr${i === 0 ? ' class="flag-ok"' : ""}><td><b>${esc(s.supplier)}</b>${i === 0 && d.suppliers.length > 1 ? ` ${pill("Cheapest", "p-ok")}` : ""}</td><td class="num"><b>${money(s.last_cost)}</b>${s.min_cost !== s.max_cost ? `<div class="small muted">${money(s.min_cost)} – ${money(s.max_cost)}</div>` : ""}</td><td class="num">${money(s.last_cost_pack)}</td><td class="mono small">${s.last_date}<div class="muted">${esc(s.last_invoice || s.last_grn)}</div></td><td class="num">${s.times}</td><td class="num">${s.qty}</td><td><button class="btn sm ghost" data-act="supOpen" data-id="${s.supplier_id}">History</button></td></tr>`).join(""))
+      + (d.saving ? `<p class="small">Buying from <b>${esc(d.cheapest)}</b> instead of the dearest supplier saves <b>${money(d.saving)}</b> per pack of ${d.medicine.pack_size}.</p>` : "")
+    : `<p class="small muted">No purchases of ${esc(d.medicine.name)} recorded yet.</p>`;
+}, 300));
+
+async function supplierHistory(el, sid) {
+  const d = await api(`/api/suppliers/${sid}/history`), s = d.supplier;
+  el.innerHTML = `<div class="row-actions" style="margin-bottom:10px"><button class="btn sm ghost" data-act="supBack">← All suppliers</button></div>
+    <div class="kpis">${kpi("Total purchased", money(d.total), `${d.purchases.length} goods receipts`)}${kpi("Paid", money(d.paid), "")}${kpi("Pending", money(d.pending), d.pending ? "see Supplier dues to pay" : "nothing owed", d.pending ? "warn" : "")}${kpi("Returns", money(d.returns.reduce((a, r) => a + r.total, 0)), `${d.returns.filter(r => r.status === "sent").length} awaiting credit note`)}</div>
+    ${card(esc(s.name), `${esc(s.phone || "")}${s.gstin ? " · GSTIN " + esc(s.gstin) : ""}${s.email ? " · " + esc(s.email) : ""}`, `${can("stock") ? `<form data-submit="supEdit" class="fields"><input type="hidden" name="id" value="${s.id}"><div><label>Phone</label><input name="phone" value="${esc(s.phone || "")}"></div><div><label>GSTIN</label><input name="gstin" value="${esc(s.gstin || "")}"></div><div><label>Email</label><input name="email" value="${esc(s.email || "")}"></div><div style="align-self:end"><button class="btn sm ghost">Save</button></div></form>` : ""}`)}
+    ${card("Purchase history", "Every invoice with its batches, prices and payment status", tbl(["Date", "Invoice", "Items", "Amount", "Paid", "Due", "Status", ""], d.purchases.map((p, i) => `<tr><td class="mono">${p.date}</td><td class="mono small">${esc(p.invoice_no || "–")}<div class="muted">${p.grn}</div></td><td class="num">${p.lines.length}</td><td class="num">${money(p.total)}</td><td class="num">${money(p.paid)}</td><td class="num"><b>${money(p.due)}</b>${p.due_date && p.due ? `<div class="small muted">by ${p.due_date}</div>` : ""}</td><td>${supPill(p.status)}</td><td><button class="btn sm ghost" data-act="supLines" data-i="${i}">Batches</button></td></tr><tr id="supL${i}" hidden><td colspan="8">${tbl(["Medicine", "Batch", "Expiry", "Received", "Left", "Cost / unit", "MRP", "Rack", ""], p.lines.map(l => `<tr><td>${esc(l.medicine)}</td><td class="mono">${esc(l.batch || "")}</td><td class="mono">${l.expiry}</td><td class="num">${l.qty_in}</td><td class="num">${l.qty_left}</td><td class="num">${money(l.cost)}</td><td class="num">${money(l.mrp)}</td><td><span class="rack sm">${esc(l.rack || "–")}</span></td><td><button class="btn sm ghost" data-act="traceBatch" data-id="${l.batch_id}">Trace</button></td></tr>`).join(""))}</td></tr>`).join(""), "No purchases from this supplier at this branch."))}
+    ${d.payments.length ? card("Payments", "", tbl(["When", "Amount", "How", "Reference", "For", "By"], d.payments.map(p => `<tr><td class="mono small">${p.at}</td><td class="num">${money(p.amount)}</td><td>${esc(p.mode)}</td><td class="mono small">${esc(p.ref || "")}</td><td class="mono small">GRN${p.purchase_id}</td><td>${esc(p.uname || "")}</td></tr>`).join(""))) : ""}
+    ${d.returns.length ? card("Returns to this supplier", "", tbl(["When", "Reason", "Amount", "Credit note", "Status"], d.returns.map(r => `<tr><td class="mono small">${r.created_at}</td><td>${esc(r.reason || "")}</td><td class="num">${money(r.total)}</td><td class="mono small">${esc(r.credit_note_no || "–")}</td><td>${pill(r.status, r.status === "credited" ? "p-ok" : "p-warn")}</td></tr>`).join(""))) : ""}`;
+  App.cache.supHist = d;
+}
+on("supLines", el => { const r = $("#supL" + el.dataset.i); r.hidden = !r.hidden; });
+on("supEdit", async f => { const v = vals(f); await api("/api/suppliers/" + v.id, v); toast("Saved"); go("stock", ["suppliers"]); });
+
+/* trace a batch back to its supplier */
+on("traceBatch", async el => {
+  const t = await api(`/api/batches/${el.dataset.id}/trace`), b = t.batch, p = t.purchase;
+  await dialog(`${esc(b.medicine)} · batch ${esc(b.batch || "–")}`, `${p ? `<div class="kpis" style="grid-template-columns:repeat(2,1fr)">${kpi("Supplied by", esc(p.supplier || "–"), `${esc(p.phone || "")}`)}${kpi("Purchase price", money(b.cost) + " / unit", `MRP ${money(b.mrp)} · pack of ${b.pack_size}: ${money(b.cost * b.pack_size)}`)}${kpi("Invoice", esc(p.invoice_no || p.grn), `received ${p.date} by ${esc(p.received_by || "")}`)}${kpi("Payment", supPill(p.status), `${money(p.paid)} of ${money(p.total)}${p.due_date ? " · due " + p.due_date : ""}`)}</div>` : alertRow("", esc(t.note))}
+    <p class="small"><b>Expiry:</b> ${b.expiry} · <b>Rack:</b> ${esc(b.rack || "–")} · <b>Received:</b> ${t.received} · <b>Sold:</b> ${t.sold} · <b>Left:</b> ${t.left}${t.same_batch_elsewhere.length ? `<br><b>Same batch at:</b> ${t.same_batch_elsewhere.map(x => `${esc(x.bcode)} (${x.qty})`).join(", ")}` : ""}</p>
+    ${tbl(["When", "What", "Qty", "Ref", "By"], t.moves.map(m => `<tr><td class="mono small">${m.at}</td><td>${esc(m.kind)}</td><td class="num">${m.change > 0 ? "+" : ""}${m.change}</td><td class="mono small">${esc(m.ref || "")}</td><td>${esc(m.uname || "")}</td></tr>`).join(""), "No movements recorded.")}
+    ${p && p.supplier_id ? `<div class="btns"><button type="button" class="btn sm ghost" data-act="traceSup" data-id="${p.supplier_id}">Supplier history</button></div>` : ""}`, { ok: "", cancel: "Close", wide: true });
+});
+on("traceSup", el => { $("#mCancel").click(); App.cache.supSel = +el.dataset.id; go("stock", ["suppliers"]); });

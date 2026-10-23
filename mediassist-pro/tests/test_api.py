@@ -1020,3 +1020,35 @@ class T23LabExplanation(unittest.TestCase):
         self.assertNotIn(b"What this means", pdf_text(doc.get(f"/api/pdf/lab/{o['id']}")[1]), "kept off the patient's report on request")
         msgs = [m for m in Client("owner").ok("/api/messages?kind=lab_report") if f"LAB{o['id']}" in (m["body"] or "")]
         self.assertTrue(msgs and "What this means" in msgs[0]["body"], "the WhatsApp text carried the explanation at verification")
+
+
+class T24Suppliers(unittest.TestCase):
+    def test_supplier_record_history_compare_and_trace(self):
+        ph, mgr = Client("pharma.ch"), Client("manager.ch")
+        meds = {m["name"]: m for m in ph.ok("/api/medicines")}
+        s1 = ph.ok("/api/suppliers", {"name": "ABC Pharma Test", "phone": "9000001111", "gstin": "36AAAAA0000A1Z5"})["id"]
+        s2 = ph.ok("/api/suppliers", {"name": "Sunrise Distributors Test"})["id"]
+        exp = core.add_days(core.today(), 500)
+        g1 = ph.ok("/api/purchases", {"supplier_id": s1, "invoice_no": "INV-0081", "lines": [{"medicine_id": meds["Cefixime 200"]["id"], "batch": "BTH-2487", "expiry": exp, "qty": 100, "cost": 12.5, "mrp": 20, "unit": "unit"}]})
+        g2 = ph.ok("/api/purchases", {"supplier_id": s2, "invoice_no": "INV-0074", "lines": [{"medicine_id": meds["Cefixime 200"]["id"], "batch": "BTH-2190", "expiry": exp, "qty": 50, "cost": 13, "mrp": 20, "unit": "unit"}]})
+        mgr.ok(f"/api/purchases/{g1['id']}/pay", {"amount": 1250, "mode": "bank", "ref": "UTR1"})
+        ov = ph.ok("/api/suppliers/overview")
+        a = [s for s in ov["suppliers"] if s["id"] == s1][0]
+        b = [s for s in ov["suppliers"] if s["id"] == s2][0]
+        self.assertEqual((a["status"], a["total"], a["paid"], a["pending"], a["items"], a["last_purchase"]), ("paid", 1250, 1250, 0, 1, core.today()))
+        self.assertEqual((b["status"], b["pending"]), ("pending", 650))
+        h = ph.ok(f"/api/suppliers/{s1}/history")
+        self.assertEqual(h["purchases"][0]["invoice_no"], "INV-0081")
+        line = h["purchases"][0]["lines"][0]
+        self.assertEqual((line["batch"], line["qty_in"], line["cost"], line["medicine"]), ("BTH-2487", 100, 12.5, "Cefixime 200"))
+        self.assertEqual(h["payments"][0]["amount"], 1250)
+        cmp_ = ph.ok(f"/api/stock/compare?medicine_id={meds['Cefixime 200']['id']}")
+        self.assertEqual(cmp_["suppliers"][0]["supplier"], "ABC Pharma Test", "cheapest first")
+        self.assertEqual(cmp_["cheapest"], "ABC Pharma Test")
+        self.assertAlmostEqual(cmp_["saving"], 0.5 * meds["Cefixime 200"]["pack_size"], places=2)
+        tr = ph.ok(f"/api/batches/{line['batch_id']}/trace")
+        self.assertEqual((tr["purchase"]["supplier"], tr["purchase"]["invoice_no"], tr["purchase"]["status"], tr["received"], tr["left"]), ("ABC Pharma Test", "INV-0081", "paid", 100, 100))
+        sv = ph.ok("/api/stock")
+        self.assertTrue(any(x.get("supplier") == "ABC Pharma Test" and x["batch"] == "BTH-2487" for x in sv["batches"]), "batch list names the supplier")
+        ph.ok(f"/api/suppliers/{s1}", {"phone": "9000002222"})
+        self.assertEqual(ph.ok(f"/api/suppliers/{s1}/history")["supplier"]["phone"], "9000002222")

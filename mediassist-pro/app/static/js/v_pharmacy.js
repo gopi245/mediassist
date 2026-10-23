@@ -102,7 +102,7 @@ RENDER.stock = async (main, [pane]) => {
     return;
   }
   pane = pane || App.cache.stockPane || "overview"; App.cache.stockPane = pane;
-  const panes = [["overview", "Overview"]].concat(can("stock") ? [["edit", "Edit stock & photos"]] : [], [["insights", "Reorder & expiry"], ["batches", "Batches & racks"]]).concat(can("stock") ? [["po", "Purchase orders"], ["grn", "Receive goods"], ["returns", "Supplier returns"], ["cold", "Fridge log"], ["count", "Stock count"], ["dues", "Supplier dues"], ["weekly", "Weekly summary"], ["master", "Medicine master"]] : []);
+  const panes = [["overview", "Overview"]].concat(can("stock") ? [["edit", "Edit stock & photos"]] : [], [["insights", "Reorder & expiry"], ["batches", "Batches & racks"]]).concat(can("stock") ? [["po", "Purchase orders"], ["grn", "Receive goods"], ["suppliers", "Suppliers"], ["dues", "Supplier dues"], ["returns", "Supplier returns"], ["cold", "Fridge log"], ["count", "Stock count"], ["weekly", "Weekly summary"], ["master", "Medicine master"]] : []);
   main.innerHTML = subtabs(panes, pane, "stockTab") + `<div id="stockBody"><p class="empty">Loading…</p></div>`;
   await (STOCK[pane] || STOCK.overview)($("#stockBody"));
 };
@@ -123,10 +123,10 @@ STOCK.insights = async el => {
 };
 STOCK.batches = async el => {
   const sv = await api("/api/stock"); App.cache.sv = sv;
-  el.innerHTML = card("All batches", "Soonest expiry first", tbl(["Medicine", "Batch", "Rack", "Qty", "Expires", "MRP", ""], sv.batches.map(b => `<tr><td><b>${esc(b.medicine)}</b></td><td class="mono">${esc(b.batch || "")}</td>
+  el.innerHTML = card("All batches", "Soonest expiry first · Trace shows the supplier, invoice, date and price", tbl(["Medicine", "Batch", "Supplier", "Rack", "Qty", "Expires", "MRP", ""], sv.batches.map(b => `<tr><td><b>${esc(b.medicine)}</b></td><td class="mono">${esc(b.batch || "")}</td><td class="small">${esc(b.supplier || "–")}${b.received_at ? `<div class="muted mono">${b.received_at.slice(0, 10)}</div>` : ""}</td>
     <td>${can("stock") ? `<input value="${esc(b.rack || "")}" data-change="setRack" data-id="${b.id}" class="mono" style="width:84px" aria-label="Rack">` : `<span class="rack sm">${esc(b.rack || "–")}</span>`}</td><td class="num">${b.qty}</td>
     <td>${pill(b.days_left < 0 ? "expired" : b.days_left + " d", b.days_left <= 30 ? "p-crit" : b.days_left <= 90 ? "p-warn" : "p-ok")} <span class="mono small">${b.effective_expiry}</span>${b.opened ? `<div class="small muted">opened ${b.opened}</div>` : ""}</td><td class="num">${money(b.mrp)}</td>
-    <td class="row-actions">${can("stock") ? `<button class="btn sm ghost" data-act="writeOff" data-id="${b.id}" data-q="${b.qty}" data-x="${b.days_left < 0 ? 1 : 0}">Write off</button>` : ""}${can("stock_admin") && b.days_left >= 0 ? `<button class="btn sm ghost" data-act="transferAsk" data-id="${b.id}" data-q="${b.qty}">Transfer</button>` : ""}${can("stock") && b.form === "Syrup" && !b.opened ? `<button class="btn sm ghost" data-act="openBatch" data-id="${b.id}">Opened</button>` : ""}</td></tr>`).join("")));
+    <td class="row-actions">${can("stock") ? `<button class="btn sm ghost" data-act="traceBatch" data-id="${b.id}">Trace</button><button class="btn sm ghost" data-act="writeOff" data-id="${b.id}" data-q="${b.qty}" data-x="${b.days_left < 0 ? 1 : 0}">Write off</button>` : ""}${can("stock_admin") && b.days_left >= 0 ? `<button class="btn sm ghost" data-act="transferAsk" data-id="${b.id}" data-q="${b.qty}">Transfer</button>` : ""}${can("stock") && b.form === "Syrup" && !b.opened ? `<button class="btn sm ghost" data-act="openBatch" data-id="${b.id}">Opened</button>` : ""}</td></tr>`).join("")));
 };
 on("setRack", async el => { await api("/api/batches/" + el.dataset.id, { rack: el.value }); toast("Rack updated"); });
 on("openBatch", async el => { await api("/api/batches/" + el.dataset.id, { opened: localDay() }); toast("Marked opened. It now expires in 30 days."); go("stock", ["batches"]); });

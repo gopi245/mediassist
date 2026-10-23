@@ -177,7 +177,8 @@ def api_stock(h, c, b, q):
         m = meds[mid]
         return summary.setdefault(mid, {"medicine_id": mid, "name": m["name"], "generic": m["generic"], "form": m["form"], "schedule": m["schedule"],
                                         "pack_size": m["pack_size"], "reorder_level": m["reorder_level"], "usable": 0, "expired": 0, "value_p": 0, "near_expiry": 0, "racks": []})
-    for bt in rows(c.execute("SELECT * FROM batches WHERE branch_id=? AND qty>0", (br["id"],))):
+    for bt in rows(c.execute("SELECT bt.*, sp.name supplier FROM batches bt LEFT JOIN purchases p ON p.id=bt.purchase_id LEFT JOIN suppliers sp ON sp.id=p.supplier_id "
+                             "WHERE bt.branch_id=? AND bt.qty>0", (br["id"],))):
         d, s = days_left(bt), row(bt["medicine_id"])
         if d < 0:
             s["expired"] += bt["qty"]
