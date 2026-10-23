@@ -1,6 +1,6 @@
 """Laboratory: test catalogue with reference ranges, orders from OPD/IPD, sample collection,
 result entry with automatic H/L/critical flags, verification, delivery to doctor and patient."""
-from .core import (ApiError, as_int, audit, can, clean, in_tx, need, need_branch, now_str, one, opt_num, pcode, qget, route, rows, today)
+from .core import (ApiError, R, as_int, audit, can, clean, in_tx, need, need_branch, now_str, one, opt_num, pcode, qget, route, rows, today)
 from .lab_explain import interpret
 
 STATUSES = ("ordered", "collected", "resulted", "verified", "cancelled")
@@ -67,6 +67,16 @@ def order_detail(c, oid):
     o["interp"] = _json.loads(o["interpretation"]) if o["interpretation"] else None
     o["critical"] = any(p["flag"] in ("LL", "HH") for t in o["tests"] for p in t["params"])
     o["abnormal"] = sum(1 for t in o["tests"] for p in t["params"] if p["flag"] not in (None, "N"))
+    inv = one(c, "SELECT * FROM invoices WHERE id=?", (o["invoice_id"],)) if o["invoice_id"] else None
+    if inv and not inv["cancelled_at"]:
+        from .m_billing import inv_state
+        st = inv_state(c, inv)
+        o["billing"] = {"inv_no": inv["inv_no"], "invoice_id": inv["id"], "at": inv["created_at"], "status": st["status"], "due": R(st["due_p"]), "total": R(inv["total_p"]), "kind": inv["kind"]}
+    else:
+        o["billing"] = None
+    sent = one(c, "SELECT at, ok, channel FROM messages WHERE kind='lab_report' AND body LIKE ? ORDER BY id DESC LIMIT 1", (f"%LAB{o['id']}%",))
+    o["sent"] = dict(sent) if sent else None
+    o["ack"] = one(c, "SELECT u.name, o2.crit_ack_at FROM lab_orders o2 LEFT JOIN users u ON u.id=o2.crit_ack_by WHERE o2.id=? AND o2.crit_ack_at IS NOT NULL", (o["id"],))
     return o
 
 
@@ -94,7 +104,8 @@ def api_orders(h, c, b, q):
     need_branch(h, c, "hospital")
     status = qget(q, "status", "open")
     sql = ("SELECT o.*, p.name pname, p.age, p.gender, u.name dname, (SELECT group_concat(t.name, ', ') FROM lab_order_items i JOIN lab_tests t ON t.id=i.test_id "
-           "WHERE i.order_id=o.id) tests FROM lab_orders o JOIN patients p ON p.id=o.patient_id LEFT JOIN users u ON u.id=o.doctor_id WHERE o.branch_id=?")
+           "WHERE i.order_id=o.id) tests, (SELECT inv_no FROM invoices i2 WHERE i2.id=o.invoice_id AND i2.cancelled_at IS NULL) inv_no "
+           "FROM lab_orders o JOIN patients p ON p.id=o.patient_id LEFT JOIN users u ON u.id=o.doctor_id WHERE o.branch_id=?")
     args = [h.branch]
     if status == "open":
         sql += " AND o.status IN ('ordered','collected','resulted')"

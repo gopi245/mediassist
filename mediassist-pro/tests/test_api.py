@@ -1159,3 +1159,36 @@ class T28PatientHistory(unittest.TestCase):
         self.assertEqual(rec.post(f"/api/reactions/{prof['reactions'][0]['id']}/delete", {})[0], 400, "a reason is needed to remove a reaction")
         rec.ok(f"/api/reactions/{prof['reactions'][0]['id']}/delete", {"reason": "entered on the wrong patient"})
         self.assertEqual(len(doc.ok(f"/api/patients/{pid}")["reactions"]), 1)
+
+
+class T29LabBillingMatch(unittest.TestCase):
+    def test_bill_must_match_the_order_and_timeline(self):
+        rec, lab, doc = Client("reception.ch"), Client("lab.ch"), Client("dr.rao")
+        tests = {t["code"]: t for t in lab.ok("/api/lab/tests")}
+        pid = rec.ok("/api/patients", {"name": "Lab Bill Test", "phone": "9000077777", "age": 50, "gender": "Male", "consent": True, "force": True})["id"]
+        o = rec.ok("/api/lab/orders", {"patient_id": pid, "tests": [tests["CBC"]["id"], tests["FBS"]["id"], tests["LIPID"]["id"]]})
+        unb = rec.ok(f"/api/patients/{pid}/unbilled")["labs"]
+        self.assertEqual(sorted(l["name"] for l in unb if l["id"] == o["id"]), sorted([tests["CBC"]["name"], tests["FBS"]["name"], tests["LIPID"]["name"]]))
+        line = lambda l: {"service_id": l["service_id"], "qty": 1, "rate": l["rate_p"] / 100, "disc": 0, "ref": "LAB%d" % o["id"]}
+        # one test left off: refused
+        st, r = rec.post("/api/invoices", {"patient_id": pid, "items": [line(unb[0]), line(unb[1])], "pay_now": 0})
+        self.assertEqual(st, 400); self.assertIn("ordered but not on this bill", r["error"])
+        # a test the doctor did not order: refused
+        extra = next(s for s in rec.ok("/api/services") if s["name"].startswith("Lab: ") and s["id"] not in [l["service_id"] for l in unb])
+        st, r = rec.post("/api/invoices", {"patient_id": pid, "items": [line(l) for l in unb] + [{"service_id": extra["id"], "qty": 1, "rate": extra["rate_p"] / 100, "disc": 0, "ref": "LAB%d" % o["id"]}], "pay_now": 0})
+        self.assertEqual(st, 400); self.assertIn("did not order", r["error"])
+        # another patient's order: refused
+        st, r = rec.post("/api/invoices", {"patient_id": 3, "items": [line(l) for l in unb], "pay_now": 0})
+        self.assertEqual(st, 400); self.assertIn("another patient", r["error"])
+        # exactly the order: accepted, linked, and shown on the order's timeline
+        inv = rec.ok("/api/invoices", {"patient_id": pid, "items": [line(l) for l in unb], "pay_now": 0})
+        d = lab.ok(f"/api/lab/orders/{o['id']}")
+        self.assertEqual(d["billing"]["inv_no"], inv["inv_no"])
+        self.assertEqual(d["billing"]["status"], "due")
+        self.assertEqual(rec.post("/api/invoices", {"patient_id": pid, "items": [line(l) for l in unb], "pay_now": 0})[0], 400, "cannot be billed twice")
+        self.assertFalse([l for l in rec.ok(f"/api/patients/{pid}/unbilled")["labs"] if l["id"] == o["id"]], "no longer unbilled")
+        wl = [x for x in lab.ok("/api/lab/orders?status=open") if x["id"] == o["id"]][0]
+        self.assertEqual(wl["inv_no"], inv["inv_no"], "worklist shows the bill")
+        lab.ok(f"/api/lab/orders/{o['id']}/collect", {})
+        d = lab.ok(f"/api/lab/orders/{o['id']}")
+        self.assertTrue(d["collected_at"] and d["collected_name"] and d["billing"] and d["sent"] is None)

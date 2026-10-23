@@ -49,7 +49,7 @@ on("hbPat", async el => {
   $("#hUnb").innerHTML = (u.dues.length ? alertRow("", `<b>Previous dues:</b> ${u.dues.map(d => `<a href="#hbilling/inv/${d.id}">${d.inv_no}</a> ${money(d.due)}`).join(", ")}`) : "") +
     (u.credit_bills || []).map(cb => alertRow("", `<b>Pharmacy credit bill</b> ${cb.bill_no} · ${cb.date} · <b>${money(cb.due)}</b> <button class="btn sm" data-act="settleBill" data-id="${cb.bill_id}" data-no="${cb.bill_no}" data-amt="${cb.due}">Collect now</button>`)).join("") +
     u.visits.map(v => alertRow("info", `<b>Consultation</b> ${v.completed_at} · ${esc(v.dname || "")} · ${esc(v.diagnosis || "")} <button class="btn sm" data-act="hVisit" data-id="${v.id}" data-doc="${v.doctor_id || ""}">Add consultation fee</button>`)).join("") +
-    (u.labs.length ? alertRow("info", `<b>Lab tests not billed:</b> ${u.labs.map(l => `LAB${l.id} ${esc(l.name)}`).join(", ")} <button class="btn sm" data-act="hLabs">Add lab tests</button>`) : "");
+    (u.labs.length ? alertRow("info", `<b>Lab tests ordered, not yet billed:</b> ${[...new Set(u.labs.map(l => l.id))].map(id => `LAB${id}: ${u.labs.filter(l => l.id === id).map(l => esc(l.name)).join(" + ")}`).join(" · ")} <button class="btn sm" data-act="hLabs">Add exactly these tests</button><div class="small muted">The bill is checked against the doctor's order: nothing missing, nothing extra.</div>`) : "");
   App.cache.consSvc = cons;
 });
 on("hVisit", el => { const s = App.cache.consSvc; INV = INV.filter(l => l.cat !== "Consultation"); INV.unshift({ service_id: s.id, name: s.name, cat: s.cat, qty: 1, rate: P2R(s.rate_p), disc: 0 }); App.cache.hVisit = +el.dataset.id; const ds = $("form[data-submit=hSave]") && $("[name=doctor_id]"); if (ds && el.dataset.doc) ds.value = el.dataset.doc; hDraw(); });

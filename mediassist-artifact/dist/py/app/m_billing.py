@@ -59,6 +59,23 @@ def create_invoice(c, h, pid, items, doctor_id=None, visit_id=None, admission_id
         sub += net + g
         gst += g
     discount_p = min(discount_p, sub)
+    # lab lines carry ref "LAB<n>": the bill must match the doctor's order exactly, never a guess
+    by_order = {}
+    for ln in lines:
+        if ln[8] and str(ln[8]).startswith("LAB"):
+            by_order.setdefault(int(str(ln[8])[3:]), []).append(ln[0])
+    for oid, sids in by_order.items():
+        o = one(c, "SELECT o.*, i.cancelled_at inv_cancelled FROM lab_orders o LEFT JOIN invoices i ON i.id=o.invoice_id WHERE o.id=?", (oid,))
+        need(o, f"Lab order LAB{oid} not found", 404)
+        need(o["patient_id"] == pid, f"LAB{oid} belongs to another patient")
+        need(o["status"] != "cancelled", f"LAB{oid} was cancelled")
+        need(not o["invoice_id"] or o["inv_cancelled"], f"LAB{oid} is already billed")
+        ordered = {r[0]: r[1] for r in c.execute("SELECT t.service_id, t.name FROM lab_order_items i JOIN lab_tests t ON t.id=i.test_id WHERE i.order_id=?", (oid,))}
+        missing = [n for s_, n in ordered.items() if s_ not in sids]
+        extra = sids.count(None) + sum(1 for s_ in sids if s_ is not None and s_ not in ordered)
+        dup = len(sids) - len(set(sids))
+        need(not missing, f"LAB{oid}: ordered but not on this bill: {', '.join(missing)}. Use 'Add lab tests' so the bill matches the order.")
+        need(not extra and not dup, f"LAB{oid}: this bill has tests the doctor did not order. Bill only what was ordered.")
     n = c.execute("SELECT COUNT(*) FROM invoices WHERE branch_id=?", (br["id"],)).fetchone()[0] + 1
     inv_no = f"{br['code']}/{'IP' if kind == 'ipd' else 'H'}/{n:05d}"
     while one(c, "SELECT 1 FROM invoices WHERE inv_no=?", (inv_no,)):

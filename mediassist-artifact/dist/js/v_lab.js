@@ -10,7 +10,7 @@ RENDER.lab = async (main, [mode, id]) => {
   App.cache.labTests = tests;
   main.innerHTML = `<div class="g-main"><div class="card"><div class="card-h"><div><h2>Worklist</h2><p>STAT and urgent orders first</p></div></div>
     ${subtabs([["open", "Open"], ["resulted", "Needs verification"], ["verified", "Verified (7 days)"], ["cancelled", "Cancelled"]], st, "labTab")}
-    ${tbl(["Order", "Patient", "Tests", "Priority", "Status", ""], list.map(o => `<tr class="click" data-act="go" data-v="lab" data-p="o/${o.id}"><td class="mono">LAB${o.id}<div class="small muted">${o.created_at.slice(5)}</div></td><td>${esc(o.pname)} <span class="small muted">${o.code} · ${o.age ?? "?"}${(o.gender || " ")[0]}</span></td><td class="small">${esc(o.tests)}</td><td>${o.priority === "routine" ? "Routine" : pill(o.priority.toUpperCase(), "p-crit")}</td><td>${pill(...LAB_ST[o.status])}</td><td><button class="btn sm ghost">Open</button></td></tr>`).join(""), "No orders here.")}</div>
+    ${tbl(["Order", "Patient", "Tests", "Priority", "Status", ""], list.map(o => `<tr class="click" data-act="go" data-v="lab" data-p="o/${o.id}"><td class="mono">LAB${o.id}<div class="small muted">${o.created_at.slice(5)}</div></td><td>${esc(o.pname)} <span class="small muted">${o.code} · ${o.age ?? "?"}${(o.gender || " ")[0]}</span></td><td class="small">${esc(o.tests)}</td><td>${o.priority === "routine" ? "Routine" : pill(o.priority.toUpperCase(), "p-crit")}</td><td>${pill(...LAB_ST[o.status])}${!o.inv_no && !o.admission_id && o.status !== "cancelled" ? ` ${pill("Not billed", "p-warn")}` : ""}</td><td><button class="btn sm ghost">Open</button></td></tr>`).join(""), "No orders here.")}</div>
     ${can("visit_create") || can("lab") ? card("New lab order", "Walk-in tests or a doctor's paper prescription", `<form data-submit="labNew" class="stack"><div class="fields">${patInput()}<div><label>Priority</label><select name="priority"><option value="routine">Routine</option><option value="urgent">Urgent</option><option value="stat">STAT</option></select></div></div>
       <div class="stack" style="gap:2px">${tests.map(t_ => `<label class="check" style="margin:0"><input type="checkbox" name="t${t_.id}"> ${esc(t_.name)} <span class="muted small">${t_.rate_p ? money(P2R(t_.rate_p)) : ""} · ${t_.sample || ""}</span></label>`).join("")}</div>
       <div class="btns"><button class="btn">Create order</button></div></form>`) : ""}</div>`;
@@ -31,6 +31,21 @@ function liveFlag(p, v) {
   if (p.crit_low != null && n < p.crit_low) return "LL"; if (p.crit_high != null && n > p.crit_high) return "HH";
   if (p.low != null && n < p.low) return "L"; if (p.high != null && n > p.high) return "H"; return "N";
 }
+/* one record, every step: who did what and when, from the doctor's order to the patient's phone */
+function labTimeline(o) {
+  const step = (done, title, when, who, extra) => `<div class="tl ${done ? "done" : "todo"}"><div class="when">${done ? (when || "").slice(0, 16) : "pending"}${who ? " · " + esc(who) : ""}</div><b>${title}</b>${extra ? `<div class="small muted">${extra}</div>` : ""}</div>`;
+  const bill = o.billing, unbilled = !bill && o.admission_id == null && o.status !== "cancelled";
+  const tests = o.tests.map(t => esc(t.name)).join(", ");
+  return `<h3 style="margin:14px 0 6px">Order timeline</h3><div class="timeline">
+    ${step(true, "Ordered", o.created_at, o.dname || "walk-in / reception", `${tests} · ${o.priority}${o.visit_id ? ` · from consultation` : ""}`)}
+    ${step(!!bill, bill ? `Billed · ${esc(bill.inv_no)}` : "Billed", bill && bill.at, "", bill ? `${money(bill.total)} · ${bill.status === "paid" ? pill("Paid", "p-ok") : pill(bill.status === "insurance" ? "Insurance" : "Due " + money(bill.due), "p-warn")}` : (o.admission_id ? "on the inpatient bill at discharge" : `not billed yet${can("hbilling") ? ` · <button type="button" class="btn sm" data-act="go" data-v="hbilling" data-p="new/${o.patient_id}">Bill exactly these tests</button>` : ""}`))}
+    ${step(!!o.collected_at, "Sample collected", o.collected_at, o.collected_name, o.rejections ? `${o.rejections} sample(s) rejected before this one` : "")}
+    ${step(!!o.resulted_at, "Results entered", o.resulted_at, o.resulted_name, o.amended_at ? `amended ${o.amended_at.slice(0, 16)}: ${esc(o.amend_reason || "")}` : "")}
+    ${step(!!o.verified_at, "Reviewed and verified by doctor", o.verified_at, o.verified_name, o.interp_reviewed_at ? "explanation for the patient reviewed" : "")}
+    ${o.critical ? step(!!(o.ack && o.ack.crit_ack_at), "Critical value acknowledged", o.ack && o.ack.crit_ack_at, o.ack && o.ack.name, "") : ""}
+    ${step(!!(o.sent && o.sent.ok), o.sent && !o.sent.ok ? "Report sent to patient (not delivered)" : "Report sent to patient", o.sent && o.sent.at, o.sent ? o.sent.channel : "", o.sent && !o.sent.ok ? "WhatsApp isn't set up; see Reports > Messages" : "")}
+  </div>${unbilled && o.status !== "ordered" ? alertRow("", "This order has results but no bill yet. Bill it from Hospital billing: the bill will match the order exactly.") : ""}`;
+}
 async function labOrder(main, id) {
   const o = await api("/api/lab/orders/" + id); App.cache.labOrder = o;
   const editable = can("lab") && (o.status === "collected" || o.status === "resulted");
@@ -50,7 +65,7 @@ async function labOrder(main, id) {
       ${o.status === "verified" ? `<button type="button" class="btn ghost" data-act="labPrint">Print report</button><button type="button" class="btn ghost" data-act="pdfDl" data-p="lab/${o.id}">PDF</button>` : ""}
       <button type="button" class="btn ghost" data-act="go" data-v="lab">Back to worklist</button></div></form>
     ${o.interp ? interpCard(o) : ""}
-    <p class="small muted">Collected: ${o.collected_at ? `${o.collected_at} by ${esc(o.collected_name)}` : "–"} · Resulted: ${o.resulted_at ? `${o.resulted_at} by ${esc(o.resulted_name)}` : "–"} · Verified: ${o.verified_at ? `${o.verified_at} by ${esc(o.verified_name)}` : "–"}</p></div>`;
+    ${labTimeline(o)}</div>`;
 }
 on("labLive", el => { const f = liveFlag(JSON.parse(el.dataset.p), el.value.trim()); el.closest("tr").querySelector(".flagcell").innerHTML = `<span class="flag-${f}">${FLAG_TXT[f] || ""}</span>`; });
 const labValues = () => { const o = {}; $$(".resgrid input[name*=':']").forEach(i => o[i.name] = i.value); return o; };
