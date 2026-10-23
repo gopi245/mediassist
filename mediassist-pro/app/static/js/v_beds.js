@@ -15,9 +15,9 @@ function bedCard(b, opts = {}) {
   const mins = b.status === "cleaning" && b.minutes != null ? b.minutes : null;
   const stale = mins != null && mins >= STALE_CLEAN_MIN;
   const acts = [];
+  if (can("ipd") && b.status === "free") acts.push(`<button class="btn sm" data-act="bedAdmit" data-id="${b.id}" data-b="${b.branch_id}">Admit here</button>`);
   if (can("ipd_nursing") && b.status !== "free") acts.push(`<button class="btn sm ${stale ? "" : "ghost"}" data-act="bedFree" data-id="${b.id}">Mark free</button>`);
-  if (can("ipd_nursing") && b.status === "free") acts.push(`<button class="btn sm ghost" data-act="bedBlock" data-id="${b.id}">Block</button>`);
-  if (can("ipd") && b.status === "free" && !opts.branch) acts.push(`<button class="btn sm" data-act="bedAdmit" data-id="${b.id}">Admit here</button>`);
+  if (can("ipd_nursing") && b.status === "free") acts.push(`<button class="btn sm ghost" data-act="bedBlock" data-id="${b.id}" title="Take this bed out of use (repair, isolation, reserved)">Block</button>`);
   return `<div class="bed ${b.status}${stale ? " stale" : ""}">${tag}<b>${BED_LABEL[b.status] || b.status}</b>${mins != null ? `<span class="small ${stale ? "allergy" : "muted"}">${mins < 60 ? mins + " min" : Math.floor(mins / 60) + " h " + (mins % 60) + " min"} ago${stale ? " · needs attention" : ""}</span>` : ""}${acts.length ? `<div class="row-actions">${acts.join("")}</div>` : ""}</div>`;
 }
 
@@ -40,7 +40,14 @@ RENDER.beds = async (main, [wardSel]) => {
 on("bedWard", el => { App.cache.bedWard = el.value; go("beds"); });
 on("bedFree", async el => { await api(`/api/beds/${el.dataset.id}/status`, { status: "free" }); toast("Bed is free"); go(App.view, App.params); });
 on("bedBlock", async el => { const v = await dialog("Block this bed", `<label>Why</label><input name="reason" placeholder="repair, isolation, reserved">`, { ok: "Block" }); if (v) { await api(`/api/beds/${el.dataset.id}/status`, { status: "blocked", reason: v.reason }); go(App.view, App.params); } });
-on("bedAdmit", el => { App.cache.admitBed = +el.dataset.id; go("ipd", ["admit"]); });
+on("bedAdmit", async el => {
+  try { sessionStorage.setItem("ma-admit-bed", el.dataset.id); } catch (e) {}
+  App.cache.admitBed = +el.dataset.id;
+  if (!App.me.branch || (App.me.branch.id !== +el.dataset.b)) {  // viewing all branches: step into the bed's branch first
+    await api("/api/branch", { branch_id: +el.dataset.b }); location.hash = "#ipd/admit"; await start(); return;
+  }
+  go("ipd", ["admit"]);
+});
 on("planDischarge", async el => {
   const v = await dialog("Expected discharge", `<label>Date</label><input name="planned_discharge" type="date" value="${esc(el.dataset.d || localDay(1))}"><p class="small muted">Shows on the bed board so the team knows which beds free up soon. Clear the date to remove it.</p>`, { ok: "Save" });
   if (v) { await api(`/api/admissions/${el.dataset.id}/plan`, v); reAdm(); }

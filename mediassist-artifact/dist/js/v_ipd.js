@@ -7,6 +7,8 @@ RENDER.ipd = async (main, [mode, id]) => {
   if (mode === "admit" && id) { const p = await api("/api/patients/" + id); pre = `${p.code} · ${p.name} · ${p.phone}`; }
   const wards = {}; beds.forEach(b => (wards[b.ward] = wards[b.ward] || []).push(b));
   const free = beds.filter(b => b.status === "free");
+  if (mode === "admit" && !App.cache.admitBed) { try { App.cache.admitBed = +sessionStorage.getItem("ma-admit-bed") || null; } catch (e) {} }
+  try { sessionStorage.removeItem("ma-admit-bed"); } catch (e) {}
   main.innerHTML = `<div class="row-actions" style="margin-bottom:10px"><button class="btn sm ghost" data-act="go" data-v="beds">Open the bed board</button></div><div class="kpis">${kpi("Occupied", `${beds.filter(b => b.status === "occupied").length} / ${beds.length}`, "beds")}${kpi("Free", free.length, "ready for admission")}${kpi("Cleaning", beds.filter(b => b.status === "cleaning").length, "mark free when ready", "warn")}${kpi("Blocked", beds.filter(b => b.status === "blocked").length, "")}</div>
   <div class="g-main"><div class="stack">${Object.entries(wards).map(([w, l]) => card(`${esc(w)} ward`, `${l.filter(b => b.status === "occupied").length} of ${l.length} occupied`, `<div class="beds">${l.map(b => b.status === "occupied"
       ? `<button class="bed occupied" data-act="go" data-v="ipd" data-p="a/${b.adm_id}"><span class="num-tag">${esc(b.number)} · ${b.kind}</span><b>${esc(b.pname)}</b><span class="small muted">${b.age ?? "?"}${(b.gender || " ")[0]} · ${esc(b.diagnosis || "")}</span><span class="small muted">${esc(b.dname || "")} · since ${b.admitted_at.slice(5, 10)}</span></button>`
