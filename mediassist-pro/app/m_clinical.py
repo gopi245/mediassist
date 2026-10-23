@@ -63,7 +63,9 @@ def check_items(c, p, items, exclude_visit=None):
         m = one(c, "SELECT * FROM medicines WHERE id=?", (as_int(it.get("medicine_id"), "medicine"),))
         need(m, "Medicine not found", 404)
         full.append({"med": m, "freq": clean(it, "freq", 20), "dose": clean(it, "dose", 20), "days": opt_num(it.get("days"), int)})
-    return full, safety_check(p, full, current_meds(c, p["id"], exclude_visit) if p else [], latest_creatinine(c, p["id"]) if p else None)
+    from .m_care import reactions_of
+    return full, safety_check(p, full, current_meds(c, p["id"], exclude_visit) if p else [], latest_creatinine(c, p["id"]) if p else None,
+                              reactions_of(c, p["id"]) if p else ())
 
 
 # ---------------------------------------------------------------- patients
@@ -164,7 +166,11 @@ def profile(c, pid):
             "imaging": rows(c.execute("SELECT im.*, u.name oname FROM imaging im LEFT JOIN users u ON u.id=im.ordered_by WHERE im.patient_id=? ORDER BY im.id DESC LIMIT 20", (pid,))),
             "referrals": rows(c.execute("SELECT r.*, u.name by_name FROM referrals r LEFT JOIN users u ON u.id=r.by_user WHERE r.patient_id=? ORDER BY r.id DESC LIMIT 20", (pid,))),
             "procedures": rows(c.execute("SELECT pr.*, u.name surgeon FROM procedures pr LEFT JOIN users u ON u.id=pr.surgeon_id WHERE pr.patient_id=? ORDER BY pr.id DESC LIMIT 20", (pid,))),
-            "anc": rows(c.execute("SELECT * FROM anc_visits WHERE patient_id=? ORDER BY id DESC LIMIT 20", (pid,)))}
+            "anc": rows(c.execute("SELECT * FROM anc_visits WHERE patient_id=? ORDER BY id DESC LIMIT 20", (pid,))),
+            "reactions": rows(c.execute("SELECT r.*, m.generic FROM adverse_reactions r LEFT JOIN medicines m ON m.id=r.medicine_id WHERE r.patient_id=? ORDER BY r.id DESC", (pid,))),
+            "lab_abnormal": rows(c.execute("SELECT lp.name, lp.unit, r.value, r.flag, substr(o.created_at,1,10) day, o.id order_id FROM lab_results r JOIN lab_params lp ON lp.id=r.param_id "
+                                           "JOIN lab_order_items i ON i.id=r.order_item_id JOIN lab_orders o ON o.id=i.order_id WHERE o.patient_id=? AND o.status='verified' "
+                                           "AND r.flag IS NOT NULL AND r.flag<>'N' ORDER BY o.id DESC LIMIT 12", (pid,)))}
 
 
 def pregnancy_info(p):

@@ -302,7 +302,7 @@ def api_mar_order(h, c, b, q, aid):
     p = one(c, "SELECT * FROM patients WHERE id=?", (a["patient_id"],))
     from .m_clinical import current_meds, latest_creatinine
     warnings = safety_check(p, [{"med": m, "freq": freq if "-" in freq else {"OD": "1-0-0", "BD": "1-0-1", "TDS": "1-1-1", "QID": "1-1-1-1"}.get(freq, "1-0-0"),
-                                 "dose": clean(b, "dose", 20), "days": 1}], current_meds(c, p["id"]), latest_creatinine(c, p["id"]))
+                                 "dose": clean(b, "dose", 20), "days": 1}], current_meds(c, p["id"]), latest_creatinine(c, p["id"]), __import__("app.m_care", fromlist=["reactions_of"]).reactions_of(c, p["id"]))
     if warnings and not b.get("override"):
         raise ApiError(409, "Safety warnings: review before ordering", warnings=warnings)
     times = clean(b, "times", 60)

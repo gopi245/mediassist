@@ -1126,3 +1126,36 @@ class T27BillOnWhatsApp(unittest.TestCase):
         # registered patient: goes through the records link as before
         rp = ph.ok("/api/bills", {"patient_id": 4, "pay_mode": "upi", "items": [{"medicine_id": meds["Dolo 650"]["id"], "qty": 1, "unit": "strip"}]})
         self.assertTrue(rp["shared"] is None or rp["shared"][0]["channel"] == "whatsapp")
+
+
+class T28PatientHistory(unittest.TestCase):
+    def test_reactions_warn_everywhere_and_history_is_complete(self):
+        rec, doc, ph = Client("reception.ch"), Client("dr.rao"), Client("pharma.ch")
+        meds = {m["name"]: m for m in ph.ok("/api/medicines")}
+        pid = rec.ok("/api/patients", {"name": "History Test", "phone": "9000066666", "age": 45, "gender": "Male", "consent": True, "force": True})["id"]
+        self.assertEqual(rec.post(f"/api/patients/{pid}/reactions", {"drug": "Brufen 400"})[0], 400, "reaction text needed")
+        rec.ok(f"/api/patients/{pid}/reactions", {"medicine_id": meds["Brufen 400"]["id"], "reaction": "Severe stomach pain and black stools", "severity": "moderate", "reacted_on": "2025-03-10"})
+        prof = doc.ok(f"/api/patients/{pid}")
+        self.assertEqual(prof["reactions"][0]["drug"], "Brufen 400")
+        self.assertNotIn("ibuprofen", (prof["allergies"] or "").lower(), "a moderate reaction is recorded, not an allergy")
+        # prescribing the same drug, or another brand with the same ingredient, warns at the consultation
+        v = rec.ok("/api/visits", {"patient_id": pid, "complaint": "knee pain"})
+        w = doc.ok("/api/rx/check", {"patient_id": pid, "visit_id": v["id"], "items": [{"medicine_id": meds["Brufen 400"]["id"], "dose": "1", "freq": "BD", "days": 3}]})["warnings"]
+        self.assertTrue(any("past reaction" in x["text"] and x["severity"] == "high" for x in w))
+        other = next((m for m in meds.values() if "ibuprofen" in (m["generic"] or "").lower() and m["name"] != "Brufen 400"), None)
+        if other:
+            w2 = doc.ok("/api/rx/check", {"patient_id": pid, "items": [{"medicine_id": other["id"], "dose": "1", "freq": "BD", "days": 3}]})["warnings"]
+            self.assertTrue(any("past reaction" in x["text"] for x in w2), "same ingredient, different brand")
+        # and at the pharmacy counter
+        st, r = ph.post("/api/bills", {"patient_id": pid, "pay_mode": "cash", "items": [{"medicine_id": meds["Brufen 400"]["id"], "qty": 1, "unit": "strip"}]})
+        self.assertEqual(st, 409)
+        self.assertTrue(any("past reaction" in x["text"] for x in r["warnings"]))
+        # a severe reaction also lands in allergies
+        rec.ok(f"/api/patients/{pid}/reactions", {"medicine_id": meds["Azithral 500"]["id"], "reaction": "Anaphylaxis", "severity": "severe"})
+        self.assertIn("azithromycin", doc.ok(f"/api/patients/{pid}")["allergies"].lower())
+        # history carries abnormal results once a report is verified
+        prof = doc.ok(f"/api/patients/{pid}")
+        self.assertIn("lab_abnormal", prof)
+        self.assertEqual(rec.post(f"/api/reactions/{prof['reactions'][0]['id']}/delete", {})[0], 400, "a reason is needed to remove a reaction")
+        rec.ok(f"/api/reactions/{prof['reactions'][0]['id']}/delete", {"reason": "entered on the wrong patient"})
+        self.assertEqual(len(doc.ok(f"/api/patients/{pid}")["reactions"]), 1)

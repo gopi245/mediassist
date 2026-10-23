@@ -673,7 +673,8 @@ def create_bill(c, h, b):
         warnings = []
         if patient:
             full = [{"med": m, "freq": rx["freq"] if rx else "", "dose": rx["dose"] if rx else "", "days": rx["days"] if rx else None} for m, _, rx in lines]
-            warnings = safety_check(patient, full, current_meds(c, patient["id"]), latest_creatinine(c, patient["id"]))
+            from .m_care import reactions_of
+            warnings = safety_check(patient, full, current_meds(c, patient["id"]), latest_creatinine(c, patient["id"]), reactions_of(c, patient["id"]))
         else:
             warnings = safety_check(None, [{"med": m} for m, _, _ in lines])
         if warnings and not b.get("override"):

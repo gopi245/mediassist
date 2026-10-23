@@ -162,7 +162,7 @@ def daily_mg(m, dose, freq):
     return None
 
 
-def safety_check(patient, new_items, current_meds=(), creatinine=None):
+def safety_check(patient, new_items, current_meds=(), creatinine=None, reactions=()):
     """new_items: list of dicts {med: medicine row, freq, dose, days}. Returns warnings sorted high first."""
     out = []
 
@@ -179,6 +179,11 @@ def safety_check(patient, new_items, current_meds=(), creatinine=None):
         crcl = egfr(creatinine, age, wt, patient.get("gender"))
         for it in new_items:
             m, t = it["med"], med_text(it["med"])
+            for r in reactions:  # a recorded reaction to this drug, or to anything sharing its ingredient
+                words = {w for w in re.split(r"[\s+/,]+", ((r.get("generic") or "") + " " + (r.get("drug") or "")).lower()) if len(w) > 3 and w not in STOP_WORDS}
+                if (r.get("drug") or "").lower() in t or any(w in t for w in words):
+                    add("high" if r.get("severity") != "mild" else "moderate",
+                        f"{m['name']}: past reaction to {r['drug']} recorded" + (f" on {r['reacted_on']}" if r.get("reacted_on") else "") + f": {r['reaction']} ({r.get('severity', 'moderate')}).")
             for a in allergies:
                 key = next((k for k in ALLERGY_CLASSES if k in a or a in k), None)
                 members = ALLERGY_CLASSES.get(key, [])

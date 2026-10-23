@@ -422,3 +422,54 @@ def api_settle_bill(h, c, b, q, bid):
         audit(c, h, "bill.settle", f"{bl['bill_no']} {rs(bl['total_p'] - bl['returned_p'])} {mode} {ref}")
         return R(bl["total_p"] - bl["returned_p"])
     return {"ok": True, "amount": in_tx(c, run)}
+
+
+# ---------------------------------------------------------------- adverse drug reactions
+SEVERITIES = ("mild", "moderate", "severe")
+
+
+@route("POST", r"/api/patients/(\d+)/reactions", "patients_write")
+def api_reaction_add(h, c, b, q, pid):
+    """Record a reaction to a medicine. It shows at every consultation and the prescribing check warns if that
+    drug (or anything containing the same ingredient) is prescribed again."""
+    pid = int(pid)
+    patient_ok(c, h, pid)
+    mid = opt_num(b.get("medicine_id"), int, "medicine")
+    m = one(c, "SELECT name, generic FROM medicines WHERE id=?", (mid,)) if mid else None
+    drug = clean(b, "drug", 100) or (m["name"] if m else "")
+    reaction = clean(b, "reaction", 300)
+    need(drug and reaction, "Enter the medicine and what happened")
+    sev = clean(b, "severity", 10) or "moderate"
+    need(sev in SEVERITIES, "Severity must be mild, moderate or severe")
+    when = clean(b, "reacted_on", 10) or None
+    if when:
+        valid_day(when, "date")
+    cur = c.execute("INSERT INTO adverse_reactions(patient_id,medicine_id,drug,reaction,severity,reacted_on,visit_id,notes,recorded_by,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    (pid, mid, drug, reaction, sev, when, opt_num(b.get("visit_id"), int, "visit"), clean(b, "notes", 500), h.user["id"], now_str()))
+    if sev == "severe" or b.get("add_allergy"):  # a severe reaction is an allergy for prescribing purposes
+        p = one(c, "SELECT allergies FROM patients WHERE id=?", (pid,))
+        word = (m["generic"].split()[0] if m and m["generic"] else drug).lower()
+        if word not in (p["allergies"] or "").lower():
+            c.execute("UPDATE patients SET allergies=? WHERE id=?", (((p["allergies"] + ", ") if p["allergies"] else "") + word, pid))
+    audit(c, h, "reaction.record", f"{pcode(pid)} {drug}: {reaction} ({sev})")
+    return {"ok": True, "id": cur.lastrowid}
+
+
+@route("GET", r"/api/patients/(\d+)/reactions", "patients_read")
+def api_reactions(h, c, b, q, pid):
+    return reactions_of(c, int(pid))
+
+
+def reactions_of(c, pid):
+    return rows(c.execute("SELECT r.*, m.generic, u.name by_name FROM adverse_reactions r LEFT JOIN medicines m ON m.id=r.medicine_id LEFT JOIN users u ON u.id=r.recorded_by "
+                          "WHERE r.patient_id=? ORDER BY r.id DESC", (pid,)))
+
+
+@route("POST", r"/api/reactions/(\d+)/delete", "patients_write")
+def api_reaction_delete(h, c, b, q, rid):
+    r = one(c, "SELECT * FROM adverse_reactions WHERE id=?", (int(rid),))
+    need(r, "Not found", 404)
+    need(clean(b, "reason", 200), "Say why this record is wrong")
+    c.execute("DELETE FROM adverse_reactions WHERE id=?", (r["id"],))
+    audit(c, h, "reaction.delete", f"{pcode(r['patient_id'])} {r['drug']}: {clean(b, 'reason', 200)}")
+    return {"ok": True}

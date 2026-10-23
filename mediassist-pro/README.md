@@ -20,6 +20,7 @@ Run the automated tests: double-click **RUN-TESTS.bat** (end-to-end tests of the
 |---|---|
 | Patients | One record across branches, DPDP consent, ABHA number, problem list (ICD-10), vitals charts, vaccinations, pregnancy dates, export and erase on request |
 | OPD & appointments | Staff and online booking (`/book?branch=CH`), tokens, check-in, triage board, token TV screen (`/display?branch=CH`), WhatsApp reminders |
+| Patient history at the desk | Every consultation opens with previous medicines per visit (one click repeats them), out-of-range results from past reports, lab orders, imaging, admissions and past reactions to medicines; a recorded reaction warns whenever that drug or anything with the same ingredient is prescribed, at the pharmacy counter and on the ward too |
 | Consultation | Templates, ICD-10, prescriptions with allergy / interaction / condition / child-dose / max-dose / kidney / pregnancy checks, lab orders, printed prescription |
 | Lab explanation | Every submitted report gets a plain-language "What this means": each out-of-range value explained in one or two sentences and an overall summary. Rule-based and instant; "Rewrite with AI" polishes the wording when an Anthropic key is set. The verifying doctor edits it and decides whether the patient gets it; it then goes on the PDF and the WhatsApp message, marked as reviewed |
 | Laboratory | Worklist, sample collection, results with normal ranges and H/L/critical flags, critical-value alert to the doctor, verification, report to the patient on WhatsApp |

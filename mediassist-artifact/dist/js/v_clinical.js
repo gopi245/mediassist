@@ -71,6 +71,8 @@ function renderPTab(tab) {
   if (tab === "summary") {
     el.innerHTML = `${p.pregnancy ? alertRow("info", `<b>Pregnant</b> · ${p.pregnancy.weeks} weeks ${p.pregnancy.days} days · trimester ${p.pregnancy.trimester} · EDD <b>${p.pregnancy.edd}</b>`) : ""}
       <p class="small"><b>Conditions:</b> ${esc(p.conditions || "none recorded")}<br><b>Currently taking:</b> ${p.current_meds.map(m => esc(m.name)).join(", ") || "nothing active"}<br><b>Consent:</b> ${p.consent_at ? "recorded " + p.consent_at : '<span class="allergy">not recorded</span>'}</p>
+      <h3 style="margin:12px 0 6px">Past reactions to medicines</h3>${tbl(["Medicine", "Reaction", "Severity", "When", ""], p.reactions.map(r => `<tr><td><b>${esc(r.drug)}</b></td><td>${esc(r.reaction)}</td><td>${pill(r.severity, r.severity === "severe" ? "p-crit" : r.severity === "moderate" ? "p-warn" : "p-plain")}</td><td class="mono small">${r.reacted_on || r.created_at.slice(0, 10)}</td><td>${can("patients_write") ? `<button class="btn sm ghost" data-act="adrDel" data-id="${r.id}">Wrong</button>` : ""}</td></tr>`).join(""), "None recorded.")}
+      ${can("patients_write") ? `<button class="btn sm ghost" data-act="adrAdd" data-pid="${p.id}" style="margin-top:6px">Record a reaction</button>` : ""}
       <h3 style="margin:12px 0 6px">Problem list</h3>${tbl(["ICD-10", "Problem", "Since", "Status", ""], p.problems.map(x => `<tr><td class="mono">${esc(x.icd || "")}</td><td>${esc(x.title)}</td><td class="mono">${esc(x.since || "")}</td><td>${pill(x.status, x.status === "active" ? "p-warn" : "p-ok")}</td><td>${can("patients_write") ? `<button class="btn sm ghost" data-act="toggleProblem" data-id="${x.id}" data-s="${x.status === "active" ? "resolved" : "active"}">${x.status === "active" ? "Resolve" : "Reopen"}</button>` : ""}</td></tr>`).join(""), "No problems recorded.")}
       ${can("patients_write") ? `<form data-submit="addProblem" class="fields" style="margin-top:8px"><div class="span2"><input name="icd" list="icdOpts" data-input="icdSearch" placeholder="ICD-10 code or search diagnosis"></div><div><input name="title" placeholder="Or describe"></div><div><button class="btn sm">Add problem</button></div></form>` : ""}
       <h3 style="margin:12px 0 6px">Upcoming appointments</h3>${tbl(["Day", "Time", "Doctor", "Token", "Status"], p.appointments.map(a => `<tr><td class="mono">${a.day}</td><td class="mono">${a.slot || "–"}</td><td>${esc(a.dname || "")}</td><td>${a.token}</td><td>${a.status}</td></tr>`).join(""), "None booked.")}`;
@@ -110,6 +112,7 @@ function renderPTab(tab) {
 }
 on("icdSearch", debounce(async el => { if (el.value.length < 2) return; const l = await api("/api/icd10?q=" + encodeURIComponent(el.value)); $("#icdOpts").innerHTML = l.map(x => `<option value="${x.code}">${esc(x.title)}</option>`).join(""); }, 250));
 on("addProblem", async f => { await api(`/api/patients/${App.cache.patient.id}/problems`, vals(f)); openPatient(App.cache.patient.id); });
+on("adrDel", async el => { const v = await dialog("Remove this reaction record", `<label>Why is it wrong?</label><input name="reason">`, { ok: "Remove", danger: true }); if (v && v.reason) { await api(`/api/reactions/${el.dataset.id}/delete`, v); openPatient(App.cache.patient.id); } });
 on("toggleProblem", async el => { await api(`/api/problems/${el.dataset.id}`, { status: el.dataset.s }); openPatient(App.cache.patient.id); });
 on("addVaccine", async f => { await api(`/api/patients/${App.cache.patient.id}/vaccinations`, vals(f)); toast("Vaccination recorded"); openPatient(App.cache.patient.id, "vacc"); });
 on("editPatient", async () => {
@@ -179,7 +182,7 @@ on("apptStatus", async el => { await api(`/api/appointments/${el.dataset.id}/sta
 on("cancelVisit", async el => { if (await dialog("Remove from queue?", "<p>The patient will be removed from today's waiting list.</p>", { ok: "Remove", danger: true })) { await api(`/api/visits/${el.dataset.id}/cancel`, {}); go("opd"); } });
 
 /* ================= consultation ================= */
-let CX = null;
+let CX = null, CX_VISITS = [];
 RENDER.consult = async (main, [vid]) => {
   if (!vid) {
     const w = await api("/api/visits?status=waiting");
@@ -190,6 +193,7 @@ RENDER.consult = async (main, [vid]) => {
   if (d.visit.status === "waiting") api(`/api/visits/${vid}/start`, {}).catch(() => {});
   const v = d.visit, p = d.patient;
   CX = { vid: +vid, pid: p.id, items: d.rx.map(r => ({ medicine_id: r.medicine_id, name: r.name, dose: r.dose || "1", freq: r.freq, days: r.days, instructions: r.instructions || "" })), labs: new Set(), tests, tpl, weight: p.weight };
+  CX_VISITS = p.visits;
   const vt = (lab, val, unit, bad) => `<div class="vt ${bad ? "bad" : ""}"><span>${lab}</span><b>${val ?? "–"}</b> <small class="muted">${val == null ? "" : unit}</small></div>`;
   main.innerHTML = `<div class="card" style="margin-bottom:14px"><div class="phead"><div class="avatar">${initials(p.name)}</div><div style="flex:1;min-width:0"><h2>${esc(p.name)}</h2><div class="small muted"><span class="mono">${p.code}</span> · ${p.age ?? "?"} yrs · ${esc(p.gender || "")}${p.weight ? ` · ${p.weight} kg` : ""} · ${esc(v.bname)} · arrived ${v.created_at.slice(11)}</div></div>${triPill(v.triage)}</div>
     <div class="vitals" style="margin-top:12px">${vt("Temp", v.temp, "°C", v.temp >= 38)}${vt("Pulse", v.pulse, "/min", v.pulse > 100)}${vt("BP", v.bp_sys != null ? v.bp_sys + "/" + (v.bp_dia ?? "–") : null, "", v.bp_sys > 160)}${vt("SpO₂", v.spo2, "%", v.spo2 && v.spo2 < 92)}${vt("Sugar", v.sugar, "mg/dL", v.sugar > 200)}</div>
@@ -199,8 +203,15 @@ RENDER.consult = async (main, [vid]) => {
     ${card("Clinical context", "", `<p class="small" style="margin:0"><b>Conditions:</b> ${esc(p.conditions || "none")}<br><b>Problems:</b> ${p.problems.filter(x => x.status === "active").map(x => esc(x.title)).join(", ") || "none"}<br><b>Currently taking:</b> ${p.current_meds.map(m => esc(m.name)).join(", ") || "nothing"}${v.mlc ? `<br><b class="allergy">Medico-legal case${v.mlc_no ? " " + esc(v.mlc_no) : ""}</b>` : ""}${v.arrival ? `<br><b>Arrival:</b> ${esc(v.arrival)}${v.brought_by ? ", brought by " + esc(v.brought_by) : ""}` : ""}</p>
       ${p.imaging.length ? `<p class="small"><b>Imaging:</b> ${p.imaging.slice(0, 4).map(i => `${esc(i.modality)} ${esc(i.study)} (${i.status === "reported" ? esc(i.impression || "reported") : i.status})`).join("; ")}</p>` : ""}
       <div class="row-actions" style="margin-top:8px"><button type="button" class="btn sm ghost" data-act="careRefer" data-pid="${p.id}" data-vid="${v.id}">Refer</button><button type="button" class="btn sm ghost" data-act="careImaging" data-pid="${p.id}" data-vid="${v.id}">Order imaging</button><button type="button" class="btn sm ghost" data-act="careProcedure" data-pid="${p.id}" data-vid="${v.id}">Procedure note</button></div>`)}
-    ${card("History, all branches", "", `<div class="timeline">${p.visits.filter(x => x.id !== v.id && x.status === "done").slice(0, 8).map(x => `<div class="tl"><div class="when">${x.created_at.slice(0, 10)} · ${x.bcode} · ${esc(x.dname || "")}</div><b>${esc(x.diagnosis || "")}</b><div class="small muted">${x.rx.map(r => esc(r.name)).join(", ")}</div></div>`).join("") || '<p class="empty">First visit.</p>'}</div>
-      ${p.labs.length ? `<p class="small"><b>Recent labs:</b> ${p.labs.slice(0, 4).map(o => `<a href="#lab/o/${o.id}">LAB${o.id}</a> ${esc(o.tests)} (${o.status})`).join("; ")}</p>` : ""}`)}
+    ${p.reactions.length ? `<div class="banner">Past reactions: ${p.reactions.map(r => `<b>${esc(r.drug)}</b> (${esc(r.reaction)}, ${r.severity}${r.reacted_on ? ", " + r.reacted_on : ""})`).join("; ")}</div>` : ""}
+    ${card("Patient history", "Previous medicines, tests and reactions, from every branch", `
+      <h3 style="margin:0 0 6px">Previous medicines</h3><div class="timeline">${p.visits.filter(x => x.id !== v.id && x.status === "done").slice(0, 8).map(x => `<div class="tl"><div class="when">${x.created_at.slice(0, 10)} · ${x.bcode} · ${esc(x.dname || "")}${x.rx.length ? ` · <button type="button" class="linkbtn" data-act="cxRepeat" data-vid="${x.id}">Repeat these medicines</button>` : ""}</div><b>${esc(x.diagnosis || "")}</b><div class="small muted">${x.rx.map(r => `${esc(r.name)} ${esc(r.dose || "")} ${esc(r.freq || "")} ×${r.days || "?"}d`).join(" · ") || "no medicines"}</div></div>`).join("") || '<p class="empty">First visit.</p>'}
+        ${p.admissions.length ? `<p class="small"><b>Admissions:</b> ${p.admissions.slice(0, 3).map(a => `${a.admitted_at.slice(0, 10)} ${esc(a.diagnosis || "")} (${a.status})`).join("; ")}</p>` : ""}</div>
+      <h3 style="margin:12px 0 6px">Previous tests</h3>${p.lab_abnormal.length ? `<div class="small">${p.lab_abnormal.map(x => `<span class="flag-${x.flag}">${esc(x.name)} ${esc(x.value)} ${esc(x.unit || "")}</span> <span class="muted">${x.day}</span>`).join(" · ")}</div><p class="small muted" style="margin:4px 0 0">Out-of-range values from verified reports. </p>` : '<p class="small muted">No out-of-range results on file.</p>'}
+        ${p.labs.length ? `<p class="small" style="margin:4px 0 0"><b>Orders:</b> ${p.labs.slice(0, 5).map(o => `<a href="#lab/o/${o.id}">LAB${o.id}</a> ${esc(o.tests)} (${o.status})`).join("; ")}</p>` : ""}
+        ${p.imaging.length ? `<p class="small" style="margin:4px 0 0"><b>Imaging:</b> ${p.imaging.slice(0, 4).map(i => `${esc(i.modality)} ${esc(i.study)} (${i.status === "reported" ? esc(i.impression || "reported") : i.status})`).join("; ")}</p>` : ""}
+      <h3 style="margin:12px 0 6px">Past reactions</h3>${p.reactions.length ? tbl(["Medicine", "Reaction", "Severity", "When"], p.reactions.map(r => `<tr><td><b>${esc(r.drug)}</b>${r.generic ? `<div class="small muted">${esc(r.generic)}</div>` : ""}</td><td>${esc(r.reaction)}</td><td>${pill(r.severity, r.severity === "severe" ? "p-crit" : r.severity === "moderate" ? "p-warn" : "p-plain")}</td><td class="mono small">${r.reacted_on || r.created_at.slice(0, 10)}</td></tr>`).join("")) : '<p class="small muted">None recorded. Allergies on the record: ' + esc(p.allergies || "none") + '</p>'}
+      <button type="button" class="btn sm ghost" data-act="adrAdd" data-pid="${p.id}" data-vid="${v.id}">Record a reaction</button>`)}
   </div>
   <div class="card"><div class="card-h"><div><h2>Consultation</h2><p>Warnings update as you prescribe</p></div><select data-change="applyTpl" style="width:auto"><option value="">Apply a template…</option>${tpl.map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join("")}</select></div>
     <form data-submit="saveConsult" id="cxForm" class="stack"><div class="fields">
@@ -235,6 +246,20 @@ on("cxAdd", () => {
   $("#cxMed").value = ""; $("#cxIns").value = ""; $("#cxInfo").innerHTML = ""; drawCx(); $("#cxMed").focus();
 });
 on("cxRm", el => { CX.items.splice(+el.dataset.i, 1); drawCx(); });
+on("cxRepeat", el => {
+  const visit = CX_VISITS.find(v => v.id === +el.dataset.vid); if (!visit) return;
+  let n = 0;
+  visit.rx.forEach(r => { if (!CX.items.some(i => i.medicine_id === r.medicine_id)) { CX.items.push({ medicine_id: r.medicine_id, name: r.name, dose: r.dose || "1", freq: r.freq, days: r.days, instructions: r.instructions || "" }); n++; } });
+  toast(n ? `${n} medicine${n > 1 ? "s" : ""} added from ${visit.created_at.slice(0, 10)}; the safety check runs again` : "Already on today's prescription"); drawCx();
+});
+on("adrAdd", async el => {
+  await loadMeds();
+  const v = await dialog("Record a reaction to a medicine", `<label>Medicine</label><input name="drug" list="medOpts" placeholder="Brand from the list, or type any drug"><label>What happened</label><input name="reaction" placeholder="rash, swelling, vomiting, breathlessness"><label>Severity</label><select name="severity"><option value="mild">Mild</option><option value="moderate" selected>Moderate</option><option value="severe">Severe (also added to allergies)</option></select><label>When</label><input name="reacted_on" type="date"><label>Notes</label><input name="notes">`, { ok: "Save" });
+  if (!v) return;
+  const m = medByName(v.drug);
+  await api(`/api/patients/${el.dataset.pid}/reactions`, { ...v, medicine_id: m ? m.id : null, visit_id: el.dataset.vid ? +el.dataset.vid : null });
+  toast("Reaction recorded"); if (el.dataset.vid) go("consult", [el.dataset.vid]); else openPatient(+el.dataset.pid);
+});
 on("cxLab", el => { el.checked ? CX.labs.add(+el.value) : CX.labs.delete(+el.value); });
 on("applyTpl", el => {
   const t_ = CX.tpl.find(x => x.id === +el.value); if (!t_) return; const f = $("#cxForm");

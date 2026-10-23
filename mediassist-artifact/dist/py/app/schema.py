@@ -255,6 +255,12 @@ ALTER TABLE lab_orders ADD COLUMN interp_patient INTEGER NOT NULL DEFAULT 1
 r"""
 ALTER TABLE bills ADD COLUMN customer_phone TEXT
 """,
+# 12: adverse drug reactions, so a past reaction is never forgotten at the next prescription
+r"""
+CREATE TABLE adverse_reactions(id INTEGER PRIMARY KEY, patient_id INTEGER NOT NULL REFERENCES patients(id), medicine_id INTEGER, drug TEXT NOT NULL,
+  reaction TEXT NOT NULL, severity TEXT NOT NULL DEFAULT 'moderate', reacted_on TEXT, visit_id INTEGER, notes TEXT, recorded_by INTEGER, created_at TEXT NOT NULL);
+CREATE INDEX ix_adr_pat ON adverse_reactions(patient_id)
+""",
 ]
 
 
