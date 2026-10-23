@@ -1,6 +1,7 @@
 """Laboratory: test catalogue with reference ranges, orders from OPD/IPD, sample collection,
 result entry with automatic H/L/critical flags, verification, delivery to doctor and patient."""
 from .core import (ApiError, as_int, audit, can, clean, in_tx, need, need_branch, now_str, one, opt_num, pcode, qget, route, rows, today)
+from .lab_explain import interpret
 
 STATUSES = ("ordered", "collected", "resulted", "verified", "cancelled")
 
@@ -62,6 +63,8 @@ def order_detail(c, oid):
             p.update(value=r["value"] if r else None, flag=r["flag"] if r else None,
                      range=p["ref_text"] or (f"{p['low']:g} - {p['high']:g}" if p["low"] is not None and p["high"] is not None else ""))
         o["tests"].append({"item_id": it["item_id"], "id": it["id"], "code": it["code"], "name": it["name"], "sample": it["sample"], "params": params})
+    import json as _json
+    o["interp"] = _json.loads(o["interpretation"]) if o["interpretation"] else None
     o["critical"] = any(p["flag"] in ("LL", "HH") for t in o["tests"] for p in t["params"])
     o["abnormal"] = sum(1 for t in o["tests"] for p in t["params"] if p["flag"] not in (None, "N"))
     return o
@@ -152,6 +155,9 @@ def api_results(h, c, b, q, oid):
         return {"ok": True, "missing": missing}
     out = in_tx(c, run)
     d = order_detail(c, o["id"])
+    if b.get("submit"):
+        save_interp(c, o["id"], interpret(d), reviewed=False)
+        d = order_detail(c, o["id"])
     if d["critical"] and b.get("submit"):
         from .notify import notify_staff
         from .m_alerts import branch_doctors
@@ -169,7 +175,10 @@ def api_verify(h, c, b, q, oid):
     o = one(c, "SELECT * FROM lab_orders WHERE id=? AND branch_id=?", (int(oid), h.branch))
     need(o and o["status"] == "resulted", "Only resulted orders can be verified")
     c.execute("UPDATE lab_orders SET status='verified', verified_at=?, verified_by=? WHERE id=?", (now_str(), h.user["id"], o["id"]))
-    audit(c, h, "lab.verify", f"LAB{o['id']}")
+    if not o["interpretation"]:
+        save_interp(c, o["id"], interpret(order_detail(c, o["id"])), reviewed=False)
+    c.execute("UPDATE lab_orders SET interp_reviewed_by=?, interp_reviewed_at=? WHERE id=?", (h.user["id"], now_str(), o["id"]))
+    audit(c, h, "lab.verify", f"LAB{o['id']}" + (" with explanation for the patient" if one(c, "SELECT 1 FROM lab_orders WHERE id=? AND interp_patient=1", (o["id"],)) else ""))
     d = order_detail(c, o["id"])
     sent = None
     if b.get("send_patient", True) and d["whatsapp_ok"]:
@@ -180,12 +189,66 @@ def api_verify(h, c, b, q, oid):
             for p in t["params"]:
                 fl = {"H": " HIGH", "L": " LOW", "HH": " CRITICAL HIGH", "LL": " CRITICAL LOW", "A": " ABNORMAL"}.get(p["flag"], "")
                 lines.append(f"  {p['name']}: {p['value']} {p['unit'] or ''}{fl} (normal {p['range'] or '-'})")
+        if d["interp"] and d["interp_patient"]:
+            lines.append("\nWhat this means (reviewed by your doctor):")
+            for f in d["interp"]["findings"]:
+                lines.append(f"- {f['text']}")
+            lines.append(d["interp"]["summary"])
         lines.append("\nPlease show this report to your doctor. Results marked HIGH/LOW need review.")
         from .m_portal import link_for, link_line, pdf_url
         ll = link_line(c, d["patient_id"], h.user["id"])  # empty when the records link is switched off
         lines.append(ll)
         sent = send_patient(c, d["patient_id"], "lab_report", "\n".join(lines), media_url=pdf_url(c, link_for(c, d["patient_id"]), "lab", d["id"]) if ll else None)
     return {"ok": True, "sent": sent}
+
+
+def save_interp(c, oid, interp, reviewed):
+    import json as _json
+    c.execute("UPDATE lab_orders SET interpretation=?, interp_source=?, interp_at=? WHERE id=?", (_json.dumps(interp), interp.get("source", "rules"), now_str(), oid))
+    if not reviewed:
+        c.execute("UPDATE lab_orders SET interp_reviewed_by=NULL, interp_reviewed_at=NULL WHERE id=?", (oid,))
+
+
+@route("POST", r"/api/lab/orders/(\d+)/interpret", "any")
+def api_interpret(h, c, b, q, oid):
+    """Plain-language explanation of the results. {} regenerates the rule-based text; {ai: true} rewrites it with the
+    model (needs an API key); {findings, summary} saves the doctor's edited wording; {patient: false} keeps it off
+    the patient's report. Editing and the patient switch need lab_verify."""
+    need(can(h, "lab") or can(h, "lab_verify"), "Not allowed", 403)
+    o = one(c, "SELECT * FROM lab_orders WHERE id=? AND branch_id=?", (int(oid), h.branch))
+    need(o and o["status"] in ("resulted", "verified"), "Enter and submit the results first")
+    d = order_detail(c, o["id"])
+    if "findings" in b or "summary" in b or "patient" in b:
+        need(can(h, "lab_verify"), "Only the verifying doctor can edit the explanation", 403)
+        cur = d["interp"] or interpret(d)
+        if "findings" in b:
+            by = {str(f.get("param", "")).lower(): clean(f, "text", 600) for f in (b.get("findings") or []) if isinstance(f, dict)}
+            for f in cur["findings"]:
+                if by.get(f["param"].lower()):
+                    f["text"] = by[f["param"].lower()]
+        if "summary" in b:
+            cur["summary"] = clean(b, "summary", 1200) or cur["summary"]
+        if "findings" in b or "summary" in b:
+            cur["source"] = "doctor"
+        save_interp(c, o["id"], cur, reviewed=o["status"] == "verified")
+        if "patient" in b:
+            c.execute("UPDATE lab_orders SET interp_patient=? WHERE id=?", (1 if b.get("patient") else 0, o["id"]))
+        audit(c, h, "lab.interpret", f"LAB{o['id']} edited" + ("" if b.get("patient", True) else ", kept off the patient's report"))
+        return order_detail(c, o["id"])["interp"]
+    p = one(c, "SELECT age, gender, conditions FROM patients WHERE id=?", (o["patient_id"],))
+    if b.get("ai"):
+        from .lab_explain import ai_interpret
+        interp = ai_interpret(c, d, dict(p))
+    elif b.get("ai_text"):  # wording produced on the client (in-browser demo): same merge, same limits
+        from .lab_explain import merge_ai
+        interp = merge_ai(d, b["ai_text"] if isinstance(b["ai_text"], dict) else {})
+    else:
+        interp = interpret(d)
+    save_interp(c, o["id"], interp, reviewed=False)
+    if o["status"] == "verified":  # verified report: the verifying doctor's new wording counts as reviewed
+        c.execute("UPDATE lab_orders SET interp_reviewed_by=?, interp_reviewed_at=? WHERE id=?", (h.user["id"], now_str(), o["id"]))
+    audit(c, h, "lab.interpret", f"LAB{o['id']} {interp['source']}")
+    return interp
 
 
 @route("POST", r"/api/lab/orders/(\d+)/cancel", "lab")

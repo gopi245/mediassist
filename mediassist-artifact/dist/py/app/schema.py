@@ -242,6 +242,15 @@ ALTER TABLE beds ADD COLUMN status_at TEXT;
 ALTER TABLE beds ADD COLUMN status_note TEXT;
 ALTER TABLE admissions ADD COLUMN planned_discharge TEXT
 """,
+# 10: plain-language interpretation of lab reports (rules or AI), reviewed by the verifying doctor
+r"""
+ALTER TABLE lab_orders ADD COLUMN interpretation TEXT;
+ALTER TABLE lab_orders ADD COLUMN interp_source TEXT;
+ALTER TABLE lab_orders ADD COLUMN interp_at TEXT;
+ALTER TABLE lab_orders ADD COLUMN interp_reviewed_by INTEGER;
+ALTER TABLE lab_orders ADD COLUMN interp_reviewed_at TEXT;
+ALTER TABLE lab_orders ADD COLUMN interp_patient INTEGER NOT NULL DEFAULT 1
+""",
 ]
 
 

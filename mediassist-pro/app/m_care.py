@@ -389,7 +389,7 @@ def api_amend(h, c, b, q, oid):
     need(o and o["status"] == "verified", "Only a verified report can be amended")
     reason = clean(b, "reason", 300)
     need(reason, "Say why the report is being amended")
-    c.execute("UPDATE lab_orders SET status='resulted', amended_at=?, amend_reason=?, verified_at=NULL, verified_by=NULL WHERE id=?", (now_str(), reason, o["id"]))
+    c.execute("UPDATE lab_orders SET status='resulted', amended_at=?, amend_reason=?, verified_at=NULL, verified_by=NULL, interp_reviewed_by=NULL, interp_reviewed_at=NULL WHERE id=?", (now_str(), reason, o["id"]))
     audit(c, h, "lab.amend", f"LAB{o['id']} {reason}")
     return {"ok": True}
 

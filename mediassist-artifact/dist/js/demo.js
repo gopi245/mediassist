@@ -26,6 +26,20 @@ download = async (path, filename) => {
     await dl.save({ filename: name, data: await r.blob() });
   } catch (e) { if (e && e.code !== "declined") toast(e.message || "Download failed"); }
 };
+/* Lab explanation: the server in this demo has no API key, so the rewrite asks Claude through the viewer (asked first);
+   only the numbers, flags and ranges go out, never the patient's name. The server merges the wording the same way. */
+LAB_AI.rewrite = async oid => {
+  const info = await api("/api/assistant/info").catch(() => ({}));
+  if (info.server_ai) return api(`/api/lab/orders/${oid}/interpret`, { ai: true });
+  const s = window.claude && window.claude.use ? await window.claude.use("sample") : null;
+  if (!s) throw new Error("AI rewriting isn't available in this view. The rule-based explanation is shown.");
+  const o = App.cache.labOrder, rows = o.tests.flatMap(t => t.params.filter(p => p.value != null && p.value !== "").map(p => `- ${p.name}: ${p.value} ${p.unit || ""} (normal ${p.range || "-"}) flag=${p.flag || "N"}`));
+  const prompt = "You explain laboratory results to a patient in India in plain, calm English at a 12-year-old's reading level. No diagnosis, no treatment advice, no medicine names; say what each out-of-range value usually means and that the doctor decides. One or two sentences per finding, only for values whose flag is not N. Summary: 2-3 sentences (how many normal, which out of range, whether anything is critical (HH/LL: contact the doctor today), a single result is not a diagnosis).\n" +
+    `Patient: ${o.age || "?"}-year-old ${o.gender || "person"}.\nResults:\n${rows.join("\n")}\nAnswer with JSON only: {"findings":[{"param":"","text":""}],"summary":""}`;
+  const out = await s.json(prompt, { cache: false });
+  return api(`/api/lab/orders/${oid}/interpret`, { ai_text: out });
+};
+
 /* Printing isn't allowed inside the viewer: show the printable page instead. */
 printHtml = html => dialog("Print preview", `<div class="printprev">${html}</div><p class="small muted">Printing works in the installed version.</p>`, { ok: "", cancel: "Close", wide: true });
 

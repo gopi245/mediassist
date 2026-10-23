@@ -979,3 +979,44 @@ class T22BedBoard(unittest.TestCase):
         self.assertEqual([x for x in rec.ok("/api/beds") if x["id"] == free["id"]][0]["status"], "free")
         d = rec.ok("/api/dashboard")
         self.assertIn("free", d["beds"])
+
+
+class T23LabExplanation(unittest.TestCase):
+    def test_plain_language_explanation_reviewed_by_doctor(self):
+        rec, lab, doc = Client("reception.ch"), Client("lab.ch"), Client("dr.rao")
+        tests = {t["code"]: t for t in lab.ok("/api/lab/tests")}
+        o = rec.ok("/api/lab/orders", {"patient_id": 5, "tests": [tests["CBC"]["id"], tests["FBS"]["id"]]})
+        lab.ok(f"/api/lab/orders/{o['id']}/collect", {})
+        d = lab.ok(f"/api/lab/orders/{o['id']}")
+        vals = {}
+        for t in d["tests"]:
+            for p in t["params"]:
+                vals[f"{t['item_id']}:{p['id']}"] = {"Haemoglobin": "9.8", "Glucose fasting": "132", "Platelets": "210", "Total WBC": "7", "Neutrophils": "60", "Lymphocytes": "30"}[p["name"]]
+        self.assertEqual(lab.post(f"/api/lab/orders/{o['id']}/interpret", {})[0], 400, "nothing to explain before submission")
+        lab.ok(f"/api/lab/orders/{o['id']}/results", {"values": vals, "submit": True})
+        d = lab.ok(f"/api/lab/orders/{o['id']}")
+        self.assertIsNotNone(d["interp"])
+        names = [f["param"] for f in d["interp"]["findings"]]
+        self.assertEqual(sorted(names), ["Glucose fasting", "Haemoglobin"], "only out-of-range values are explained")
+        hb = [f for f in d["interp"]["findings"] if f["param"] == "Haemoglobin"][0]
+        self.assertIn("anaemia", hb["text"])
+        self.assertIn("2 of 6 results are outside", d["interp"]["summary"])
+        self.assertEqual(d["interp"]["source"], "rules")
+        self.assertIsNone(d["interp_reviewed_at"], "not reviewed until the doctor verifies")
+        self.assertEqual(lab.post(f"/api/lab/orders/{o['id']}/interpret", {"summary": "x"})[0], 403, "technician can't edit the wording")
+        self.assertEqual(lab.post(f"/api/lab/orders/{o['id']}/interpret", {"ai": True})[0], 400, "no API key: clear message, rules kept")
+        doc.ok(f"/api/lab/orders/{o['id']}/interpret", {"findings": [{"param": "Haemoglobin", "text": "Your haemoglobin is a little low. We will check your iron."}], "summary": "Two values need a word with the doctor; nothing urgent."})
+        d = doc.ok(f"/api/lab/orders/{o['id']}")
+        self.assertEqual(d["interp"]["source"], "doctor")
+        self.assertIn("check your iron", [f for f in d["interp"]["findings"] if f["param"] == "Haemoglobin"][0]["text"])
+        self.assertEqual(doc.get(f"/api/pdf/lab/{o['id']}")[0], 409, "no PDF before verification")
+        doc.ok(f"/api/lab/orders/{o['id']}/verify", {})
+        d = doc.ok(f"/api/lab/orders/{o['id']}")
+        self.assertIsNotNone(d["interp_reviewed_at"])
+        txt = pdf_text(doc.get(f"/api/pdf/lab/{o['id']}")[1])
+        self.assertIn(b"What this means", txt)
+        self.assertIn(b"check your iron", txt)
+        doc.ok(f"/api/lab/orders/{o['id']}/interpret", {"patient": False})
+        self.assertNotIn(b"What this means", pdf_text(doc.get(f"/api/pdf/lab/{o['id']}")[1]), "kept off the patient's report on request")
+        msgs = [m for m in Client("owner").ok("/api/messages?kind=lab_report") if f"LAB{o['id']}" in (m["body"] or "")]
+        self.assertTrue(msgs and "What this means" in msgs[0]["body"], "the WhatsApp text carried the explanation at verification")

@@ -49,6 +49,7 @@ async function labOrder(main, id) {
       ${o.critical && !o.crit_ack_at && can("consult") ? `<button type="button" class="btn danger" data-act="labAck" data-id="${o.id}">Acknowledge critical result</button>` : ""}
       ${o.status === "verified" ? `<button type="button" class="btn ghost" data-act="labPrint">Print report</button><button type="button" class="btn ghost" data-act="pdfDl" data-p="lab/${o.id}">PDF</button>` : ""}
       <button type="button" class="btn ghost" data-act="go" data-v="lab">Back to worklist</button></div></form>
+    ${o.interp ? interpCard(o) : ""}
     <p class="small muted">Collected: ${o.collected_at ? `${o.collected_at} by ${esc(o.collected_name)}` : "–"} · Resulted: ${o.resulted_at ? `${o.resulted_at} by ${esc(o.resulted_name)}` : "–"} · Verified: ${o.verified_at ? `${o.verified_at} by ${esc(o.verified_name)}` : "–"}</p></div>`;
 }
 on("labLive", el => { const f = liveFlag(JSON.parse(el.dataset.p), el.value.trim()); el.closest("tr").querySelector(".flagcell").innerHTML = `<span class="flag-${f}">${FLAG_TXT[f] || ""}</span>`; });
@@ -56,6 +57,25 @@ const labValues = () => { const o = {}; $$(".resgrid input[name*=':']").forEach(
 on("labSave", async () => { await api(`/api/lab/orders/${App.cache.labOrder.id}/results`, { values: labValues() }); toast("Draft saved"); });
 on("labSubmit", async () => { const r = await api(`/api/lab/orders/${App.cache.labOrder.id}/results`, { values: labValues(), submit: true }); toast(r.critical ? "Submitted. CRITICAL value: doctor alerted." : "Submitted for verification"); go("lab", ["o", App.cache.labOrder.id]); });
 on("labCollect", async () => { await api(`/api/lab/orders/${App.cache.labOrder.id}/collect`, {}); go("lab", ["o", App.cache.labOrder.id]); });
+/* ---------- plain-language interpretation (rules, AI rewrite, doctor's edit) ---------- */
+const SRC_LABEL = { rules: "Rule-based", ai: "AI-assisted", doctor: "Edited by doctor" };
+function interpCard(o) {
+  const i = o.interp, edit = can("lab_verify") && o.status !== "cancelled";
+  return `<div class="card interp" style="margin-top:14px"><div class="card-h"><div><h2>What this means</h2><p>Plain-language explanation for the patient · ${pill(SRC_LABEL[i.source] || i.source, "p-info")} ${o.interp_reviewed_at ? pill("Reviewed by doctor", "p-ok") : pill("Not reviewed yet", "p-warn")}</p></div>
+      <div class="row-actions">${edit || can("lab") ? `<button type="button" class="btn sm ghost" data-act="interpAI">Rewrite with AI</button><button type="button" class="btn sm ghost" data-act="interpRules">Reset to rules</button>` : ""}</div></div>
+    ${i.findings.length ? i.findings.map((f, k) => `<div class="alert ${f.flag === "HH" || f.flag === "LL" ? "high" : ""}"><span class="ic">${f.flag === "N" ? "" : "!"}</span><div class="t"><b>${esc(f.param)} ${esc(String(f.value))} ${esc(f.unit || "")}</b> · ${FLAG_TXT[f.flag] || ""}<br>${edit ? `<textarea data-interp="${k}" rows="2" style="width:100%;margin-top:4px">${esc(f.text)}</textarea>` : esc(f.text)}</div></div>`).join("") : '<p class="small muted">No out-of-range values to explain.</p>'}
+    <p class="small"><b>Summary</b></p>${edit ? `<textarea id="interpSummary" rows="3" style="width:100%">${esc(i.summary)}</textarea>` : `<p>${esc(i.summary)}</p>`}
+    ${edit ? `<div class="row-actions" style="margin-top:8px"><label class="check"><input type="checkbox" id="interpPatient" ${o.interp_patient ? "checked" : ""}> Include in the patient's report and WhatsApp message</label><button type="button" class="btn sm" data-act="interpSave">Save wording</button></div>` : ""}
+    <p class="small muted" style="margin-top:6px">The doctor decides. Verifying the report counts as reviewing this text; the patient sees it only after verification.</p></div>`;
+}
+const LAB_AI = { rewrite: async oid => api(`/api/lab/orders/${oid}/interpret`, { ai: true }) };
+on("interpAI", async el => { try { await withBusy(el, () => LAB_AI.rewrite(App.cache.labOrder.id)); toast("Rewritten"); } catch (e) { toast(e.message); } go("lab", ["o", App.cache.labOrder.id]); });
+on("interpRules", async () => { await api(`/api/lab/orders/${App.cache.labOrder.id}/interpret`, {}); go("lab", ["o", App.cache.labOrder.id]); });
+on("interpSave", async () => {
+  const o = App.cache.labOrder, findings = o.interp.findings.map((f, k) => ({ param: f.param, text: ($(`[data-interp="${k}"]`) || {}).value || f.text }));
+  await api(`/api/lab/orders/${o.id}/interpret`, { findings, summary: $("#interpSummary").value, patient: $("#interpPatient").checked });
+  toast("Saved"); go("lab", ["o", o.id]);
+});
 on("labVerify", async () => {
   const r = await api(`/api/lab/orders/${App.cache.labOrder.id}/verify`, {});
   const s = (r.sent || [])[0];

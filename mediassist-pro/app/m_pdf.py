@@ -246,6 +246,15 @@ def lab_pdf(c, oid):
             return {}
         pdf.table([("Test", 175, "left"), ("Result", 80, "left"), ("Unit", 70, "left"), ("Normal range", 110, "left"), ("Flag", 80, "left")], data, row_style=style)
         pdf.y -= 12
+    if o.get("interp") and o.get("interp_patient") and o.get("interp_reviewed_at"):
+        pdf.need_space(60)
+        pdf.text(pdf.M, pdf.y - 12, "What this means", 11.5, True, TEAL)
+        pdf.y -= 18
+        for f in o["interp"]["findings"]:
+            pdf.para("- " + f["text"], 9.5)
+        pdf.para(o["interp"]["summary"], 9.5, True)
+        pdf.para("Explanation reviewed by " + (o.get("verified_name") or "the doctor") + ". It is general information, not a diagnosis.", 8, color=MUTED)
+        pdf.y -= 6
     pdf.need_space(80)
     pdf.y -= 6
     pdf.para("Results marked High or Low are outside the laboratory's reference range (adult ranges unless stated). Please show this report to your doctor; "
