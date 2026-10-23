@@ -17,7 +17,7 @@ function patientForm(p, act) {
     <div><label>Gender</label><select name="gender">${["Male", "Female", "Other"].map(g => `<option ${p.gender === g ? "selected" : ""}>${g}</option>`).join("")}</select></div>
     <div><label>Weight (kg)</label><input name="weight" type="number" step=".1" value="${p.weight ?? ""}"></div><div><label>Blood group</label><input name="blood_group" value="${esc(p.blood_group)}"></div>
     <div><label>Language for messages</label><select name="lang">${[["en", "English"], ["hi", "हिन्दी"], ["te", "తెలుగు"], ["ta", "தமிழ்"]].map(([k, l]) => `<option value="${k}" ${(p.lang || "en") === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
-    <div class="span2"><label>ABHA number (14 digits)</label><input name="abha" inputmode="numeric" value="${esc(p.abha)}"></div><div class="span2"><label>Address</label><input name="address" value="${esc(p.address)}"></div>
+    <div><label>ABHA number (14 digits)</label><input name="abha" inputmode="numeric" value="${esc(p.abha)}"></div><div><label>ABHA address</label><input name="abha_address" value="${esc(p.abha_address)}" placeholder="name@abdm"></div><div class="span2"><label>Address</label><input name="address" value="${esc(p.address)}"></div>
     <div class="span2"><label>Allergies</label><input name="allergies" value="${esc(p.allergies)}" placeholder="penicillin, sulfa, nsaid"></div>
     <div class="span2"><label>Conditions</label><input name="conditions" value="${esc(p.conditions)}" placeholder="asthma, kidney disease, ulcer, heart failure"></div>
     <div><label>LMP (if pregnant)</label><input name="lmp" type="date" value="${esc(p.lmp)}"></div>
@@ -50,7 +50,7 @@ async function openPatient(id, tab = "summary") {
   const tabs = [["summary", "Summary"], ["visits", `Visits (${p.visits.length})`], ["vitals", "Vitals"], ["labs", `Labs (${p.labs.length})`], ["vacc", "Vaccinations"],
     ["ipd", `Admissions (${p.admissions.length})`], ["care", `Imaging & referrals (${p.imaging.length + p.referrals.length + p.procedures.length})`],
     ...((p.gender || "").toLowerCase().startsWith("f") && (p.pregnancy || p.anc.length) ? [["anc", `Antenatal (${p.anc.length})`]] : []),
-    ...(p.age != null && p.age < 18 ? [["growth", "Growth"]] : []), ["money", "Bills"], ["docs", `Documents (${p.documents.length})`]];
+    ...(p.age != null && p.age < 18 ? [["growth", "Growth"]] : []), ["dental", "Dental"], ["physio", "Physio"], ["money", "Bills"], ["docs", `Documents (${p.documents.length})`]];
   box.innerHTML = `<div class="phead"><div class="avatar">${initials(p.name)}</div><div style="flex:1;min-width:0"><h2>${esc(p.name)}</h2>
     <div class="small muted"><span class="mono">${p.code}</span> · ${p.age ?? "?"} yrs · ${esc(p.gender || "")} · <span class="mono">${esc(p.phone)}</span>${p.abha ? ` · ABHA <span class="mono">${esc(p.abha)}</span>` : ""}${p.blood_group ? " · " + esc(p.blood_group) : ""}</div></div></div>
     ${p.allergies ? `<div class="banner" style="margin-top:10px">Allergic to ${esc(p.allergies)}</div>` : ""}

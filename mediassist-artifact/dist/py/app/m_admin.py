@@ -218,12 +218,13 @@ def api_save_branch(h, c, b, q):
     need(not upi or re.fullmatch(r"[A-Za-z0-9._-]{2,}@[A-Za-z0-9.-]{2,}", upi), "UPI ID looks wrong (name@bank)")
     vals = (code, name, kind, clean(b, "address"), clean(b, "phone", 20), clean(b, "gstin", 20), clean(b, "dl_no", 60),
             clean(b, "report_email"), clean(b, "report_whatsapp", 20), 0 if b.get("active") is False else 1)
+    hfr = clean(b, "hfr_id", 40) or None
     try:
         if b.get("id"):
-            c.execute("UPDATE branches SET code=?,name=?,kind=?,address=?,phone=?,gstin=?,dl_no=?,report_email=?,report_whatsapp=?,active=?,upi_id=? WHERE id=?",
-                      (*vals, upi or None, as_int(b["id"], "id")))
+            c.execute("UPDATE branches SET code=?,name=?,kind=?,address=?,phone=?,gstin=?,dl_no=?,report_email=?,report_whatsapp=?,active=?,upi_id=?,hfr_id=? WHERE id=?",
+                      (*vals, upi or None, hfr, as_int(b["id"], "id")))
         else:
-            c.execute("INSERT INTO branches(code,name,kind,address,phone,gstin,dl_no,report_email,report_whatsapp,active,upi_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)", (*vals, upi or None))
+            c.execute("INSERT INTO branches(code,name,kind,address,phone,gstin,dl_no,report_email,report_whatsapp,active,upi_id,hfr_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", (*vals, upi or None, hfr))
     except sqlite3.IntegrityError:
         raise ApiError(400, "Branch code already used")
     audit(c, h, "branch.save", f"{code} {name}")
@@ -314,7 +315,8 @@ def api_audit(h, c, b, q):
     if term:
         sql += " AND (a.action LIKE ? ESCAPE '\\' OR a.detail LIKE ? ESCAPE '\\' OR u.username LIKE ? ESCAPE '\\')"
         args += [like(term)] * 3
-    return rows(c.execute(sql + " ORDER BY a.id DESC LIMIT 400", args))
+    limit, offset = min(as_int(qget(q, "limit", "200"), "limit", 1), 1000), as_int(qget(q, "offset", "0"), "offset", 0)
+    return rows(c.execute(sql + " ORDER BY a.id DESC LIMIT ? OFFSET ?", (*args, limit, offset)))
 
 
 @route("GET", "/api/errors", "admin")

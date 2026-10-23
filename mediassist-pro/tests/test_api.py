@@ -1349,3 +1349,61 @@ class T32WardAnalyticsInsurance(unittest.TestCase):
             self.assertIn("00-cover-sheet.pdf", names)
             self.assertIn("01-invoice.pdf", names)
             self.assertTrue(all(z.read(n).startswith(b"%PDF") for n in names))
+
+
+class T33SpecialtyCataloguesFhir(unittest.TestCase):
+    def test_dental_physio(self):
+        rec, doc = Client("reception.ch"), Client("dr.rao")
+        pid = rec.ok("/api/patients", {"name": "Dental Test", "phone": "9000012121", "age": 30, "gender": "Male", "consent": True, "force": True})["id"]
+        self.assertEqual(doc.post(f"/api/patients/{pid}/dental", {"tooth": 99, "state": "caries"})[0], 400)
+        doc.ok(f"/api/patients/{pid}/dental", {"tooth": 16, "state": "caries", "surfaces": "mo"})
+        doc.ok(f"/api/patients/{pid}/dental", {"tooth": 16, "state": "filled", "kind": "treatment", "procedure": "composite"})
+        d = rec.ok(f"/api/patients/{pid}/dental")
+        self.assertEqual(d["latest"]["16"]["state"], "filled", "latest entry wins")
+        self.assertEqual(len(d["history"]), 2)
+        self.assertEqual(rec.post(f"/api/patients/{pid}/dental", {"tooth": 11, "state": "caries"})[0], 403, "reception can view, not chart")
+        pl = rec.ok(f"/api/patients/{pid}/physio", {"diagnosis": "Frozen shoulder", "planned_sessions": 2, "goals": "full abduction"})
+        rec.ok(f"/api/physio/{pl['id']}/session", {"exercises": "pendulum", "duration_min": 30, "pain_before": 7, "pain_after": 5})
+        self.assertEqual(rec.post(f"/api/physio/{pl['id']}/session", {"pain_after": 11})[0], 400, "pain is 0-10")
+        r = rec.ok(f"/api/physio/{pl['id']}/session", {"exercises": "wall climb", "duration_min": 30, "pain_before": 5, "pain_after": 3})
+        self.assertEqual((r["done"], r["planned"]), (2, 2))
+        p = rec.ok(f"/api/patients/{pid}/physio")[0]
+        self.assertEqual((p["status"], p["pain_trend"]), ("completed", [5, 3]))
+        self.assertEqual(rec.post(f"/api/physio/{pl['id']}/session", {"pain_after": 2})[0], 404, "a completed plan takes no more sessions")
+
+    def test_catalogue_imports(self):
+        own = Client("owner")
+        r = own.ok("/api/import/icd10", {"csv": "code,title\nJ02.9,Acute pharyngitis, unspecified\nS72.3,Fracture of shaft of femur\nI10,Essential (primary) hypertension updated\n"})
+        self.assertEqual(r["codes"], 3)
+        self.assertTrue(any(x["code"] == "S72.3" for x in own.ok("/api/icd10?q=femur")))
+        r = own.ok("/api/import/lab-tests", {"csv": "code,test,sample,rate,tat_hours,param,unit,low,high,crit_low,crit_high,ref_text\nVITD,Vitamin D (25-OH),Serum,1200,48,Vitamin D,ng/mL,30,100,,,\nCBC,Complete blood count,EDTA blood,400,4,MCV,fL,80,100,,,\n"})
+        self.assertEqual((r["tests_added"], r["params_added"]), (1, 2), "new test added; new parameter added to the existing CBC")
+        t = {x["code"]: x for x in own.ok("/api/lab/tests")}
+        self.assertIn("VITD", t)
+        self.assertTrue(any(p["name"] == "MCV" for p in t["CBC"]["params"]))
+        self.assertEqual(own.post("/api/import/lab-tests", {"csv": "code,test,param,low\nX,Bad,P,abc\n"})[0], 400)
+        r = own.ok("/api/import/medicines", {"csv": "name,generic,form,schedule,gst,hsn,pack_size,strength_mg,max_daily_mg,renal_caution\nDolo 650,paracetamol,Tablet,OTC,12,3004,15,650,4000,0\nNewmed 10,newdrug,Tablet,H,12,3004,10,10,40,yes\n"})
+        self.assertEqual((r["added"], r["updated"]), (1, 1))
+        m = {x["name"]: x for x in own.ok("/api/medicines")}
+        self.assertEqual(m["Newmed 10"]["renal_caution"], 1)
+
+    def test_fhir_bundles_and_abdm_status(self):
+        rec, doc, own = Client("reception.ch"), Client("dr.rao"), Client("owner")
+        meds = {m["name"]: m for m in doc.ok("/api/medicines")}
+        pid = rec.ok("/api/patients", {"name": "Fhir Test", "phone": "9000013131", "age": 40, "gender": "Female", "abha": "12345678901234", "abha_address": "fhir@abdm", "consent": True, "force": True})["id"]
+        v = rec.ok("/api/visits", {"patient_id": pid, "complaint": "cough"})
+        doc.ok(f"/api/visits/{v['id']}/complete", {"diagnosis": "Acute bronchitis", "icd": "J02.9", "items": [{"medicine_id": meds["Dolo 650"]["id"], "dose": "1", "freq": "1-0-1", "days": 3}], "lab_tests": []})
+        b = doc.ok(f"/api/fhir/rx/{v['id']}")
+        self.assertEqual((b["resourceType"], b["type"]), ("Bundle", "document"))
+        types = [e["resource"]["resourceType"] for e in b["entry"]]
+        for t in ("Composition", "Patient", "Organization", "Practitioner", "MedicationRequest", "Condition"):
+            self.assertIn(t, types)
+        pat = next(e["resource"] for e in b["entry"] if e["resource"]["resourceType"] == "Patient")
+        self.assertTrue(any(i["value"] == "12345678901234" for i in pat["identifier"]))
+        self.assertTrue(any(i["value"] == "fhir@abdm" for i in pat["identifier"]))
+        mr = next(e["resource"] for e in b["entry"] if e["resource"]["resourceType"] == "MedicationRequest")
+        self.assertIn("morning 1 tablet", mr["dosageInstruction"][0]["text"])
+        st, data = doc.get(f"/api/fhir/rx/{v['id']}?download=1")
+        self.assertEqual(st, 200); self.assertEqual(data["resourceType"], "Bundle")
+        s = own.ok("/api/abdm/status")
+        self.assertFalse(s["configured"]); self.assertGreaterEqual(s["patients_with_abha"], 1); self.assertIn("M2", s["milestones"])

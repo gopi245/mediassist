@@ -275,6 +275,20 @@ CREATE TABLE io_chart(id INTEGER PRIMARY KEY, admission_id INTEGER NOT NULL REFE
   ml INTEGER NOT NULL, user_id INTEGER, note TEXT);
 CREATE INDEX ix_io_adm ON io_chart(admission_id)
 """,
+# 15: dental chart, physiotherapy, ABDM identifiers
+r"""
+CREATE TABLE dental_chart(id INTEGER PRIMARY KEY, patient_id INTEGER NOT NULL REFERENCES patients(id), tooth INTEGER NOT NULL, state TEXT NOT NULL, kind TEXT NOT NULL,
+  procedure TEXT, surfaces TEXT, notes TEXT, at TEXT NOT NULL, visit_id INTEGER, user_id INTEGER);
+CREATE INDEX ix_dental_pat ON dental_chart(patient_id);
+CREATE TABLE physio_plans(id INTEGER PRIMARY KEY, patient_id INTEGER NOT NULL REFERENCES patients(id), diagnosis TEXT NOT NULL, goals TEXT, planned_sessions INTEGER NOT NULL DEFAULT 10,
+  started TEXT, status TEXT NOT NULL DEFAULT 'active', outcome TEXT, user_id INTEGER, visit_id INTEGER);
+CREATE TABLE physio_sessions(id INTEGER PRIMARY KEY, plan_id INTEGER NOT NULL REFERENCES physio_plans(id), at TEXT NOT NULL, exercises TEXT, duration_min INTEGER,
+  pain_before INTEGER, pain_after INTEGER, rom TEXT, notes TEXT, user_id INTEGER, service_id INTEGER);
+CREATE INDEX ix_physio_pat ON physio_plans(patient_id);
+ALTER TABLE patients ADD COLUMN abha_address TEXT;
+ALTER TABLE branches ADD COLUMN hfr_id TEXT;
+ALTER TABLE users ADD COLUMN hpr_id TEXT
+""",
 ]
 
 

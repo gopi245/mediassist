@@ -62,14 +62,16 @@ on("hSave", async f => {
   const r = await api("/api/invoices", body); INV = []; App.cache.hVisit = null; toast(`Invoice ${r.inv_no} saved · ${INV_ST[r.status][0]}`); go("hbilling", ["inv", r.id]);
 });
 HB.list = async el => {
-  const flt = App.cache.invFlt || "open", q = App.cache.invQ || "";
-  const list = await api(`/api/invoices?filter=${flt}&q=${encodeURIComponent(q)}`);
-  el.innerHTML = card("Invoices", `${list.length} shown · outstanding ${money(list.reduce((a, i) => a + i.due, 0))}`,
+  const flt = App.cache.invFlt || "open", q = App.cache.invQ || "", off = App.cache.invOff || 0;
+  const page = await api(`/api/invoices?filter=${flt}&q=${encodeURIComponent(q)}&limit=100&offset=${off}`);
+  const list = App.cache.invRows = off ? (App.cache.invRows || []).concat(page) : page;
+  el.innerHTML = card("Invoices", `${list.length} shown · outstanding ${money(list.reduce((a, i) => a + i.due, 0))}${page.length >= 100 ? ` · <button class="btn sm ghost" data-act="invMore">Load more</button>` : ""}`,
     `<input data-input="invQ" value="${esc(q)}" placeholder="Search name, phone or invoice no.">${subtabs([["open", "Open"], ["due", "Patient dues"], ["insurance", "Insurance pending"], ["paid", "Paid"], ["all", "All"]], flt, "invFlt")}` +
     tbl(["Invoice", "Patient", "Total", "Paid", "Due", "Status"], list.map(i => `<tr class="click" data-act="go" data-v="hbilling" data-p="inv/${i.id}"><td class="mono">${i.inv_no}<div class="small muted">${i.created_at}</div></td><td>${esc(i.pname)} <span class="small muted">${i.code}</span></td><td class="num">${money(i.total)}</td><td class="num">${money(i.paid)}</td><td class="num">${i.due ? `<b>${money(i.due)}</b>` : "–"}</td><td>${pill(...INV_ST[i.status])}</td></tr>`).join(""), "No invoices here."));
 };
-on("invFlt", el => { App.cache.invFlt = el.dataset.k; go("hbilling", ["list"]); });
-on("invQ", debounce(el => { App.cache.invQ = el.value; HB.list($("#hbBody")); }, 350));
+on("invFlt", el => { App.cache.invFlt = el.dataset.k; App.cache.invOff = 0; go("hbilling", ["list"]); });
+on("invQ", debounce(el => { App.cache.invQ = el.value; App.cache.invOff = 0; HB.list($("#hbBody")); }, 350));
+on("invMore", () => { App.cache.invOff = (App.cache.invOff || 0) + 100; HB.list($("#hbBody")); });
 async function invoiceView(main, id) {
   const i = await api("/api/invoices/" + id); App.cache.inv = i;
   const isMgr = ["owner", "manager"].includes(App.me.role), open = !i.cancelled_at;

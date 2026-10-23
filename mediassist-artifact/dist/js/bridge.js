@@ -4,7 +4,7 @@
 (function () {
   const PY = ["server.py", "app/__init__.py", "app/core.py", "app/schema.py", "app/refdata.py", "app/safety.py", "app/notify.py", "app/m_admin.py",
     "app/m_clinical.py", "app/m_pharmacy.py", "app/m_lab.py", "app/m_appointments.py", "app/m_ipd.py", "app/m_billing.py", "app/m_accounts.py",
-    "app/m_docs.py", "app/m_pdf.py", "app/m_portal.py", "app/m_reports.py", "app/m_weekly.py", "app/m_upload.py", "app/m_watch.py", "app/m_tracker.py", "app/m_alerts.py", "app/m_assistant.py", "app/m_care.py", "app/lab_explain.py", "app/m_suppliers.py", "app/rx_words.py", "app/m_pay.py", "app/m_ward.py", "app/setup.py", "bridge.py"];
+    "app/m_docs.py", "app/m_pdf.py", "app/m_portal.py", "app/m_reports.py", "app/m_weekly.py", "app/m_upload.py", "app/m_watch.py", "app/m_tracker.py", "app/m_alerts.py", "app/m_assistant.py", "app/m_care.py", "app/lab_explain.py", "app/m_suppliers.py", "app/rx_words.py", "app/m_pay.py", "app/m_ward.py", "app/m_specialty.py", "app/setup.py", "bridge.py"];
   window.MA_DEMO = window.MA_DEMO || {};
   const origFetch = window.fetch.bind(window);
   let token = null; try { token = localStorage.getItem("ma-sid"); } catch (e) {}

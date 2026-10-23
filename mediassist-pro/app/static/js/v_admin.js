@@ -18,7 +18,7 @@ ADM.branches = async el => {
   const brs = await api("/api/branches"); App.cache.brs = brs;
   el.innerHTML = `<div class="g-form">${card("Branch", "", `<form data-submit="brSave" id="brForm" class="stack"><input type="hidden" name="id"><div class="fields"><div><label>Code</label><input name="code" placeholder="CH"></div><div class="span2"><label>Name</label><input name="name"></div>
     <div><label>Type</label><select name="kind"><option value="hospital+pharmacy">Hospital + pharmacy</option><option value="hospital">Hospital / clinic</option><option value="pharmacy">Medical shop</option></select></div><div><label>Phone</label><input name="phone"></div><div class="span2"><label>Address</label><input name="address"></div>
-    <div><label>GSTIN</label><input name="gstin"></div><div><label>Drug licence no.</label><input name="dl_no"></div><div><label>UPI ID (pay-by-UPI QR on bills)</label><input name="upi_id" placeholder="hospital@upi"></div><div class="span2"><label>Daily report email</label><input name="report_email"></div><div><label>Daily report WhatsApp</label><input name="report_whatsapp"></div></div>
+    <div><label>GSTIN</label><input name="gstin"></div><div><label>Drug licence no.</label><input name="dl_no"></div><div><label>UPI ID (pay-by-UPI QR on bills)</label><input name="upi_id" placeholder="hospital@upi"></div><div><label>ABDM facility ID (HFR)</label><input name="hfr_id" placeholder="IN1234567890"></div><div class="span2"><label>Daily report email</label><input name="report_email"></div><div><label>Daily report WhatsApp</label><input name="report_whatsapp"></div></div>
     <label class="check"><input type="checkbox" name="active" checked> Active</label><div class="btns"><button class="btn">Save branch</button><button type="button" class="btn ghost" data-act="brNew">New</button></div></form>`)}
   ${card("Branches", "", tbl(["Code", "Name", "Type", "Reports to", ""], brs.map(b => `<tr><td><span class="code">${b.code}</span></td><td>${esc(b.name)}${b.active ? "" : " (closed)"}</td><td>${b.kind}</td><td class="small">${esc(b.report_email || "")} ${esc(b.report_whatsapp || "")}</td><td><button class="btn sm ghost" data-act="brEdit" data-id="${b.id}">Edit</button></td></tr>`).join("")))}</div>`;
 };
@@ -60,10 +60,16 @@ ADM.settings = async el => {
       ${F("meta_phone_id", "Meta phone number ID")}${F("meta_token", "Meta access token", "password")}${F("twilio_sid", "Twilio account SID")}${F("twilio_token", "Twilio auth token", "password")}${F("twilio_from", "Twilio WhatsApp number")}</div>`)}
     ${card("Payments", "Every bill and invoice carries a pay-by-UPI QR from the branch's UPI ID (Admin > Branches). Razorpay adds online payment links that mark the invoice paid by themselves.",
       `<div class="fields">${F("razorpay_key_id", "Razorpay key ID")}${F("razorpay_key_secret", "Razorpay key secret", "password")}${F("razorpay_webhook_secret", "Razorpay webhook secret", "password")}<div class="span2 small muted">Webhook URL to set in Razorpay: <span class="mono">${esc((s.public_url || "https://your-address").replace(/\/$/, ""))}/api/public/razorpay</span>, event payment_link.paid</div></div>`)}
+    ${card("ABDM (Ayushman Bharat Digital Mission)", "Sandbox credentials from the ABDM developer portal. M1: ABHA capture is ready. M2: FHIR bundles for prescriptions, lab reports and discharge summaries are generated at /api/fhir; the gateway push and consent flow need these credentials and certification.",
+      `<div class="fields"><div><label>Environment</label><select name="abdm_env"><option value="sandbox" ${s.abdm_env !== "production" ? "selected" : ""}>Sandbox</option><option value="production" ${s.abdm_env === "production" ? "selected" : ""}>Production</option></select></div>${F("abdm_client_id", "Client ID")}${F("abdm_client_secret", "Client secret", "password")}${F("abdm_hip_id", "HIP ID (after M2 certification)")}</div><div id="abdmBox"></div>`)}
     ${card("AI document reader", "Optional. Uses Claude to read bills and invoices. Needs  pip install anthropic  on the server.", `<div class="fields">${F("anthropic_api_key", "Anthropic API key", "password")}</div>`)}
     <div class="btns"><button class="btn">Save settings</button></div></form>`;
 };
 on("setSave", async f => { await api("/api/settings", vals(f)); toast("Settings saved"); });
+on("impCat", async el => {
+  const f = $("#" + el.dataset.f).files[0]; if (!f) return toast("Choose the CSV file first.");
+  try { const r = await withBusy(el, async () => api(`/api/import/${el.dataset.k}`, { csv: await f.text() })); $("#impCatOut").innerHTML = alertRow("info", esc(JSON.stringify(r).replace(/[{}"]/g, "").replace(/,/g, " · "))); } catch (e) { toast(e.message); }
+});
 on("impGrowth", async el => {
   const f = $("#impG").files[0]; if (!f) return toast("Choose the CSV file first.");
   const r = await withBusy(el, async () => api("/api/import/growth", { csv: await f.text(), sex: $("#gwSex").value, kind: $("#gwKind").value }));
@@ -72,6 +78,10 @@ on("impGrowth", async el => {
 ADM.import = async el => {
   el.innerHTML = `<div class="g2">${card("Import patients", "CSV with a header row: name, phone, age, gender, dob, address, allergies, conditions, blood_group, abha", `<input type="file" accept=".csv,text/csv" id="impP"><div class="btns"><button class="btn" data-act="impRun" data-k="patients" data-f="impP">Import patients</button></div><div id="impPOut"></div>`)}
     ${card("Import opening stock", `CSV: medicine, generic, form, schedule, pack_size, batch, expiry (YYYY-MM-DD), qty, mrp, cost, rack. Loads into ${App.me.branch ? esc(App.me.branch.name) : "the selected branch"}.`, `<input type="file" accept=".csv,text/csv" id="impS"><div class="btns"><button class="btn" data-act="impRun" data-k="stock" data-f="impS" ${App.me.branch ? "" : "disabled"}>Import stock</button></div><div id="impSOut"></div>`)}
+    ${card("Clinical catalogues", "Load licensed or official content in bulk. Existing entries are updated by code or name.", `<div class="fields">
+      <div><label>ICD-10 (CSV: code,title)</label><input type="file" accept=".csv,.txt" id="impIcd"><button class="btn sm" data-act="impCat" data-k="icd10" data-f="impIcd" style="margin-top:6px">Load ICD-10</button></div>
+      <div><label>Lab tests (CSV: code,test,sample,rate,tat_hours,param,unit,low,high,crit_low,crit_high,ref_text)</label><input type="file" accept=".csv,.txt" id="impLab"><button class="btn sm" data-act="impCat" data-k="lab-tests" data-f="impLab" style="margin-top:6px">Load lab catalogue</button></div>
+      <div><label>Medicine master (CSV: name,generic,form,schedule,gst,hsn,pack_size,strength_mg,max_daily_mg,ped_mg_per_kg_day,renal_caution,pregnancy_avoid,cold_chain,barcode)</label><input type="file" accept=".csv,.txt" id="impMed"><button class="btn sm" data-act="impCat" data-k="medicines" data-f="impMed" style="margin-top:6px">Load medicines</button></div></div><div id="impCatOut"></div>`)}
     ${card("WHO growth standards", "For percentiles and z-scores on the child growth chart. Download the LMS tables from who.int (Child growth standards > Weight-for-age > z-scores, 'expanded tables' CSV: columns Month/Day, L, M, S) and load one file per sex and measure.", `<div class="fields"><div><label>Sex</label><select id="gwSex"><option value="M">Boys</option><option value="F">Girls</option></select></div><div><label>Measure</label><select id="gwKind"><option value="wfa">Weight-for-age</option><option value="hfa">Height/length-for-age</option></select></div><div class="span2"><input type="file" accept=".csv,.txt,text/csv" id="impG"></div></div><div class="btns"><button class="btn" data-act="impGrowth">Load table</button></div><div id="impGOut"></div>`)}</div>`;
 };
 on("impRun", async el => {
@@ -85,8 +95,10 @@ ADM.backups = async el => {
 };
 on("bkNow", async el => { await withBusy(el, () => api("/api/backups", {})); toast("Backup saved"); go("admin", ["backups"]); });
 ADM.audit = async el => {
-  const l = await api("/api/audit?q=" + encodeURIComponent(App.cache.auQ || ""));
-  el.innerHTML = card("Audit trail", "Every action with who, when and where", `<input data-input="auQ" value="${esc(App.cache.auQ || "")}" placeholder="Search action, detail or user (e.g. OVERRIDE, refund, erase)">` + tbl(["When", "User", "Branch", "Action", "Detail"], l.map(a => `<tr><td class="mono">${a.at}</td><td>${esc(a.username || "public")}</td><td>${esc(a.code || "")}</td><td class="mono">${esc(a.action)}</td><td class="small">${/OVERRIDE/.test(a.detail || "") ? pill("override", "p-crit") + " " : ""}${esc(a.detail || "")}</td></tr>`).join("")));
+  const off = App.cache.auOff || 0, page = await api(`/api/audit?q=${encodeURIComponent(App.cache.auQ || "")}&limit=200&offset=${off}`);
+  App.cache.auRows = off ? (App.cache.auRows || []).concat(page) : page; const l = App.cache.auRows;
+  el.innerHTML = card("Audit trail", "Every action with who, when and where", `<input data-input="auQ" value="${esc(App.cache.auQ || "")}" placeholder="Search action, detail or user (e.g. OVERRIDE, refund, erase)">` + tbl(["When", "User", "Branch", "Action", "Detail"], l.map(a => `<tr><td class="mono">${a.at}</td><td>${esc(a.username || "public")}</td><td>${esc(a.code || "")}</td><td class="mono">${esc(a.action)}</td><td class="small">${/OVERRIDE/.test(a.detail || "") ? pill("override", "p-crit") + " " : ""}${esc(a.detail || "")}</td></tr>`).join("")), `<button class="btn sm ghost" data-act="auMore">Load 200 more</button>`);
 };
-on("auQ", debounce(el => { App.cache.auQ = el.value; ADM.audit($("#admBody2")); }, 400));
+on("auQ", debounce(el => { App.cache.auQ = el.value; App.cache.auOff = 0; ADM.audit($("#admBody2")); }, 400));
+on("auMore", () => { App.cache.auOff = (App.cache.auOff || 0) + 200; ADM.audit($("#admBody2")); });
 ADM.errors = async el => { const l = await api("/api/errors"); el.innerHTML = card("Server errors", "Share these with your developer if something breaks", tbl(["When", "Request", "Error"], l.map(e => `<tr><td class="mono">${e.at}</td><td class="mono small">${esc(e.method)} ${esc(e.path)}</td><td class="small">${esc(e.error)}</td></tr>`).join(""), "No errors logged.")); };

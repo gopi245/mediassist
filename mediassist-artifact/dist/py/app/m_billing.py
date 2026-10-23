@@ -187,7 +187,8 @@ def api_invoices(h, c, b, q):
         sql += " AND i.created_at LIKE ?"
         args.append(valid_day(qget(q, "date")) + "%")
     out = []
-    for inv in rows(c.execute(sql + " ORDER BY i.id DESC LIMIT 400", args)):
+    limit, offset = min(as_int(qget(q, "limit", "100"), "limit", 1), 500), as_int(qget(q, "offset", "0"), "offset", 0)
+    for inv in rows(c.execute(sql + " ORDER BY i.id DESC LIMIT ? OFFSET ?", (*args, limit * 3 if flt not in ("all",) else limit, offset))):
         st = inv_state(c, inv)
         if flt == "open" and st["status"] not in ("due", "partial", "insurance"):
             continue

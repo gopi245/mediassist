@@ -87,7 +87,7 @@ def patient_fields(b):
     return dict(name=name, age=age, dob=dob, gender=clean(b, "gender", 10), phone=phone, address=clean(b, "address"),
                 allergies=clean(b, "allergies"), conditions=clean(b, "conditions"), blood_group=clean(b, "blood_group", 5),
                 abha=abha or None, weight=opt_num(b.get("weight"), float, "weight"), lmp=lmp, lang=clean(b, "lang", 5) or None,
-                gravida=opt_num(b.get("gravida"), int, "gravida"), para=opt_num(b.get("para"), int, "para"))
+                gravida=opt_num(b.get("gravida"), int, "gravida"), para=opt_num(b.get("para"), int, "para"), abha_address=clean(b, "abha_address", 60).lower() or None)
 
 
 @route("GET", "/api/patients", "patients_read")

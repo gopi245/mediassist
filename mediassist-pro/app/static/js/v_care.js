@@ -175,3 +175,36 @@ async function wardWatchCard(main) {
     l.map(x => alertRow(x.band === "high" ? "high" : "", `<b>${esc(x.pname)}</b> <span class="mono small">${x.ip_no}</span> · bed ${esc(x.bed || "–")} · ${x.flags.map(esc).join(" · ")} <button class="btn sm ghost" data-act="go" data-v="ipd" data-p="a/${x.admission_id}">Open</button>`)).join(""));
   main.insertBefore(box, main.firstChild.nextSibling);
 }
+
+/* ---------- dental chart (FDI) ---------- */
+const TOOTH_COLOR = { caries: "var(--crit)", filled: "var(--s2)", missing: "var(--muted)", extracted: "var(--muted)", crown: "var(--s3)", "root canal": "var(--warn)", implant: "var(--s4)", fracture: "var(--crit)", mobile: "var(--warn)", sealant: "var(--ok)", other: "var(--s1)" };
+CARE_TABS.dental = async (el, p) => {
+  const d = await api(`/api/patients/${p.id}/dental`); App.cache.dental = d;
+  const child = p.age != null && p.age < 13;
+  const row = (teeth) => `<div class="teeth">${teeth.map(t => { const l = d.latest[t]; return `<button type="button" class="tooth ${l ? "has" : ""}" data-act="toothPick" data-t="${t}" style="${l ? `border-color:${TOOTH_COLOR[l.state] || "var(--s1)"};background:${TOOTH_COLOR[l.state] || "var(--s1)"}22` : ""}" title="${l ? `${l.state}${l.procedure ? " · " + l.procedure : ""} (${l.at.slice(0, 10)})` : "no findings"}">${t}${l ? `<span>${l.state === "root canal" ? "RCT" : l.state.slice(0, 4)}</span>` : ""}</button>`; }).join("")}</div>`;
+  const adult = d.teeth, upper = adult.slice(0, 16), lower = adult.slice(16);
+  el.innerHTML = `${card("Tooth chart", "FDI numbering · click a tooth to record a finding or treatment · colours show the latest state", `<div class="small muted" style="margin-bottom:6px">Upper right → upper left</div>${row(upper)}<div class="small muted" style="margin:8px 0 6px">Lower right → lower left</div>${row(lower)}${child ? `<div class="small muted" style="margin:8px 0 6px">Primary teeth</div>${row(d.child_teeth)}` : ""}
+    <div class="row-actions small" style="margin-top:8px">${Object.entries(TOOTH_COLOR).slice(0, 8).map(([k, v]) => `<span><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${v};margin-right:4px"></i>${k}</span>`).join("")}</div>`)}
+    ${card("Dental history", "", tbl(["When", "Tooth", "", "Finding", "Procedure", "Surfaces", "By"], d.history.map(x => `<tr><td class="mono small">${x.at.slice(0, 10)}</td><td><b>${x.tooth}</b></td><td>${pill(x.kind, x.kind === "treatment" ? "p-ok" : "p-warn")}</td><td>${esc(x.state)}</td><td>${esc(x.procedure || "")}${x.notes ? `<div class="small muted">${esc(x.notes)}</div>` : ""}</td><td class="mono">${esc(x.surfaces || "")}</td><td class="small">${esc(x.uname || "")}</td></tr>`).join(""), "Nothing charted yet."))}`;
+};
+on("toothPick", async el => {
+  if (!can("consult")) return;
+  const d = App.cache.dental, t = +el.dataset.t, l = d.latest[t];
+  const v = await dialog(`Tooth ${t}${l ? ` · now: ${l.state}` : ""}`, `<label>Record</label><select name="kind"><option value="finding">Finding</option><option value="treatment">Treatment done</option></select><label>State</label><select name="state">${d.states.map(s => `<option ${l && l.state === s ? "selected" : ""}>${s}</option>`).join("")}</select><label>Procedure (for treatments)</label><input name="procedure" placeholder="composite filling, extraction, RCT, crown"><label>Surfaces</label><input name="surfaces" placeholder="M O D B L" maxlength="10"><label>Notes</label><input name="notes">`, { ok: "Save" });
+  if (!v) return;
+  await api(`/api/patients/${App.cache.patient.id}/dental`, { ...v, tooth: t }); toast(`Tooth ${t} recorded`); openPatient(App.cache.patient.id, "dental");
+});
+
+/* ---------- physiotherapy ---------- */
+CARE_TABS.physio = async (el, p) => {
+  const plans = await api(`/api/patients/${p.id}/physio`);
+  el.innerHTML = `${plans.map(pl => card(`${esc(pl.diagnosis)} ${pill(pl.status, pl.status === "active" ? "p-info" : "p-ok")}`, `${pl.done} of ${pl.planned_sessions} sessions · started ${pl.started}${pl.goals ? " · goals: " + esc(pl.goals) : ""}`,
+      `<div class="boot-bar" style="width:100%;background:var(--line);margin:4px 0 10px"><i style="width:${Math.min(100, Math.round(pl.done / pl.planned_sessions * 100))}%;background:var(--ok)"></i></div>
+      ${pl.pain_trend.length > 1 ? `<p class="small"><b>Pain after sessions:</b> ${pl.pain_trend.map(x => `<span class="${x >= 7 ? "allergy" : ""}">${x}</span>`).join(" → ")} /10</p>` : ""}
+      ${tbl(["Session", "When", "Exercises", "Min", "Pain before → after", "ROM / notes", "By"], pl.sessions.map((s, i) => `<tr><td>${i + 1}</td><td class="mono small">${s.at.slice(0, 16)}</td><td class="small">${esc(s.exercises || "")}</td><td class="num">${s.duration_min ?? "–"}</td><td class="num">${s.pain_before ?? "–"} → ${s.pain_after ?? "–"}</td><td class="small">${esc(s.rom || "")}${s.notes ? " · " + esc(s.notes) : ""}</td><td class="small">${esc(s.uname || "")}</td></tr>`).join(""), "No sessions yet.")}
+      ${pl.status === "active" && can("visit_create") ? `<form data-submit="physioSession" class="fields" style="margin-top:8px"><input type="hidden" name="plan" value="${pl.id}"><div class="span2"><label>Exercises done</label><input name="exercises" placeholder="quad sets, heel slides, TENS 15 min"></div><div><label>Minutes</label><input name="duration_min" type="number" min="5" max="180" value="30"></div><div><label>Pain before</label><input name="pain_before" type="number" min="0" max="10"></div><div><label>Pain after</label><input name="pain_after" type="number" min="0" max="10"></div><div class="span2"><label>Range of motion / notes</label><input name="rom" placeholder="knee flexion 0-95°"></div><div style="align-self:end"><button class="btn sm">Record session</button><button type="button" class="btn sm ghost" data-act="physioClose" data-id="${pl.id}">Close plan</button></div></form>` : ""}`)).join("") || '<p class="empty">No physiotherapy plans.</p>'}
+    ${can("visit_create") ? card("New physiotherapy plan", "", `<form data-submit="physioPlan" class="fields"><div class="span2"><label>Condition</label><input name="diagnosis" placeholder="post-op knee, frozen shoulder, low back pain"></div><div><label>Planned sessions</label><input name="planned_sessions" type="number" min="1" max="100" value="10"></div><div class="span2"><label>Goals</label><input name="goals" placeholder="full ROM, walk without aid"></div><div style="align-self:end"><button class="btn sm">Start plan</button></div></form>`) : ""}`;
+};
+on("physioPlan", async f => { await api(`/api/patients/${App.cache.patient.id}/physio`, vals(f)); toast("Plan started"); openPatient(App.cache.patient.id, "physio"); });
+on("physioSession", async f => { const v = vals(f); const r = await api(`/api/physio/${v.plan}/session`, v); toast(`Session ${r.done} of ${r.planned} recorded`); openPatient(App.cache.patient.id, "physio"); });
+on("physioClose", async el => { const v = await dialog("Close this plan", `<label>Outcome</label><select name="status"><option value="completed">Completed</option><option value="stopped">Stopped</option><option value="referred">Referred on</option></select><label>Notes</label><input name="outcome">`, { ok: "Close plan" }); if (v) { await api(`/api/physio/${el.dataset.id}/close`, v); openPatient(App.cache.patient.id, "physio"); } });
