@@ -613,14 +613,31 @@ class T08AdminDocs(unittest.TestCase):
         self.assertIn("*Less:*", rep["text"])
         self.assertTrue(all("n" in x and "amount" in x for x in rep["collections"]["lines"]))
 
+    def test_certificates(self):
+        doc, rec = Client("dr.rao"), Client("reception.ch")
+        r = doc.ok("/api/certificates", {"kind": "medical", "patient_id": 2, "diagnosis": "Viral fever", "from": core.today(), "to": core.today()})
+        st, pdf = doc.call(f"/api/pdf/cert/{r['id']}")
+        self.assertEqual(st, 200)
+        self.assertEqual(rec.post("/api/certificates", {"kind": "fitness", "patient_id": 2, "purpose": "work"})[0], 403, "reception can't sign certificates")
+        self.assertEqual(doc.post("/api/certificates", {"kind": "medical", "patient_id": 2, "diagnosis": "x", "from": "2026-10-05", "to": "2026-10-01"})[0], 400)
+        self.assertIn(r["cert_no"], [x["cert_no"] for x in doc.ok("/api/patients/2/certificates")["rows"]])
+
     def test_staff_watch(self):
         rec, mgr, ph = Client("reception.ch"), Client("manager.ch"), Client("pharma.ch")
         # reception bills and then cancels it herself
         svc = core.db().execute("SELECT id FROM services ORDER BY id LIMIT 1").fetchone()[0]
         inv = rec.ok("/api/invoices", {"patient_id": 2, "items": [{"service_id": svc, "qty": 1}]})
+        self.assertEqual(rec.post(f"/api/invoices/{inv['id']}/cancel", {"reason": "entered twice"})[0], 403, "only owner/manager can cancel")
+        with core.db() as d:   # the scenario below is about a lenient group: reception may cancel, staff may give up to 30%
+            d.execute("UPDATE users SET role='manager' WHERE username='reception.ch'")
         rec.ok(f"/api/invoices/{inv['id']}/cancel", {"reason": "entered twice"})
-        # pharmacist: 25% discount, then takes the whole bill back in cash
+        with core.db() as d:
+            d.execute("UPDATE users SET role='reception' WHERE username='reception.ch'")
+        # pharmacist: 25% discount is above the default 10% limit, then allowed once the owner raises it
         med = [m for m in ph.ok("/api/medicines") if m["schedule"] == "OTC" and m["stock"] > 20][0]
+        big = {"customer": "Walk-in", "items": [{"medicine_id": med["id"], "qty": 4, "unit": "unit"}], "pay_mode": "cash", "discount": round(med["mrp"] * 4 * 0.25, 2), "override": True}
+        self.assertEqual(ph.post("/api/bills", big)[0], 403, "discount above the staff limit")
+        Client("owner").ok("/api/settings", {"max_discount_pct": "30"})
         bill = ph.ok("/api/bills", {"customer": "Walk-in", "items": [{"medicine_id": med["id"], "qty": 4, "unit": "unit"}], "pay_mode": "cash", "discount": round(med["mrp"] * 4 * 0.25, 2), "override": True})
         bi = ph.ok(f"/api/bills/{bill['id']}")["items"]
         ph.ok(f"/api/bills/{bill['id']}/return", {"items": [{"bill_item_id": x["id"], "qty": x["qty"]} for x in bi], "reason": "customer changed mind"})

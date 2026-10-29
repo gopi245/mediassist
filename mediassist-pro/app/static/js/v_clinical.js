@@ -10,10 +10,16 @@ RENDER.patients = async (main, [pid]) => {
   await listPatients();
   if (pid) openPatient(+pid);
 };
+on("dobAge", el => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(el.value), age = el.form.elements.age;
+  if (!m) return;
+  const now = new Date(), a = now.getFullYear() - m[1] - ((now.getMonth() + 1) * 100 + now.getDate() < +m[2] * 100 + +m[3] ? 1 : 0);
+  if (a >= 0 && a <= 130) age.value = a;
+});
 function patientForm(p, act) {
   return `<form data-submit="${act}" class="stack"><input type="hidden" name="id" value="${p.id || ""}"><div class="fields">
     <div class="span2"><label>Full name</label><input name="name" value="${esc(p.name)}" required></div><div><label>Mobile</label><input name="phone" inputmode="tel" value="${esc(p.phone)}" required></div>
-    <div><label>Date of birth</label><input name="dob" type="date" value="${esc(p.dob)}"></div><div><label>Age</label><input name="age" type="number" min="0" max="130" value="${p.age ?? ""}"></div>
+    <div><label>Date of birth</label><input name="dob" type="date" value="${esc(p.dob)}" max="${localDay()}" data-input="dobAge"></div><div><label>Age</label><input name="age" type="number" min="0" max="130" value="${p.age ?? ""}" placeholder="If DOB not known"></div>
     <div><label>Gender</label><select name="gender">${["Male", "Female", "Other"].map(g => `<option ${p.gender === g ? "selected" : ""}>${g}</option>`).join("")}</select></div>
     <div><label>Weight (kg)</label><input name="weight" type="number" step=".1" value="${p.weight ?? ""}"></div><div><label>Blood group</label><input name="blood_group" value="${esc(p.blood_group)}"></div>
     <div class="span2"><label>ABHA number (14 digits)</label><input name="abha" inputmode="numeric" value="${esc(p.abha)}"></div><div class="span2"><label>Address</label><input name="address" value="${esc(p.address)}"></div>
@@ -45,15 +51,19 @@ on("openPatient", el => openPatient(+el.dataset.id));
 async function openPatient(id, tab = "summary") {
   const p = await api("/api/patients/" + id); App.cache.patient = p;
   const box = $("#pProfile"); if (!box) return;
+  const adm = p.admissions.find(a => a.status === "admitted");
   const tabs = [["summary", "Summary"], ["visits", `Visits (${p.visits.length})`], ["vitals", "Vitals"], ["labs", `Labs (${p.labs.length})`], ["vacc", "Vaccinations"],
-    ["ipd", `Admissions (${p.admissions.length})`], ["money", "Bills"], ["docs", `Documents (${p.documents.length})`]];
+    ["ipd", `Admissions (${p.admissions.length})`], ["money", "Bills"], ["docs", `Documents (${p.documents.length})`], ["certs", "Certificates"]];
   box.innerHTML = `<div class="phead"><div class="avatar">${initials(p.name)}</div><div style="flex:1;min-width:0"><h2>${esc(p.name)}</h2>
     <div class="small muted"><span class="mono">${p.code}</span> · ${p.age ?? "?"} yrs · ${esc(p.gender || "")} · <span class="mono">${esc(p.phone)}</span>${p.abha ? ` · ABHA <span class="mono">${esc(p.abha)}</span>` : ""}${p.blood_group ? " · " + esc(p.blood_group) : ""}</div></div></div>
     ${p.allergies ? `<div class="banner" style="margin-top:10px">Allergic to ${esc(p.allergies)}</div>` : ""}
+    ${adm ? `<div class="bedinfo"><span class="bedinfo-ic" aria-hidden="true">🛏</span><div style="flex:1;min-width:0"><b>Admitted · ${esc(adm.ward || "")}${adm.room ? ` · Room ${esc(adm.room)}` : ""} · Bed ${esc(adm.bed || "?")}</b>
+      <div class="small">${esc(adm.bed_kind || "")}${adm.ac ? ", AC" : adm.bed_kind ? ", Non-AC" : ""} · <span class="mono">${esc(adm.ip_no)}</span> · ${esc(adm.bname)} · since ${esc(adm.admitted_at)}${adm.dname ? ` · ${esc(adm.dname)}` : ""}</div></div>
+      ${(can("ipd") || can("admit")) && App.me.branch && App.me.branch.id === adm.branch_id ? `<button class="btn sm" data-act="go" data-v="ipd" data-p="a/${adm.id}">Open admission</button>` : ""}</div>` : ""}
     <div class="row-actions" style="margin:12px 0">
       ${can("visit_create") && H_() ? `<button class="btn sm" data-act="queuePatient" data-id="${p.id}">Add to OPD queue</button>` : ""}
       ${can("appointments") && H_() ? `<button class="btn sm ghost" data-act="bookFor" data-id="${p.id}">Book appointment</button>` : ""}
-      ${can("ipd") && H_() ? `<button class="btn sm ghost" data-act="go" data-v="ipd" data-p="admit/${p.id}">Admit</button>` : ""}
+      ${can("admit") && H_() && !adm ? `<button class="btn sm ghost" data-act="go" data-v="ipd" data-p="admit/${p.id}">Admit / assign bed</button>` : ""}
       ${can("billing") && PH_() ? `<button class="btn sm ghost" data-act="go" data-v="billing" data-p="p/${p.id}">Pharmacy bill</button>` : ""}
       ${can("hbilling") && H_() ? `<button class="btn sm ghost" data-act="go" data-v="hbilling" data-p="new/${p.id}">Hospital bill</button>` : ""}
       <button class="btn sm ghost" data-act="portalOpen" data-id="${p.id}">Patient's records link</button>
@@ -101,8 +111,46 @@ function renderPTab(tab) {
       <h3 style="margin:12px 0 6px">Pharmacy bills</h3>${tbl(["Bill", "Date", "Branch", "Total"], p.bills.map(b => `<tr><td class="mono">${b.bill_no}</td><td class="mono">${b.created_at}</td><td>${b.bcode}</td><td class="num">${money(P2R(b.total_p - b.returned_p))}</td></tr>`).join(""))}`;
   } else if (tab === "docs") {
     el.innerHTML = docThumbs(p.documents) + (can("documents") ? `<div class="btns"><button class="btn sm" data-act="go" data-v="docs" data-p="up/patient/${p.id}">Upload a document</button></div>` : "");
+  } else if (tab === "certs") {
+    renderCerts(el, p);
   }
 }
+/* ---------- certificates ---------- */
+const CERT_INPUT = {
+  from: "date", to: "date", resume: "date", admitted: "date", discharged: "date", born_at: "datetime-local", died_at: "datetime-local", weight_kg: "number",
+  baby_gender: ["Male", "Female", "Other"], delivery: ["Normal", "Caesarean", "Assisted (forceps / vacuum)"], condition: ["good", "satisfactory", "stable", "fair"],
+  manner: ["Natural", "Accident", "Suicide", "Homicide", "Pending investigation"],
+};
+async function renderCerts(el, p) {
+  const [d, docs] = await Promise.all([api(`/api/patients/${p.id}/certificates`), can("certificates") ? staff("doctor") : []]);
+  App.cache.certMeta = d;
+  const list = tbl(["No.", "Certificate", "Issued", "Doctor", ""], d.rows.map(x => `<tr><td class="mono">${esc(x.cert_no)}</td><td>${esc(x.title)}</td><td class="mono">${esc(x.issued_at)}</td><td>${esc(x.dname || "")}</td>
+    <td><button class="btn sm ghost" data-act="certOpen" data-id="${x.id}">PDF</button></td></tr>`).join(""), "No certificates issued yet.");
+  const kinds = Object.entries(d.kinds).filter(([k]) => k !== "birth" || p.gender === "Female");
+  el.innerHTML = list + (can("certificates") && H_() ? `<h3 style="margin:14px 0 6px">Issue a certificate</h3>
+    <form data-submit="certIssue" class="stack"><div class="fields"><div><label>Type</label><select name="kind" data-change="certKind">${kinds.map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join("")}</select></div>
+    <div><label>Doctor</label>${docSelect(docs, "doctor_id", App.me.role === "doctor" ? App.me.id : "", "")}</div></div><div id="certFields" class="fields"></div>
+    <div class="btns"><button class="btn">Issue and open PDF</button></div></form>` : "");
+  if (can("certificates") && H_()) certFields(kinds[0][0]);
+}
+function certFields(kind) {
+  const d = App.cache.certMeta, s = d.suggest, a = s.admission || {};
+  const pre = { diagnosis: s.diagnosis, from: localDay(), to: localDay(), admitted: (a.admitted_at || "").slice(0, 10), discharged: (a.discharged_at || "").slice(0, 10) };
+  $("#certFields").innerHTML = d.fields[kind].map(k => {
+    const t = CERT_INPUT[k], req = d.required[kind].includes(k) ? "required" : "", lbl = `<label>${esc(d.labels[k])}${req ? "" : ' <span class="muted small">(optional)</span>'}</label>`;
+    const wide = ["diagnosis", "remarks", "findings", "purpose", "cause_immediate", "cause_antecedent", "cause_underlying", "other_conditions", "father", "place"].includes(k) ? "span2" : "";
+    if (Array.isArray(t)) return `<div class="${wide}">${lbl}<select name="${k}" ${req}>${req ? "" : "<option value=''>–</option>"}${t.map(o => `<option>${o}</option>`).join("")}</select></div>`;
+    return `<div class="${wide}">${lbl}<input name="${k}" type="${t || "text"}" ${t === "number" ? 'step=".01" min="0"' : ""} value="${esc(pre[k] || "")}" ${req}></div>`;
+  }).join("");
+}
+on("certKind", el => certFields(el.value));
+on("certOpen", el => download(`/api/pdf/cert/${el.dataset.id}`));
+on("certIssue", async f => {
+  const v = vals(f);
+  ["born_at", "died_at"].forEach(k => { if (v[k]) v[k] = v[k].replace("T", " "); });
+  const r = await api("/api/certificates", { ...v, patient_id: App.cache.patient.id });
+  toast(`Certificate ${r.cert_no} issued`); download(`/api/pdf/cert/${r.id}`); renderCerts($("#pTabBody"), App.cache.patient);
+});
 on("icdSearch", debounce(async el => { if (el.value.length < 2) return; const l = await api("/api/icd10?q=" + encodeURIComponent(el.value)); $("#icdOpts").innerHTML = l.map(x => `<option value="${x.code}">${esc(x.title)}</option>`).join(""); }, 250));
 on("addProblem", async f => { await api(`/api/patients/${App.cache.patient.id}/problems`, vals(f)); openPatient(App.cache.patient.id); });
 on("toggleProblem", async el => { await api(`/api/problems/${el.dataset.id}`, { status: el.dataset.s }); openPatient(App.cache.patient.id); });
@@ -196,14 +244,14 @@ RENDER.consult = async (main, [vid]) => {
       <div class="span2"><label>Diagnosis</label><input name="diagnosis" value="${esc(v.diagnosis || "")}" required></div>
       <div><label>ICD-10</label><input name="icd" list="icdOpts" data-input="icdSearch" value="${esc(v.icd || "")}" placeholder="code"></div>
       <div><label>Weight kg (dose check)</label><input name="weight" type="number" step=".1" value="${p.weight ?? ""}" data-input="cxWeight"></div></div>
-      <div><label>Advice and notes</label><textarea name="notes">${esc(v.notes || "")}</textarea></div>
+      <div><label>Advice and notes ${micBtn("notes")}</label><textarea name="notes">${esc(v.notes || "")}</textarea></div>
       <h3>Prescription</h3>
       <div class="fields"><div class="span2"><input id="cxMed" list="medOpts" placeholder="Medicine" data-input="cxLook"></div><div><input id="cxDose" value="1" placeholder="Dose (1, 1/2)"></div><div><input id="cxFreq" value="1-0-1" placeholder="1-0-1 / OD / BD"></div><div><input id="cxDays" type="number" min="1" value="5" placeholder="Days"></div><div class="span2"><input id="cxIns" placeholder="Instructions, e.g. after food"></div><div><button type="button" class="btn ghost" data-act="cxAdd">Add</button></div></div>
       <div id="cxInfo"></div><div id="cxRx"></div><div id="cxWarn"></div>
       <h3>Lab tests</h3><div class="row-actions">${tests.map(t_ => `<label class="check" style="margin:0 10px 0 0"><input type="checkbox" data-change="cxLab" value="${t_.id}"> ${esc(t_.name)}</label>`).join("")}</div>
       <div class="fields"><div><label>Lab priority</label><select name="lab_priority"><option value="routine">Routine</option><option value="urgent">Urgent</option><option value="stat">STAT</option></select></div><div><label>Follow-up</label><input name="followup" type="date" value="${esc(v.followup || "")}"></div></div>
       <label class="check"><input type="checkbox" name="add_problem" checked> Add the diagnosis to the problem list (chronic conditions)</label>
-      <div class="btns"><button class="btn">Save and complete</button><button type="button" class="btn ghost" data-act="printRx" data-id="${v.id}">Print ℞</button>${v.status === "done" ? `<button type="button" class="btn ghost" data-act="pdfDl" data-p="rx/${v.id}">PDF</button>` : ""}</div></form></div></div>`;
+      <div class="btns"><button class="btn">Save and complete</button><button type="button" class="btn ghost" data-act="printRx" data-id="${v.id}">Print ℞</button><select id="rxLang" style="width:auto" title="Also print patient instructions in" aria-label="Also print patient instructions in"><option value="">English only</option><option value="hi">+ हिन्दी</option><option value="te">+ తెలుగు</option><option value="ta">+ தமிழ்</option></select>${v.status === "done" ? `<button type="button" class="btn ghost" data-act="pdfDl" data-p="rx/${v.id}">PDF</button>` : ""}</div></form></div></div>`;
   drawCx();
 };
 async function drawCx() {
@@ -241,10 +289,17 @@ on("saveConsult", async f => {
 });
 on("printRx", async el => {
   const d = await api("/api/visits/" + el.dataset.id), v = d.visit, p = d.patient;
+  let tr = null;
+  const lang = $("#rxLang") && $("#rxLang").value;
+  if (lang && d.rx.length) {
+    toast("Translating the instructions…");
+    try { tr = await api(`/api/visits/${v.id}/rx-lang`, { lang }); } catch (e) { toast(e.message + " Printing in English."); }
+  }
   printHtml(`<div class="hdr"><div><h2>${esc(v.bname)}</h2><div>${esc(v.baddr || "")} · ${esc(v.bphone || "")}</div></div><div style="text-align:right"><b>${esc(v.dname || "")}</b><div>Reg. ${esc(v.dreg || "–")}</div><div>${esc((v.completed_at || v.created_at))}</div></div></div>
     <p><b>${esc(p.name)}</b> · ${p.code} · ${p.age ?? "?"} yrs · ${esc(p.gender || "")}${p.weight ? ` · ${p.weight} kg` : ""} · <b>Allergies:</b> ${esc(p.allergies || "none")}</p>
     <p><b>Vitals:</b> ${v.temp ?? "–"}°C, pulse ${v.pulse ?? "–"}, BP ${v.bp_sys ?? "–"}/${v.bp_dia ?? "–"}, SpO₂ ${v.spo2 ?? "–"}%</p>
     <p><b>Complaint:</b> ${esc(v.complaint || "–")}<br><b>Diagnosis:</b> ${esc(v.diagnosis || "–")} ${v.icd ? "(" + esc(v.icd) + ")" : ""}</p>
     <h2 style="font-size:22px">℞</h2><table><tr><th>Medicine</th><th>Dose</th><th>Frequency</th><th>Days</th><th>Qty</th><th>Instructions</th></tr>${d.rx.map(r => `<tr><td>${esc(r.name)}<br><small>${esc(r.generic || "")}</small></td><td>${esc(r.dose || "1")}</td><td>${esc(r.freq)}</td><td>${r.days}</td><td>${r.qty}</td><td>${esc(r.instructions || "")}</td></tr>`).join("")}</table>
+    ${tr ? `<h3>${esc(tr.lang)}</h3>${d.rx.map((r, i) => `<p style="margin:4px 0"><b>${i + 1}. ${esc(r.name)}</b> — ${esc(tr.items[i])}</p>`).join("")}${tr.advice ? `<p>${esc(tr.advice)}</p>` : ""}` : ""}
     ${d.labs.length ? `<p><b>Tests:</b> ${d.labs.map(l => esc(l.name)).join(", ")}</p>` : ""}<p>${esc(v.notes || "")}</p>${v.followup ? `<p><b>Follow-up:</b> ${v.followup}</p>` : ""}<br><br><p style="text-align:right">Signature ____________________</p>`);
 });

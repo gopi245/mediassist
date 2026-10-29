@@ -8,7 +8,7 @@ import re
 import sqlite3
 from datetime import date, timedelta
 
-from .core import (ApiError, P, R, add_days, all_access, as_int, audit, can, clean, in_tx, need, need_branch, now_str, one, opt_num,
+from .core import (ApiError, P, R, add_days, all_access, as_int, audit, can, check_discount, clean, in_tx, need, need_branch, now_str, one, opt_num,
                    pcode, qget, route, rows, rs, today, valid_day)
 from .m_clinical import current_meds, latest_creatinine
 from .safety import safety_check
@@ -672,6 +672,7 @@ def create_bill(c, h, b):
                 sub += take * bt["mrp_p"]
                 left -= take
         disc = min(P(b.get("discount"), "discount"), sub)
+        check_discount(c, h, disc, sub)
         n = c.execute("SELECT COUNT(*) FROM bills WHERE branch_id=?", (br["id"],)).fetchone()[0] + 1
         bill_no = f"{br['code']}-{n:06d}"
         cur = c.execute("INSERT INTO bills(branch_id,bill_no,created_at,patient_id,customer,visit_id,admission_id,doctor_name,doctor_reg,subtotal_p,discount_p,total_p,pay_mode,user_id,offline_key) "

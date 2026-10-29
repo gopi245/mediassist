@@ -27,7 +27,7 @@ def api_beds(h, c, b, q):
     br = need_branch(h, c, "hospital")
     out = rows(c.execute("SELECT bd.*, a.id adm_id, a.ip_no, a.admitted_at, a.diagnosis, p.name pname, p.age, p.gender, p.id pid, u.name dname FROM beds bd "
                          "LEFT JOIN admissions a ON a.bed_id=bd.id AND a.status='admitted' LEFT JOIN patients p ON p.id=a.patient_id "
-                         "LEFT JOIN users u ON u.id=a.doctor_id WHERE bd.branch_id=? ORDER BY bd.ward, bd.number", (br["id"],)))
+                         "LEFT JOIN users u ON u.id=a.doctor_id WHERE bd.branch_id=? ORDER BY bd.ward, bd.room, bd.number", (br["id"],)))
     for x in out:
         x["code"] = pcode(x["pid"]) if x["pid"] else None
     return out
@@ -38,15 +38,31 @@ def api_bed_save(h, c, b, q):
     br = need_branch(h, c, "hospital")
     kind = clean(b, "kind", 10)
     need(kind in BED_KINDS, "Bed type must be general, private or icu")
-    ward, number = clean(b, "ward", 30), clean(b, "number", 10)
-    need(ward and number, "Enter the ward and bed number")
+    ward, room, number = clean(b, "ward", 30), clean(b, "room", 8), clean(b, "number", 10)
+    need(ward and (room or number), "Enter the ward and a room or bed number")
+    count = int(opt_num(b.get("count")) or 1)
+    need(1 <= count <= 100, "Add between 1 and 100 beds at a time")
+    if room:   # beds in a room: 101 (one bed) or 101-A, 101-B, ...
+        need(count <= 26, "A room can have up to 26 beds")
+        numbers = [room] if count == 1 else [f"{room}-{chr(65 + i)}" for i in range(count)]
+    else:
+        numbers = [number] if count == 1 else [f"{number}{i}" for i in range(1, count + 1)]
+    need(all(len(n) <= 10 for n in numbers), "Bed number is too long")
+    ac = 1 if b.get("ac") in (True, 1, "1", "on", "yes") else 0
     s = svc_by_name(c, BED_KINDS[kind])
-    try:
-        c.execute("INSERT INTO beds(branch_id,ward,number,kind,service_id) VALUES(?,?,?,?,?)", (br["id"], ward, number, kind, s["id"] if s else None))
-    except Exception:
-        raise ApiError(400, "That bed already exists")
-    audit(c, h, "bed.add", f"{ward}-{number} {kind}")
-    return {"ok": True}
+    if ac:   # AC beds are charged at their own rate, editable in Hospital billing > Services & rates
+        name = BED_KINDS[kind].replace(", per day", " (AC), per day")
+        if not svc_by_name(c, name):
+            c.execute("INSERT INTO services(name,cat,rate_p,gst_pct) VALUES(?,?,?,0)", (name, "Inpatient", (s["rate_p"] if s else 0) + 50000))
+        s = svc_by_name(c, name)
+    for n in numbers:
+        try:
+            c.execute("INSERT INTO beds(branch_id,ward,room,number,kind,ac,service_id) VALUES(?,?,?,?,?,?,?)",
+                      (br["id"], ward, room or None, n, kind, ac, s["id"] if s else None))
+        except Exception:
+            raise ApiError(400, f"Bed {n} already exists in this ward")
+    audit(c, h, "bed.add", f"{ward} {numbers[0]}" + (f"-{numbers[-1]}" if count > 1 else "") + f" {kind}{' AC' if ac else ''}")
+    return {"ok": True, "added": count}
 
 
 @route("POST", r"/api/beds/(\d+)/status", "ipd_nursing")
@@ -60,7 +76,7 @@ def api_bed_status(h, c, b, q, bid):
 
 
 # ---------------------------------------------------------------- admission
-@route("POST", "/api/admissions", "ipd")
+@route("POST", "/api/admissions", "admit")
 def api_admit(h, c, b, q):
     br = need_branch(h, c, "hospital")
     pid = as_int(b.get("patient_id"), "patient")
@@ -123,6 +139,11 @@ def bed_lines(c, a, until=None):
         total_days += days
     if nursing and total_days:
         lines.append({"name": nursing["name"], "cat": "Inpatient", "qty": total_days, "rate_p": nursing["rate_p"], "amount_p": total_days * nursing["rate_p"], "service_id": nursing["id"]})
+    for d in rows(c.execute("SELECT ad.*, s.name, s.rate_p, s.cat FROM adm_daily ad JOIN services s ON s.id=ad.service_id WHERE admission_id=? ORDER BY ad.id", (a["id"],))):
+        start, stop = datetime.strptime(d["from_at"], "%Y-%m-%d %H:%M"), datetime.strptime(d["to_at"] or end, "%Y-%m-%d %H:%M")
+        days = max(1, math.ceil((stop - start).total_seconds() / 86400 - 0.25))
+        lines.append({"name": d["name"] + ("" if not d["to_at"] else f" (to {d['to_at'][:10]})"), "cat": d["cat"] or "Inpatient", "qty": days,
+                      "rate_p": d["rate_p"], "amount_p": days * d["rate_p"], "service_id": d["service_id"]})
     return lines, total_days
 
 
@@ -148,6 +169,7 @@ def api_admission(h, c, b, q, aid):
     need(a and (a["branch_id"] == h.branch or h.user["role"] == "owner"), "Admission not found", 404)
     a["code"] = pcode(a["patient_id"])
     a["notes"] = rows(c.execute("SELECT n.*, u.name uname, u.role urole FROM ipd_notes n LEFT JOIN users u ON u.id=n.user_id WHERE admission_id=? ORDER BY n.id DESC", (a["id"],)))
+    a["daily"] = rows(c.execute("SELECT ad.*, s.name, s.rate_p FROM adm_daily ad JOIN services s ON s.id=ad.service_id WHERE admission_id=? ORDER BY ad.to_at IS NOT NULL, ad.id", (a["id"],)))
     a["vitals"] = rows(c.execute("SELECT * FROM vitals WHERE patient_id=? AND at>=? ORDER BY at DESC LIMIT 60", (a["patient_id"], a["admitted_at"])))
     a["mar"] = mar_today(c, a["id"])
     a["labs"] = rows(c.execute("SELECT o.id, o.status, o.created_at, (SELECT group_concat(t.name, ', ') FROM lab_order_items i JOIN lab_tests t ON t.id=i.test_id WHERE i.order_id=o.id) tests "
@@ -158,7 +180,7 @@ def api_admission(h, c, b, q, aid):
     return a
 
 
-@route("POST", r"/api/admissions/(\d+)/transfer", "ipd")
+@route("POST", r"/api/admissions/(\d+)/transfer", "admit")
 def api_transfer_bed(h, c, b, q, aid):
     a = adm_or_404(c, h, int(aid))
     need(a["status"] == "admitted", "Patient is not admitted")
@@ -208,6 +230,29 @@ def api_charge(h, c, b, q, aid):
     c.execute("INSERT INTO ipd_charges(admission_id,at,service_id,name,cat,qty,rate_p,amount_p,user_id,source) VALUES(?,?,?,?,?,?,?,?,?,?)",
               (a["id"], now_str(), s["id"], s["name"], s["cat"], qty, s["rate_p"], round(qty * s["rate_p"]), h.user["id"], "manual"))
     audit(c, h, "ipd.charge", f"{a['ip_no']} {s['name']} x{qty:g}")
+    return {"ok": True}
+
+
+@route("POST", r"/api/admissions/(\d+)/daily", "ipd")
+def api_daily_start(h, c, b, q, aid):
+    """Start a recurring daily charge (monitor, oxygen, ventilator...). It is billed each calendar day until stopped or discharge."""
+    a = adm_or_404(c, h, int(aid))
+    need(a["status"] == "admitted", "The patient is discharged")
+    s = one(c, "SELECT * FROM services WHERE id=? AND active=1", (as_int(b.get("service_id"), "service"),))
+    need(s, "Choose a service", 404)
+    need(not one(c, "SELECT 1 FROM adm_daily WHERE admission_id=? AND service_id=? AND to_at IS NULL", (a["id"], s["id"])), f"{s['name']} is already running for this patient")
+    c.execute("INSERT INTO adm_daily(admission_id,service_id,from_at,user_id) VALUES(?,?,?,?)", (a["id"], s["id"], now_str(), h.user["id"]))
+    audit(c, h, "ipd.daily.start", f"{a['ip_no']} {s['name']}")
+    return {"ok": True}
+
+
+@route("POST", r"/api/admissions/(\d+)/daily/(\d+)/stop", "ipd")
+def api_daily_stop(h, c, b, q, aid, did):
+    a = adm_or_404(c, h, int(aid))
+    d = one(c, "SELECT * FROM adm_daily WHERE id=? AND admission_id=? AND to_at IS NULL", (int(did), a["id"]))
+    need(d, "This daily charge isn't running", 404)
+    c.execute("UPDATE adm_daily SET to_at=? WHERE id=?", (now_str(), d["id"]))
+    audit(c, h, "ipd.daily.stop", f"{a['ip_no']} service {d['service_id']}")
     return {"ok": True}
 
 
@@ -310,6 +355,34 @@ def api_mar_give(h, c, b, q, mid):
 
 
 # ---------------------------------------------------------------- discharge
+@route("POST", r"/api/admissions/(\d+)/draft-summary", "ipd")
+def api_draft_summary(h, c, b, q, aid):
+    """AI drafts the discharge summary fields from the stay's record; the doctor reviews and edits before discharging."""
+    a = adm_or_404(c, h, int(aid))
+    p = one(c, "SELECT name, age, gender, allergies, conditions FROM patients WHERE id=?", (a["patient_id"],))
+    notes = rows(c.execute("SELECT n.at, n.kind, n.text FROM ipd_notes n WHERE admission_id=? ORDER BY n.id LIMIT 120", (a["id"],)))
+    meds = rows(c.execute("SELECT m.name, mo.dose, mo.freq, mo.active, mo.stop_at FROM mar_orders mo JOIN medicines m ON m.id=mo.medicine_id WHERE admission_id=?", (a["id"],)))
+    labs = rows(c.execute("SELECT lt.name tname, lp.name pname, r.value, COALESCE(r.flag,'') flag, r.range_text FROM lab_orders o JOIN lab_order_items i ON i.order_id=o.id "
+                          "JOIN lab_tests lt ON lt.id=i.test_id JOIN lab_results r ON r.order_item_id=i.id JOIN lab_params lp ON lp.id=r.param_id "
+                          "WHERE o.admission_id=? AND o.status IN ('resulted','verified') ORDER BY o.id", (a["id"],)))
+    charges = [r["name"] for r in rows(c.execute("SELECT DISTINCT name FROM ipd_charges WHERE admission_id=? AND cat NOT IN ('Inpatient')", (a["id"],)))]
+    src = {"patient": f"{p['age'] if p['age'] is not None else '?'} year old {p['gender'] or 'person'}",
+           "allergies": p["allergies"] or "none recorded", "known_conditions": p["conditions"] or "none recorded",
+           "admitted": a["admitted_at"], "reason_for_admission": a["reason"] or "", "provisional_diagnosis": a["diagnosis"] or "",
+           "notes": [f"{n['at']} [{n['kind']}] {n['text']}" for n in notes],
+           "medicines_given": [f"{m['name']} {m['dose'] or ''} {m['freq'] or ''}" + ("" if m["active"] else f" (stopped {m['stop_at'] or ''})") for m in meds],
+           "lab_results": [f"{x['tname']} {x['pname']}: {x['value']}" + (f" ({x['flag']})" if x["flag"] not in ("", "N") else "") for x in labs if x["value"]],
+           "procedures_and_services_billed": charges}
+    from .m_assistant import ai_json
+    out = ai_json(c, "You draft the discharge summary of an Indian hospital inpatient for the treating doctor to review, correct and approve. Use only what the "
+                     "record states; never invent findings, doses or dates. Write plain clinical English, one to four short sentences per field (medications: one "
+                     'line per medicine). Return {"history": "", "course": "", "procedures": "", "investigations": "", "condition": "", "medications": "", "advice": ""} '
+                     "with an empty string wherever the record has nothing.", json.dumps(src, ensure_ascii=False), 4000)
+    need(isinstance(out, dict), "The AI answer wasn't usable. Try again.")
+    audit(c, h, "ipd.draft_summary", a["ip_no"])
+    return {k: str(out.get(k) or "")[:3000] for k in ("history", "course", "procedures", "investigations", "condition", "medications", "advice")}
+
+
 @route("POST", r"/api/admissions/(\d+)/discharge", "ipd")
 def api_discharge(h, c, b, q, aid):
     a = adm_or_404(c, h, int(aid))
@@ -334,6 +407,7 @@ def api_discharge(h, c, b, q, aid):
         c.execute("UPDATE payments SET invoice_id=?, kind='payment' WHERE admission_id=? AND kind='deposit'", (inv["id"], a["id"]))
         c.execute("UPDATE lab_orders SET invoice_id=? WHERE admission_id=? AND invoice_id IS NULL AND status<>'cancelled'", (inv["id"], a["id"]))
         c.execute("UPDATE mar_orders SET active=0, stop_at=? WHERE admission_id=? AND active=1", (end, a["id"]))
+        c.execute("UPDATE adm_daily SET to_at=? WHERE admission_id=? AND to_at IS NULL", (end, a["id"]))
         c.execute("UPDATE admissions SET status='discharged', discharged_at=?, discharge_type=?, summary=?, diagnosis=?, icd=?, invoice_id=? WHERE id=?",
                   (end, dtype, json.dumps(summary), summary["final_diagnosis"], summary["icd"] or a["icd"], inv["id"], a["id"]))
         c.execute("UPDATE beds SET status='cleaning' WHERE id=?", (a["bed_id"],))

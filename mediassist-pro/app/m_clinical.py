@@ -135,7 +135,9 @@ def profile(c, pid):
             "problems": rows(c.execute("SELECT * FROM problems WHERE patient_id=? ORDER BY status, id DESC", (pid,))),
             "vitals": rows(c.execute("SELECT * FROM vitals WHERE patient_id=? ORDER BY at DESC LIMIT 60", (pid,))),
             "vaccinations": rows(c.execute("SELECT * FROM vaccinations WHERE patient_id=? ORDER BY given_on DESC", (pid,))),
-            "admissions": rows(c.execute("SELECT a.*, br.code bcode FROM admissions a JOIN branches br ON br.id=a.branch_id WHERE patient_id=? ORDER BY a.id DESC", (pid,))),
+            "admissions": rows(c.execute("SELECT a.*, br.code bcode, br.name bname, bd.ward, bd.room, bd.number bed, bd.kind bed_kind, bd.ac, u.name dname FROM admissions a "
+                                         "JOIN branches br ON br.id=a.branch_id LEFT JOIN beds bd ON bd.id=a.bed_id LEFT JOIN users u ON u.id=a.doctor_id "
+                                         "WHERE patient_id=? ORDER BY a.id DESC", (pid,))),
             "invoices": rows(c.execute("SELECT i.id,i.inv_no,i.created_at,i.total_p,i.cancelled_at,br.code bcode FROM invoices i JOIN branches br ON br.id=i.branch_id WHERE patient_id=? ORDER BY i.id DESC LIMIT 30", (pid,))),
             "bills": rows(c.execute("SELECT b.id,b.bill_no,b.created_at,b.total_p,b.returned_p,br.code bcode FROM bills b JOIN branches br ON br.id=b.branch_id WHERE patient_id=? ORDER BY b.id DESC LIMIT 30", (pid,))),
             "documents": rows(c.execute("SELECT id,doc_type,doc_date,note,mime,filename FROM documents WHERE patient_id=? ORDER BY id DESC", (pid,))),
@@ -287,6 +289,29 @@ def api_visits(h, c, b, q):
     for r in out:
         r["code"] = pcode(r["patient_id"])
     return out
+
+
+RX_LANGS = {"hi": "Hindi", "te": "Telugu", "ta": "Tamil"}
+
+
+@route("POST", r"/api/visits/(\d+)/rx-lang", "patients_read")
+def api_rx_lang(h, c, b, q, vid):
+    """AI-translated patient instructions for the printed prescription (medicine names stay in English)."""
+    lang = clean(b, "lang", 5)
+    need(lang in RX_LANGS, "Choose Hindi, Telugu or Tamil")
+    v = one(c, "SELECT * FROM visits WHERE id=?", (int(vid),))
+    need(v, "Visit not found", 404)
+    items = rows(c.execute("SELECT r.*, m.name FROM rx_items r JOIN medicines m ON m.id=r.medicine_id WHERE r.visit_id=?", (v["id"],)))
+    src = [{"medicine": x["name"], "dose": x["dose"] or "1", "frequency": x["freq"] or "", "days": x["days"], "instructions": x["instructions"] or ""} for x in items]
+    from .m_assistant import ai_json
+    out = ai_json(c, f"You translate prescription instructions into {RX_LANGS[lang]} for a patient in India who cannot read English. A frequency like 1-0-1 is "
+                     "morning-afternoon-night tablet counts: write it out in words. Keep each medicine name exactly as given, in Latin script. Use simple spoken "
+                     f'language a patient understands. Return {{"items": [one short {RX_LANGS[lang]} line per medicine, in the same order: how much, when, for how '
+                     'many days, plus its instructions], "advice": "the advice translated, or an empty string"}',
+                  json.dumps({"medicines": src, "advice": v["notes"] or ""}, ensure_ascii=False))
+    need(isinstance(out, dict) and isinstance(out.get("items"), list) and len(out["items"]) == len(items), "The AI answer wasn't usable. Try again.")
+    audit(c, h, "rx.translate", f"visit {vid} {lang}")
+    return {"items": [str(x)[:300] for x in out["items"]], "advice": str(out.get("advice") or "")[:2000], "lang": RX_LANGS[lang]}
 
 
 @route("GET", r"/api/visits/(\d+)", "patients_read")

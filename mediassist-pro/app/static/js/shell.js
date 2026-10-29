@@ -15,7 +15,7 @@ const H_ = () => kind().includes("hospital"), PH_ = () => kind().includes("pharm
 const VIEWS = [
   ["dashboard", "Dashboard", () => true], ["patients", "Patients", () => can("patients_read")],
   ["opd", "OPD & appointments", () => H_() && (can("appointments") || can("visit_create"))], ["tracker", "Patient tracker", () => H_() && can("patients_read")], ["consult", "Consultation", () => H_() && can("consult")],
-  ["lab", "Laboratory", () => H_() && (can("lab") || can("lab_verify"))], ["ipd", "Inpatients", () => H_() && can("ipd")],
+  ["lab", "Laboratory", () => H_() && (can("lab") || can("lab_verify"))], ["ipd", "Inpatients", () => H_() && (can("ipd") || can("admit"))],
   ["billing", "Pharmacy billing", () => PH_() && can("billing")], ["stock", "Stock", () => (PH_() || (App.me && !App.me.branch && App.me.all_access)) && (can("stock") || can("billing"))],
   ["hbilling", "Hospital billing", () => H_() && can("hbilling")], ["docs", "Documents", () => can("documents")],
   ["accounts", "Accounts", () => can("accounts")], ["reports", "Reports", () => can("reports")], ["admin", "Admin", () => can("admin") || can("audit")],
@@ -28,7 +28,23 @@ function showLogin(mfa) {
   $("#app").hidden = true; $("#login").hidden = false; mfaStep = !!mfa;
   $("#loginStep1").hidden = mfaStep; $("#loginStep2").hidden = !mfaStep;
   (mfaStep ? $("#lc") : $("#lu")).focus();
+  if (!mfaStep) loadOpenRoles();
 }
+const ROLE_NAMES = { owner: "Admin (Owner)", manager: "Manager", doctor: "Doctor", nurse: "Nurse", reception: "Receptionist",
+  pharmacist: "Pharmacist", lab_tech: "Lab Technician", lab_incharge: "Lab In-charge", accountant: "Accountant" };
+async function loadOpenRoles() {
+  const r = await api("/api/open-login").catch(() => ({ roles: [] }));
+  const box = $("#loginRoles");
+  box.hidden = !r.roles.length;
+  if (!r.roles.length) return;
+  box.innerHTML = r.roles.map(k => `<button type="button" class="btn wide" data-act="roleLogin" data-k="${esc(k)}">${esc(ROLE_NAMES[k] || k)}</button>`).join("");
+  $("#loginStep1").hidden = true;
+  $("#login form > button[type=submit]").hidden = true;
+}
+on("roleLogin", async el => {
+  try { await api("/api/open-login", { role: el.dataset.k }); $("#lmsg").textContent = ""; start(); }
+  catch (e) { $("#lmsg").textContent = e.message; }
+});
 on("login", async form => {
   const v = vals(form);
   try {

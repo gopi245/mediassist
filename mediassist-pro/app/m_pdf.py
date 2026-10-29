@@ -245,6 +245,12 @@ def lab_pdf(c, oid):
             return {}
         pdf.table([("Test", 175, "left"), ("Result", 80, "left"), ("Unit", 70, "left"), ("Normal range", 110, "left"), ("Flag", 80, "left")], data, row_style=style)
         pdf.y -= 12
+    if o.get("interpretation"):
+        pdf.need_space(60)
+        pdf.text(pdf.M, pdf.y - 12, "Interpretation", 11, True, TEAL)
+        pdf.y -= 18
+        pdf.para(o["interpretation"], 9.5)
+        pdf.para("Drafted with AI assistance; reviewed and approved at verification.", 7.5, color=MUTED)
     pdf.need_space(80)
     pdf.y -= 6
     pdf.para("Results marked High or Low are outside the normal range for the patient's age and sex. Please show this report to your doctor; "
@@ -351,8 +357,13 @@ def _totals(pdf, lines):
     pdf.y -= 10
 
 
-MAKERS = {"lab": lab_pdf, "bill": bill_pdf, "invoice": invoice_pdf, "rx": rx_pdf}
-TABLES = {"lab": "lab_orders", "bill": "bills", "invoice": "invoices", "rx": "visits"}
+def cert_pdf(c, cid):
+    from .m_certs import cert_pdf as make_cert
+    return make_cert(c, cid)
+
+
+MAKERS = {"lab": lab_pdf, "bill": bill_pdf, "invoice": invoice_pdf, "rx": rx_pdf, "cert": cert_pdf}
+TABLES = {"lab": "lab_orders", "bill": "bills", "invoice": "invoices", "rx": "visits", "cert": "certificates"}
 
 
 def make(c, kind, rid):
@@ -362,7 +373,7 @@ def make(c, kind, rid):
 
 
 # ---------------------------------------------------------------- staff download
-@route("GET", r"/api/pdf/(lab|bill|invoice|rx)/(\d+)", "patients_read")
+@route("GET", r"/api/pdf/(lab|bill|invoice|rx|cert)/(\d+)", "patients_read")
 def api_pdf(h, c, b, q, kind, rid):
     row = one(c, f"SELECT branch_id FROM {TABLES[kind]} WHERE id=?", (int(rid),))
     need(row, "Not found", 404)

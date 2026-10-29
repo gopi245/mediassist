@@ -84,7 +84,7 @@ async function invoiceView(main, id) {
       `<div class="timeline">${cl.events.map(e => `<div class="tl"><div class="when">${e.at} · ${esc(e.uname || "")}</div><b>${e.status}</b> ${esc(e.note || "")}</div>`).join("")}</div>${["preauth", "query", "approved", "rejected"].includes(cl.status) ? `<button class="btn sm" data-act="claimMove" data-id="${cl.id}" data-s="${cl.status}">Update claim</button>` : pill(cl.status, "p-ok")}`)).join("")}
     ${open && !i.claims.some(c => ["preauth", "query", "approved"].includes(c.status)) && i.due_p ? card("Insurance", "Send this bill to an insurer or TPA", `<button class="btn ghost" data-act="claimOpen">Start a claim</button>`) : ""}
     ${open && i.paid_p && isMgr ? card("Refund", "Issues a credit note and reduces the invoice", `<form data-submit="invRefund" class="stack"><input name="amount" type="number" min="1" step=".01" placeholder="Amount ₹"><select name="mode"><option value="cash">Cash</option><option value="upi">UPI</option><option value="card">Card</option></select><input name="reason" placeholder="Reason"><button class="btn ghost">Refund</button></form>`) : ""}
-    ${open && !i.paid_p ? `<button class="btn ghost" data-act="invCancel" style="color:var(--crit);border-color:var(--crit)">Cancel invoice</button>` : ""}
+    ${open && !i.paid_p && isMgr ? `<button class="btn ghost" data-act="invCancel" style="color:var(--crit);border-color:var(--crit)">Cancel invoice</button>` : ""}
     ${can("documents") ? `<button class="btn ghost" data-act="go" data-v="docs" data-p="up/invoice/${i.id}">Attach a document</button>` : ""}</div></div>`;
 }
 const reInv = () => go("hbilling", ["inv", App.cache.inv.id]);

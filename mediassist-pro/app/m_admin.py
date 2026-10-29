@@ -80,6 +80,32 @@ def api_login(h, c, b, q):
     return {"ok": True, "mfa_required": not mfa}
 
 
+OPEN_LOGIN = os.environ.get("MEDIASSIST_OPEN_LOGIN") == "1"   # demo only: sign in by picking a role, no password
+
+
+@route("GET", "/api/open-login")
+def api_open_roles(h, c, b, q):
+    return {"roles": list(ROLES) if OPEN_LOGIN else []}
+
+
+@route("POST", "/api/open-login")
+def api_open_login(h, c, b, q):
+    need(OPEN_LOGIN, "Role sign-in is turned off")
+    role = clean(b, "role", 20)
+    need(role in ROLES, "Unknown role")
+    u = one(c, "SELECT * FROM users WHERE role=? AND active=1 ORDER BY id", (role,))
+    if not u:
+        uid = make_user(c, {"username": role.replace("_", "-"), "password": secrets.token_urlsafe(16), "role": role,
+                            "name": role.replace("_", " ").title()})
+        u = one(c, "SELECT * FROM users WHERE id=?", (uid,))
+    token = secrets.token_urlsafe(32)
+    c.execute("INSERT INTO sessions VALUES(?,?,?,?,?)", (token, u["id"], default_branch(c, u), time.time() + SESSION_HOURS * 3600, 1))
+    h.user, h.branch = u, 0
+    audit(c, h, "login", "role sign-in, no password")
+    h.set_cookie = f"sid={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={SESSION_HOURS * 3600}" + ("; Secure" if h.https else "")
+    return {"ok": True}
+
+
 @route("POST", "/api/2fa/verify", "mfa")
 def api_2fa_verify(h, c, b, q):
     need(h.user["totp_secret"], "Two-step sign-in is not set up")
@@ -257,6 +283,10 @@ def api_save_settings(h, c, b, q):
             need(re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", v), "Times must be HH:MM")
         if k in ("watch_amount", "watch_discount_pct"):
             need(re.fullmatch(r"\d{1,7}(\.\d+)?", v) and float(v) > 0, "Staff watch limits must be numbers above 0")
+        if k == "max_discount_pct":
+            need(re.fullmatch(r"\d{1,3}(\.\d+)?", v) and 0 <= float(v) <= 100, "Discount limit must be 0 to 100%")
+        if k == "google_review_url":
+            need(not v or v.startswith("https://"), "The Google review link must start with https://")
         if k == "weekly_day":
             need(v in ("mon", "tue", "wed", "thu", "fri", "sat", "sun"), "Choose a weekday")
         if k == "portal_days":

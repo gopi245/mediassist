@@ -3,7 +3,7 @@ credit notes, insurance/TPA claims with status history, day-end cash closing."""
 import sqlite3
 from datetime import date
 
-from .core import (ApiError, P, R, add_days, all_access, as_int, audit, can, clean, in_tx, need, need_branch, now_str, one, opt_num, pcode,
+from .core import (ApiError, P, R, add_days, all_access, as_int, audit, can, check_discount, clean, in_tx, need, need_branch, now_str, one, opt_num, pcode,
                    qget, route, rows, rs, today, valid_day)
 
 MODES = ("cash", "upi", "card", "insurance")
@@ -59,6 +59,8 @@ def create_invoice(c, h, pid, items, doctor_id=None, visit_id=None, admission_id
         sub += net + g
         gst += g
     discount_p = min(discount_p, sub)
+    if h:
+        check_discount(c, h, discount_p + sum(ln[5] for ln in lines), sum(round(ln[3] * ln[4]) for ln in lines))
     n = c.execute("SELECT COUNT(*) FROM invoices WHERE branch_id=?", (br["id"],)).fetchone()[0] + 1
     inv_no = f"{br['code']}/{'IP' if kind == 'ipd' else 'H'}/{n:05d}"
     while one(c, "SELECT 1 FROM invoices WHERE inv_no=?", (inv_no,)):
@@ -211,6 +213,7 @@ def api_pay(h, c, b, q, iid):
 
 @route("POST", r"/api/invoices/(\d+)/cancel", "hbilling")
 def api_cancel(h, c, b, q, iid):
+    need(h.user["role"] in ("owner", "manager"), "Only the owner or a manager can cancel a bill", 403)
     inv = one(c, "SELECT * FROM invoices WHERE id=? AND branch_id=?", (int(iid), h.branch))
     need(inv and not inv["cancelled_at"], "Invoice not found", 404)
     need(not paid_p(c, inv["id"]), "This invoice has payments. Issue a refund (credit note) instead.")
