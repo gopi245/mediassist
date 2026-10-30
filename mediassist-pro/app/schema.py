@@ -1,5 +1,6 @@
 """Versioned schema. Each migration runs once, in order, inside a transaction.
 Add new migrations to the end; never edit one that has shipped."""
+import sqlite3
 
 MIGRATIONS = [
 # 1: foundation, clinical, pharmacy, billing, lab, appointments, IPD, accounts, ops
@@ -317,17 +318,33 @@ CREATE TABLE adm_daily(id INTEGER PRIMARY KEY, admission_id INTEGER NOT NULL REF
 ]
 
 
+def has_column(c, table, col):
+    return any(r[1] == col for r in c.execute(f"PRAGMA table_info({table})"))
+
+
 def migrate(c):
+    """Runs the migrations a database has not had yet. Each statement is skipped when its effect already exists
+    (column, table or index), so two histories that numbered the same migrations differently can be reconciled:
+    a database built when rooms/certificates/lab ranges/daily charges were numbered 6-9 is rolled back to 5 and
+    brought forward through the merged list, where those four now sit at 16-19."""
     c.execute("CREATE TABLE IF NOT EXISTS schema_version(v INTEGER NOT NULL)")
     row = c.execute("SELECT v FROM schema_version").fetchone()
     v = row[0] if row else 0
     if not row:
         c.execute("INSERT INTO schema_version VALUES(0)")
+    if 6 <= v < 16 and not has_column(c, "users", "last_totp"):  # upstream numbering: migration 6 was "rooms", not ours
+        v = 5
     for i, sql in enumerate(MIGRATIONS[v:], start=v + 1):
         c.execute("BEGIN IMMEDIATE")
         try:
             for stmt in [s for s in sql.split(";\n") if s.strip()]:
-                c.execute(stmt)
+                try:
+                    c.execute(stmt)
+                except sqlite3.OperationalError as e:
+                    msg = str(e).lower()
+                    if "duplicate column name" in msg or "already exists" in msg:
+                        continue  # applied earlier under another number
+                    raise
             c.execute("UPDATE schema_version SET v=?", (i,))
             c.execute("COMMIT")
         except BaseException:
