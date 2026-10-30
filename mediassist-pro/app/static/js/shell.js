@@ -15,7 +15,7 @@ const H_ = () => kind().includes("hospital"), PH_ = () => kind().includes("pharm
 const VIEWS = [
   ["dashboard", "Dashboard", () => true], ["patients", "Patients", () => can("patients_read")],
   ["opd", "OPD & appointments", () => H_() && (can("appointments") || can("visit_create"))], ["tracker", "Patient tracker", () => H_() && can("patients_read")], ["consult", "Consultation", () => H_() && can("consult")],
-  ["lab", "Laboratory", () => H_() && (can("lab") || can("lab_verify"))], ["beds", "Bed board", () => H_() || (App.me && !App.me.branch && App.me.all_access)], ["ipd", "Inpatients", () => H_() && (can("ipd") || can("admit"))],
+  ["lab", "Laboratory", () => H_() && (can("lab") || can("lab_verify"))], ["beds", "Bed board", () => (can("ipd") || can("admit") || can("ipd_nursing")) && (H_() || (App.me && !App.me.branch && App.me.all_access))], ["ipd", "Inpatients", () => H_() && (can("ipd") || can("admit"))],
   ["billing", "Pharmacy billing", () => PH_() && can("billing")], ["stock", "Stock", () => (PH_() || (App.me && !App.me.branch && App.me.all_access)) && (can("stock") || can("billing"))],
   ["hbilling", "Hospital billing", () => H_() && can("hbilling")], ["docs", "Documents", () => can("documents")],
   ["accounts", "Accounts", () => can("accounts")], ["reports", "Reports", () => can("reports")], ["admin", "Admin", () => can("admin") || can("audit")],
