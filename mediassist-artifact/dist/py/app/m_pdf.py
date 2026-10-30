@@ -255,6 +255,12 @@ def lab_pdf(c, oid):
         pdf.para(o["interp"]["summary"], 9.5, True)
         pdf.para("Explanation reviewed by " + (o.get("verified_name") or "the doctor") + ". It is general information, not a diagnosis.", 8, color=MUTED)
         pdf.y -= 6
+    if o.get("clin_interpretation"):
+        pdf.need_space(60)
+        pdf.text(pdf.M, pdf.y - 12, "Clinical interpretation", 11, True, TEAL)
+        pdf.y -= 18
+        pdf.para(o["clin_interpretation"], 9.5)
+        pdf.para("Drafted with AI assistance; reviewed and approved at verification.", 7.5, color=MUTED)
     pdf.need_space(80)
     pdf.y -= 6
     pdf.para("Results marked High or Low are outside the laboratory's reference range (adult ranges unless stated). Please show this report to your doctor; "
@@ -408,8 +414,13 @@ def discharge_pdf_maker(c, aid):
     return discharge_pdf(c, aid)
 
 
-MAKERS = {"lab": lab_pdf, "bill": bill_pdf, "invoice": invoice_pdf, "rx": rx_pdf, "referral": referral_pdf, "discharge": discharge_pdf_maker}
-TABLES = {"lab": "lab_orders", "bill": "bills", "invoice": "invoices", "rx": "visits", "referral": "referrals", "discharge": "admissions"}
+def cert_pdf(c, cid):
+    from .m_certs import cert_pdf as make_cert
+    return make_cert(c, cid)
+
+
+MAKERS = {"lab": lab_pdf, "bill": bill_pdf, "invoice": invoice_pdf, "rx": rx_pdf, "referral": referral_pdf, "discharge": discharge_pdf_maker, "cert": cert_pdf}
+TABLES = {"lab": "lab_orders", "bill": "bills", "invoice": "invoices", "rx": "visits", "referral": "referrals", "discharge": "admissions", "cert": "certificates"}
 
 
 def make(c, kind, rid):
@@ -419,7 +430,7 @@ def make(c, kind, rid):
 
 
 # ---------------------------------------------------------------- staff download
-@route("GET", r"/api/pdf/(lab|bill|invoice|rx|referral|discharge)/(\d+)", "patients_read")
+@route("GET", r"/api/pdf/(lab|bill|invoice|rx|referral|discharge|cert)/(\d+)", "patients_read")
 def api_pdf(h, c, b, q, kind, rid):
     row = one(c, f"SELECT branch_id FROM {TABLES[kind]} WHERE id=?", (int(rid),))
     need(row, "Not found", 404)

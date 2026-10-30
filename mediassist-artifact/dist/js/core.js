@@ -215,3 +215,25 @@ const kpi = (lab, val, sub = "", cls = "", spark = "") => `<div class="kpi"><spa
 const card = (title, sub, body, right = "") => `<div class="card"><div class="card-h"><div><h2>${title}</h2>${sub ? `<p>${sub}</p>` : ""}</div>${right}</div>${body}</div>`;
 const subtabs = (items, cur, act) => `<div class="sub">${items.map(([k, l]) => `<button data-act="${act}" data-k="${k}" class="${k === cur ? "on" : ""}">${l}</button>`).join("")}</div>`;
 function printHtml(html) { const box = $("#printArea"); box.innerHTML = html; document.body.classList.add("printing"); setTimeout(() => { print(); document.body.classList.remove("printing"); }, 50); }
+
+/* ---------- voice typing (Web Speech API; Chrome and Edge) ---------- */
+const micBtn = name => `<button type="button" class="micbtn" data-act="dictate" data-t="${name}" title="Voice typing" aria-label="Voice typing">🎤</button>`;
+let MIC = null;
+on("dictate", el => {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return toast("Voice typing needs Chrome or Edge.");
+  if (MIC) { MIC.stop(); return; }
+  const root = el.closest("form") || el.closest(".card") || document;
+  const ta = root.querySelector(`[name="${el.dataset.t}"]`);
+  if (!ta) return;
+  const r = new SR();
+  r.lang = { en: "en-IN", hi: "hi-IN", te: "te-IN", ta: "ta-IN" }[(App.me && App.me.lang) || "en"] || "en-IN";
+  r.continuous = true;
+  r.onresult = e => {
+    for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) ta.value = (ta.value ? ta.value.replace(/\s+$/, "") + " " : "") + e.results[i][0].transcript.trim();
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+  r.onerror = ev => { if (ev.error === "not-allowed") toast("Allow microphone access for this site in the browser."); };
+  r.onend = () => { MIC = null; el.classList.remove("rec"); };
+  MIC = r; el.classList.add("rec"); r.start(); toast("Listening… tap 🎤 again to stop. Speak in " + ({ hi: "Hindi", te: "Telugu", ta: "Tamil" }[(App.me && App.me.lang)] || "English") + " (set in My account).");
+});

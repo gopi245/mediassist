@@ -241,6 +241,35 @@ def _client(c):
     return anthropic, anthropic.Anthropic(api_key=key)
 
 
+def ai_text(c, system, user, max_tokens=3000):
+    """One short AI job (translate, draft, interpret): sends `user` with `system`, returns the text answer.
+    Raises ApiError with a clear message when the key, SDK or service isn't available."""
+    anthropic, client = _client(c)
+    try:
+        resp = client.messages.create(model=MODEL, max_tokens=max_tokens, system=system, messages=[{"role": "user", "content": user}])
+    except anthropic.AuthenticationError:
+        raise ApiError(400, "The Anthropic API key was rejected. Check it in Admin > Settings.")
+    except anthropic.RateLimitError:
+        raise ApiError(429, "The AI service is busy. Try again in a minute.")
+    except anthropic.APIConnectionError:
+        raise ApiError(502, "No connection to the AI service. Check the internet connection.")
+    except anthropic.APIStatusError as e:
+        raise ApiError(502, f"AI service error ({e.status_code}). Try again later.")
+    return "".join(b.text for b in resp.content if b.type == "text").strip()
+
+
+def ai_json(c, system, user, max_tokens=3000):
+    """ai_text, but parses the answer as one JSON object or array."""
+    txt = ai_text(c, system + " Answer with JSON only: no prose, no markdown fences.", user, max_tokens)
+    start = min((i for i in (txt.find("{"), txt.find("[")) if i >= 0), default=-1)
+    need(start >= 0, "The AI answer wasn't usable. Try again.")
+    end = max(txt.rfind("}"), txt.rfind("]"))
+    try:
+        return json.loads(txt[start:end + 1])
+    except ValueError:
+        raise ApiError(502, "The AI answer wasn't usable. Try again.")
+
+
 def _blocks(content):
     """Assistant content as plain dicts, unchanged, so it can be stored and sent back on the next turn."""
     return [b.model_dump(exclude_none=True) if hasattr(b, "model_dump") else b for b in content]

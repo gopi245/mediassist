@@ -27,6 +27,7 @@ STOCK.edit = async el => {
         <div><label for="qsBatch">Batch</label><input id="qsBatch" class="mono" autocomplete="off"></div>
         <div><label for="qsExp">Expiry</label><input id="qsExp" placeholder="MM/YY" inputmode="numeric" autocomplete="off"></div>
         <div><label for="qsMrp">MRP ₹ each</label><input id="qsMrp" type="number" step=".01" min="0" inputmode="decimal"></div>
+        <div><label for="qsCost">Cost ₹ each</label><input id="qsCost" type="number" step=".01" min="0" inputmode="decimal" placeholder="buy price"></div>
         <div><button type="button" class="btn" data-act="qsAdd">Add</button></div></div>
       <div id="qsInfo" class="small muted" style="min-height:18px;margin-top:6px"></div><div id="qsList"></div>`)}
   </div>
@@ -83,7 +84,7 @@ on("edAddFor", el => {
 
 /* ---------- quick stock entry ---------- */
 const edMed = name => App.cache.ed.medicines.find(m => m.name.toLowerCase() === String(name || "").trim().toLowerCase());
-const QS_FIELDS = ["qsMed", "qsQty", "qsUnit", "qsBatch", "qsExp", "qsMrp"];
+const QS_FIELDS = ["qsMed", "qsQty", "qsUnit", "qsBatch", "qsExp", "qsMrp", "qsCost"];
 const qsLines = () => App.cache.qs || (App.cache.qs = []);
 /* Expiry as printed on the strip: 05/27, 5-2027, 0527, 2027-05 or a full date. Month-only means the month's last day. */
 function parseExpiry(s) {
@@ -125,17 +126,20 @@ on("qsAdd", () => {
   if (!exp) return fail("Enter the expiry as printed, like 05/27.", "qsExp");
   if (exp <= localDay()) return fail("This batch has already expired. Don't put it on the shelf.", "qsExp");
   if (!(mrp > 0)) return fail("Enter the MRP printed on the pack.", "qsMrp");
+  const cost = $("#qsCost").value === "" ? null : +$("#qsCost").value;
+  if (cost === null && !m.last) return fail(`First time stocking ${m.name}: enter the cost (what you paid per ${unit === "pack" ? "strip" : "tablet"}).`, "qsCost");
+  if (cost !== null && cost > mrp) return fail("Cost is higher than MRP. Check both.", "qsCost");
   const same = qsLines().find(l => l.medicine_id === m.id && l.batch.toLowerCase() === batch.toLowerCase() && l.unit === unit && l.expiry === exp);
   if (same) same.qty += qty;
-  else qsLines().push({ medicine_id: m.id, name: m.name, pack: m.pack_size, qty, unit, batch, expiry: exp, mrp });
-  ["qsMed", "qsQty", "qsBatch", "qsExp", "qsMrp"].forEach(id => $("#" + id).value = "");
+  else qsLines().push({ medicine_id: m.id, name: m.name, pack: m.pack_size, qty, unit, batch, expiry: exp, mrp, cost });
+  ["qsMed", "qsQty", "qsBatch", "qsExp", "qsMrp", "qsCost"].forEach(id => $("#" + id).value = "");
   $("#qsInfo").textContent = `Added ${m.name}. Next one.`; qsDraw(); $("#qsMed").focus();
 });
 function qsDraw() {
   const L = qsLines(), box = $("#qsList"); if (!box) return;
   if (!L.length) { box.innerHTML = ""; return; }
   const units = l => l.qty * (l.unit === "pack" ? l.pack : 1);
-  box.innerHTML = tbl(["Medicine", "Qty", "Batch", "Expiry", "MRP ₹", ""], L.map((l, i) => `<tr><td><b>${esc(l.name)}</b></td><td class="num">${l.qty} ${l.unit === "pack" ? (l.pack > 1 ? "strips" : "") : "tablets"}<div class="small muted">${units(l)} units</div></td><td class="mono">${esc(l.batch || "–")}</td><td class="mono">${l.expiry.slice(0, 7)}</td><td class="num">${money(l.mrp)}</td><td><button class="btn sm ghost" data-act="qsDel" data-i="${i}" aria-label="Remove line">Remove</button></td></tr>`).join(""))
+  box.innerHTML = tbl(["Medicine", "Qty", "Batch", "Expiry", "MRP ₹", "Cost ₹", ""], L.map((l, i) => `<tr><td><b>${esc(l.name)}</b></td><td class="num">${l.qty} ${l.unit === "pack" ? (l.pack > 1 ? "strips" : "") : "tablets"}<div class="small muted">${units(l)} units</div></td><td class="mono">${esc(l.batch || "–")}</td><td class="mono">${l.expiry.slice(0, 7)}</td><td class="num">${money(l.mrp)}</td><td class="num">${l.cost === null || l.cost === undefined ? '<span class="small muted">last</span>' : money(l.cost)}</td><td><button class="btn sm ghost" data-act="qsDel" data-i="${i}" aria-label="Remove line">Remove</button></td></tr>`).join(""))
     + `<div class="fields" style="margin-top:8px"><div><label for="qsReason">Reason</label><select id="qsReason">${edReasons("opening")}</select></div>
        <div style="align-self:end" class="btns"><button class="btn" data-act="qsSave">Save ${L.length} line${L.length === 1 ? "" : "s"} to stock</button><button class="btn ghost" data-act="qsClear">Clear</button></div></div>`;
 }
@@ -143,7 +147,7 @@ on("qsDel", el => { qsLines().splice(+el.dataset.i, 1); qsDraw(); });
 on("qsClear", () => { App.cache.qs = []; qsDraw(); });
 on("qsSave", async el => {
   const L = qsLines();
-  const r = await withBusy(el, () => api("/api/stock/update", { reason: $("#qsReason").value, lines: L.map(l => ({ medicine_id: l.medicine_id, batch: l.batch, expiry: l.expiry, qty: l.qty, unit: l.unit, mrp: l.mrp })) }));
+  const r = await withBusy(el, () => api("/api/stock/update", { reason: $("#qsReason").value, lines: L.map(l => ({ medicine_id: l.medicine_id, batch: l.batch, expiry: l.expiry, qty: l.qty, unit: l.unit, mrp: l.mrp, cost: l.cost ?? "" })) }));
   toast(`${r.added} batch${r.added === 1 ? "" : "es"} added to stock`); App.cache.qs = []; App.cache.meds = null; await edReload(); qsDraw(); $("#qsMed").focus();
 });
 

@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 from .core import BASE, DATA_DIR, DEFAULT_SETTINGS, add_days, db, now_str, one, today
-from .refdata import ICD10, LAB_TESTS, MEDICINES, SERVICES, TEMPLATES
+from .refdata import ICD10, LAB_TESTS, LAB_TESTS_MORE, MEDICINES, SERVICES, TEMPLATES
 from .schema import migrate
 
 
@@ -26,6 +26,18 @@ def seed_reference(c):
             for i, (pn, unit, lo, hi, clo, chi, ref) in enumerate(params):
                 c.execute("INSERT INTO lab_params(test_id,name,unit,low,high,crit_low,crit_high,ref_text,sort) VALUES(?,?,?,?,?,?,?,?,?)",
                           (t.lastrowid, pn, unit, lo, hi, clo, chi, ref or None, i))
+    for code, name, sample, rate, tat, params in LAB_TESTS_MORE:   # new tests reach existing installations too
+        if one(c, "SELECT 1 FROM lab_tests WHERE code=?", (code,)):
+            continue
+        sname = f"Lab: {name}"
+        s = one(c, "SELECT id FROM services WHERE name=?", (sname,))
+        sid = s["id"] if s else c.execute("INSERT INTO services(name,cat,rate_p,gst_pct) VALUES(?,?,?,0)", (sname, "Laboratory", rate * 100)).lastrowid
+        t = c.execute("INSERT INTO lab_tests(code,name,sample,service_id,tat_hours) VALUES(?,?,?,?,?)", (code, name, sample, sid, tat))
+        for i, (pn, unit, lo, hi, clo, chi, ref, *extra) in enumerate(params):
+            ex = extra[0] if extra else {}
+            pid = c.execute("INSERT INTO lab_params(test_id,name,unit,low,high,crit_low,crit_high,ref_text,sort,formula) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                            (t.lastrowid, pn, unit, lo, hi, clo, chi, ref or None, i, ex.get("formula"))).lastrowid
+            c.executemany("INSERT INTO lab_ranges(param_id,gender,age_from,age_to,low,high) VALUES(?,?,?,?,?,?)", [(pid, *r) for r in ex.get("ranges", [])])
     if not one(c, "SELECT 1 FROM templates"):
         for name, dx, icd, advice, items, tests, fu in TEMPLATES:
             its = []

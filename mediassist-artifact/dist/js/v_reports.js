@@ -36,12 +36,25 @@ on("openBranch", async el => { await api("/api/branch", { branch_id: +el.dataset
 
 RENDER.reports = async (main, [pane]) => {
   pane = pane || App.cache.repPane || (App.me.role === "doctor" ? "doctor" : "daily"); App.cache.repPane = pane;
-  const tabs = [["daily", "Daily report"], ["doctor", "Doctor summary"], ["analytics", "Analytics"], ...(can("audit") ? [["watch", "Staff watch"]] : []), ["followups", "Follow-ups"], ["feedback", "Feedback"], ["messages", "Messages"]].filter(x => App.me.role !== "doctor" || ["doctor", "followups"].includes(x[0]));
+  const tabs = [["daily", "Daily report"], ["doctor", "Doctor summary"], ["analytics", "Analytics"], ["revenue", "Revenue by service"], ...(can("audit") ? [["watch", "Staff watch"]] : []), ["followups", "Follow-ups"], ["feedback", "Feedback"], ["messages", "Messages"]].filter(x => App.me.role !== "doctor" || ["doctor", "followups"].includes(x[0]));
   main.innerHTML = subtabs(tabs, pane, "repTab") + `<div id="repBody"></div>`;
   await REP[pane]($("#repBody"));
 };
 on("repTab", el => go("reports", [el.dataset.k]));
 const REP = {};
+REP.revenue = async el => {
+  const days = App.cache.revDays || 30;
+  const d = await api("/api/reports/revenue?days=" + days);
+  const cats = {};
+  d.rows.forEach(r => (cats[r.cat] = cats[r.cat] || []).push(r));
+  el.innerHTML = card("Revenue by service", `Since ${d.since} · hospital bills by line, cancelled bills excluded`,
+    subtabs([["7", "7 days"], ["30", "30 days"], ["90", "90 days"], ["365", "1 year"]], String(days), "revDays") +
+    `<div class="kpis" style="margin-top:10px">${kpi("Hospital", money(d.rows.reduce((a, r) => a + r.rev, 0)), "all services")}${kpi("Pharmacy", money(d.pharmacy.rev), d.pharmacy.bills + " bills")}</div>` +
+    Object.entries(cats).map(([cat, list]) => `<h3 style="margin:14px 0 6px">${esc(cat)} <span class="small muted">${money(list.reduce((a, r) => a + r.rev, 0))}</span></h3>` +
+      tbl(["Service", "Bills", "Qty", "Revenue"], list.map(r => `<tr><td>${esc(r.name)}</td><td class="num">${r.bills}</td><td class="num">${r.qty % 1 ? r.qty.toFixed(1) : r.qty}</td><td class="num">${money(r.rev)}</td></tr>`).join(""))).join("")
+    || '<p class="empty">No hospital bills in this period.</p>');
+};
+on("revDays", el => { App.cache.revDays = +el.dataset.k; go("reports", ["revenue"]); });
 REP.daily = async el => {
   const day = App.cache.repDay || localDay(), r = await api("/api/reports/daily?date=" + day);
   let wa = ""; try { wa = localStorage.getItem("ma-wa") || ""; } catch (e) {}

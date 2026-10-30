@@ -25,17 +25,18 @@ SESSION_HOURS = 12
 # ------------------------------------------------------------------ roles
 P_ALL = {"all_branches", "patients_read", "patients_write", "visit_create", "consult", "billing", "hbilling",
          "stock", "stock_admin", "reports", "org_reports", "admin", "audit", "lab", "lab_verify", "appointments",
-         "ipd", "ipd_nursing", "accounts", "documents"}
+         "ipd", "ipd_nursing", "admit", "certificates", "lab_admin", "accounts", "documents"}
 ROLES = {
     "owner": set(P_ALL),
     "manager": {"patients_read", "patients_write", "visit_create", "billing", "hbilling", "stock", "stock_admin",
-                "reports", "audit", "lab", "appointments", "ipd", "accounts", "documents"},
+                "reports", "audit", "lab", "lab_admin", "appointments", "ipd", "admit", "certificates", "accounts", "documents"},
     "doctor": {"patients_read", "patients_write", "visit_create", "consult", "reports", "lab_verify", "appointments",
-               "ipd", "documents"},
-    "nurse": {"patients_read", "visit_create", "ipd", "ipd_nursing", "appointments", "documents"},
-    "reception": {"patients_read", "patients_write", "visit_create", "hbilling", "appointments", "documents"},
+               "ipd", "admit", "certificates", "documents"},
+    "nurse": {"patients_read", "visit_create", "ipd", "ipd_nursing", "admit", "appointments", "documents"},
+    "reception": {"patients_read", "patients_write", "visit_create", "hbilling", "admit", "appointments", "documents"},
     "pharmacist": {"patients_read", "billing", "stock", "documents"},
     "lab_tech": {"patients_read", "lab", "documents"},
+    "lab_incharge": {"patients_read", "lab", "lab_verify", "lab_admin", "reports", "documents"},
     "accountant": {"patients_read", "reports", "accounts", "hbilling"},
 }
 
@@ -224,8 +225,9 @@ DEFAULT_SETTINGS = {
     "weekly_pharmacy": "1", "weekly_day": "mon", "last_weekly": "",
     "watch_amount": "2000", "watch_discount_pct": "10",
     "briefing_on": "1", "briefing_time": "08:00", "last_briefing": "",
-    "assistant_on": "1", "assistant_patients": "1",
-    "alert_critical": "1", "alert_booking": "1", "alert_wait": "1", "alert_admit": "1",
+    "assistant_on": "1", "assistant_patients": "1", "lab_ai": "1",
+    "alert_critical": "1", "alert_booking": "1", "alert_wait": "1", "alert_admit": "1", "alert_admit_owner": "1",
+    "max_discount_pct": "10", "google_review_url": "",
     "last_auto": "", "last_reminders": "", "last_backup": "",
 }
 SECRET_SETTINGS = {"smtp_pass", "twilio_token", "anthropic_api_key", "meta_token", "razorpay_key_secret", "razorpay_webhook_secret", "abdm_client_secret"}
@@ -237,6 +239,14 @@ def get_settings(c):
 
 def set_setting(c, k, v):
     c.execute("INSERT INTO settings VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (k, str(v)))
+
+
+def check_discount(c, h, disc_p, gross_p):
+    """Staff other than the owner and managers can give at most the discount limit in Admin > Settings."""
+    if not disc_p or h.user["role"] in ("owner", "manager"):
+        return
+    pct = float(get_settings(c).get("max_discount_pct") or 0)
+    need(disc_p <= gross_p * pct / 100 + 0.5, f"Discount is above your limit of {pct:g}%. Ask a manager to give a larger discount.", 403)
 
 
 def audit(c, h, action, detail=""):

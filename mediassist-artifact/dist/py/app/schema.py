@@ -289,6 +289,31 @@ ALTER TABLE patients ADD COLUMN abha_address TEXT;
 ALTER TABLE branches ADD COLUMN hfr_id TEXT;
 ALTER TABLE users ADD COLUMN hpr_id TEXT
 """,
+# 16: beds grouped into rooms; AC or non-AC
+r"""
+ALTER TABLE beds ADD COLUMN room TEXT;
+ALTER TABLE beds ADD COLUMN ac INTEGER NOT NULL DEFAULT 0
+""",
+# 17: certificates (medical, fitness, discharge, birth, death)
+r"""
+CREATE TABLE certificates(id INTEGER PRIMARY KEY, branch_id INTEGER NOT NULL, cert_no TEXT UNIQUE NOT NULL, kind TEXT NOT NULL,
+  patient_id INTEGER NOT NULL REFERENCES patients(id), admission_id INTEGER, doctor_id INTEGER, issued_at TEXT NOT NULL, data TEXT NOT NULL, user_id INTEGER);
+CREATE INDEX ix_cert_pid ON certificates(patient_id)
+""",
+# 18: lab reference ranges by sex and age, calculated values, the range used on each result, AI interpretation
+r"""
+CREATE TABLE lab_ranges(id INTEGER PRIMARY KEY, param_id INTEGER NOT NULL REFERENCES lab_params(id), gender TEXT NOT NULL DEFAULT '',
+  age_from REAL NOT NULL DEFAULT 0, age_to REAL NOT NULL DEFAULT 200, low REAL, high REAL);
+CREATE INDEX ix_lab_ranges ON lab_ranges(param_id);
+ALTER TABLE lab_params ADD COLUMN formula TEXT;
+ALTER TABLE lab_results ADD COLUMN range_text TEXT;
+ALTER TABLE lab_orders ADD COLUMN clin_interpretation TEXT
+""",
+# 19: recurring daily IPD charges (monitor, oxygen, ventilator...) billed per day like the bed
+r"""
+CREATE TABLE adm_daily(id INTEGER PRIMARY KEY, admission_id INTEGER NOT NULL REFERENCES admissions(id), service_id INTEGER NOT NULL,
+  from_at TEXT NOT NULL, to_at TEXT, user_id INTEGER)
+""",
 ]
 
 

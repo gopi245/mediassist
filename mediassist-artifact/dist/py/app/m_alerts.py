@@ -50,11 +50,23 @@ def on_booking(c, aid):
 
 
 def on_admit(c, h, aid):
-    a = one(c, "SELECT a.*, p.name pname, b.ward, b.number bed FROM admissions a JOIN patients p ON p.id=a.patient_id LEFT JOIN beds b ON b.id=a.bed_id WHERE a.id=?", (aid,))
-    if not a or not a["doctor_id"]:
+    a = one(c, "SELECT a.*, p.name pname, b.ward, b.room, b.number bed, b.ac, u.name dname, br.name bname FROM admissions a JOIN patients p ON p.id=a.patient_id "
+               "LEFT JOIN beds b ON b.id=a.bed_id LEFT JOIN users u ON u.id=a.doctor_id JOIN branches br ON br.id=a.branch_id WHERE a.id=?", (aid,))
+    if not a:
         return 0
-    return alert(c, "admit", [a["doctor_id"]], f"Admitted under you: {a['pname']} ({a['ip_no']}), bed {a['ward'] or ''} {a['bed'] or ''}. {a['reason'] or a['diagnosis'] or ''}",
-                 skip=h.user["id"] if h else None)
+    n = 0
+    s = get_settings(c)
+    if s.get("alert_admit_owner", "1") == "1" and (s.get("owner_whatsapp") or s.get("owner_email")):
+        from .notify import deliver
+        deliver(c, "admit_alert", f"New admission at {a['bname']}: {a['pname']} ({pcode(a['patient_id'])}, {a['ip_no']}), "
+                                  f"{a['ward'] or ''}{' room ' + a['room'] if a['room'] else ''} bed {a['bed'] or '-'}{' (AC)' if a['ac'] else ''}"
+                                  f"{', Dr ' + a['dname'] if a['dname'] else ''}. {a['reason'] or a['diagnosis'] or ''}",
+                email=s.get("owner_email"), whatsapp=s.get("owner_whatsapp"), subject="New admission")
+        n += 1
+    if a["doctor_id"]:
+        n += alert(c, "admit", [a["doctor_id"]], f"Admitted under you: {a['pname']} ({a['ip_no']}), bed {a['ward'] or ''} {a['bed'] or ''}. {a['reason'] or a['diagnosis'] or ''}",
+                   skip=h.user["id"] if h else None)
+    return n
 
 
 def check_waits(c, now=None):
