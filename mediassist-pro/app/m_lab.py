@@ -237,8 +237,9 @@ def api_catalog_save(h, c, b, q):
     return {"ok": True, "id": in_tx(c, run)}
 
 
-@route("POST", "/api/lab/orders", "visit_create")
+@route("POST", "/api/lab/orders", "any")
 def api_order(h, c, b, q):
+    need(can(h, "visit_create") or can(h, "lab"), "Not allowed", 403)   # walk-in orders by the lab bench too
     pid = as_int(b.get("patient_id"), "patient")
     need(one(c, "SELECT 1 FROM patients WHERE id=?", (pid,)), "Patient not found", 404)
     tests = [as_int(t, "test") for t in (b.get("tests") or [])[:30]]
