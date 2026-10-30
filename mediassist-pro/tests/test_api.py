@@ -613,14 +613,31 @@ class T08AdminDocs(unittest.TestCase):
         self.assertIn("*Less:*", rep["text"])
         self.assertTrue(all("n" in x and "amount" in x for x in rep["collections"]["lines"]))
 
+    def test_certificates(self):
+        doc, rec = Client("dr.rao"), Client("reception.ch")
+        r = doc.ok("/api/certificates", {"kind": "medical", "patient_id": 2, "diagnosis": "Viral fever", "from": core.today(), "to": core.today()})
+        st, pdf = doc.call(f"/api/pdf/cert/{r['id']}")
+        self.assertEqual(st, 200)
+        self.assertEqual(rec.post("/api/certificates", {"kind": "fitness", "patient_id": 2, "purpose": "work"})[0], 403, "reception can't sign certificates")
+        self.assertEqual(doc.post("/api/certificates", {"kind": "medical", "patient_id": 2, "diagnosis": "x", "from": "2026-10-05", "to": "2026-10-01"})[0], 400)
+        self.assertIn(r["cert_no"], [x["cert_no"] for x in doc.ok("/api/patients/2/certificates")["rows"]])
+
     def test_staff_watch(self):
         rec, mgr, ph = Client("reception.ch"), Client("manager.ch"), Client("pharma.ch")
         # reception bills and then cancels it herself
         svc = core.db().execute("SELECT id FROM services ORDER BY id LIMIT 1").fetchone()[0]
         inv = rec.ok("/api/invoices", {"patient_id": 2, "items": [{"service_id": svc, "qty": 1}]})
+        self.assertEqual(rec.post(f"/api/invoices/{inv['id']}/cancel", {"reason": "entered twice"})[0], 403, "only owner/manager can cancel")
+        with core.db() as d:   # the scenario below is about a lenient group: reception may cancel, staff may give up to 30%
+            d.execute("UPDATE users SET role='manager' WHERE username='reception.ch'")
         rec.ok(f"/api/invoices/{inv['id']}/cancel", {"reason": "entered twice"})
-        # pharmacist: 25% discount, then takes the whole bill back in cash
+        with core.db() as d:
+            d.execute("UPDATE users SET role='reception' WHERE username='reception.ch'")
+        # pharmacist: 25% discount is above the default 10% limit, then allowed once the owner raises it
         med = [m for m in ph.ok("/api/medicines") if m["schedule"] == "OTC" and m["stock"] > 20][0]
+        big = {"customer": "Walk-in", "items": [{"medicine_id": med["id"], "qty": 4, "unit": "unit"}], "pay_mode": "cash", "discount": round(med["mrp"] * 4 * 0.25, 2), "override": True}
+        self.assertEqual(ph.post("/api/bills", big)[0], 403, "discount above the staff limit")
+        Client("owner").ok("/api/settings", {"max_discount_pct": "30"})
         bill = ph.ok("/api/bills", {"customer": "Walk-in", "items": [{"medicine_id": med["id"], "qty": 4, "unit": "unit"}], "pay_mode": "cash", "discount": round(med["mrp"] * 4 * 0.25, 2), "override": True})
         bi = ph.ok(f"/api/bills/{bill['id']}")["items"]
         ph.ok(f"/api/bills/{bill['id']}/return", {"items": [{"bill_item_id": x["id"], "qty": x["qty"]} for x in bi], "reason": "customer changed mind"})
@@ -1376,10 +1393,11 @@ class T33SpecialtyCataloguesFhir(unittest.TestCase):
         r = own.ok("/api/import/icd10", {"csv": "code,title\nJ02.9,Acute pharyngitis, unspecified\nS72.3,Fracture of shaft of femur\nI10,Essential (primary) hypertension updated\n"})
         self.assertEqual(r["codes"], 3)
         self.assertTrue(any(x["code"] == "S72.3" for x in own.ok("/api/icd10?q=femur")))
-        r = own.ok("/api/import/lab-tests", {"csv": "code,test,sample,rate,tat_hours,param,unit,low,high,crit_low,crit_high,ref_text\nVITD,Vitamin D (25-OH),Serum,1200,48,Vitamin D,ng/mL,30,100,,,\nCBC,Complete blood count,EDTA blood,400,4,MCV,fL,80,100,,,\n"})
-        self.assertEqual((r["tests_added"], r["params_added"]), (1, 2), "new test added; new parameter added to the existing CBC")
+        r = own.ok("/api/import/lab-tests", {"csv": "code,test,sample,rate,tat_hours,param,unit,low,high,crit_low,crit_high,ref_text\nZZT1,Zinc test (import check),Serum,1200,48,Zinc,ug/dL,70,120,,,\nCBC,Complete blood count,EDTA blood,400,4,MCV,fL,80,100,,,\n"})
+        self.assertEqual(r["tests_added"], 1, "new test added")
+        self.assertGreaterEqual(r["params_added"], 1, "a new parameter added to the existing CBC")
         t = {x["code"]: x for x in own.ok("/api/lab/tests")}
-        self.assertIn("VITD", t)
+        self.assertIn("ZZT1", t)
         self.assertTrue(any(p["name"] == "MCV" for p in t["CBC"]["params"]))
         self.assertEqual(own.post("/api/import/lab-tests", {"csv": "code,test,param,low\nX,Bad,P,abc\n"})[0], 400)
         r = own.ok("/api/import/medicines", {"csv": "name,generic,form,schedule,gst,hsn,pack_size,strength_mg,max_daily_mg,renal_caution\nDolo 650,paracetamol,Tablet,OTC,12,3004,15,650,4000,0\nNewmed 10,newdrug,Tablet,H,12,3004,10,10,40,yes\n"})

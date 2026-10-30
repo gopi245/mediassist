@@ -358,6 +358,23 @@ def api_h1_csv(h, c, b, q):
 
 
 # ---------------------------------------------------------------- analytics
+@route("GET", "/api/reports/revenue", "reports")
+def api_revenue(h, c, b, q):
+    """Revenue by service: ward and bed-wise, test-wise, department-wise, from hospital invoice lines plus pharmacy sales."""
+    bids = bids_scope(c, h)
+    days = as_int(qget(q, "days", "30"), "days", 1, 365)
+    since = add_days(today(), -days)
+    p = ph(len(bids))
+    svc = rows(c.execute(f"SELECT COALESCE(ii.cat,'Other') cat, ii.name, COUNT(DISTINCT ii.invoice_id) bills, SUM(ii.qty) qty, SUM(ii.amount_p) rev_p "
+                         f"FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id WHERE i.branch_id IN ({p}) AND i.created_at>=? AND i.cancelled_at IS NULL "
+                         f"GROUP BY ii.cat, ii.name ORDER BY rev_p DESC", (*bids, since)))
+    for x in svc:
+        x["rev"] = R(x.pop("rev_p"))
+    pharm = c.execute(f"SELECT COALESCE(SUM(total_p-returned_p),0), COUNT(*) FROM bills WHERE branch_id IN ({p}) AND created_at>=?", (*bids, since)).fetchone()
+    return {"days": days, "since": since, "rows": svc, "pharmacy": {"rev": R(pharm[0]), "bills": pharm[1]},
+            "total": R(sum(x["rev"] for x in svc) * 100 + pharm[0]) if svc or pharm[0] else 0}
+
+
 @route("GET", "/api/analytics", "reports")
 def api_analytics(h, c, b, q):
     bids = bids_scope(c, h)
@@ -445,7 +462,8 @@ def api_fb_post(h, c, b, q):
     if rating <= 2:
         from .notify import log_message
         log_message(c, "staff_alert", "Owner", "screen", f"Low rating ({rating}/5) from {pcode(f['patient_id'])}: {clean(b, 'comment', 300)}", True, "feedback")
-    return {"ok": True}
+    url = get_settings(c).get("google_review_url") or ""
+    return {"ok": True, "review_url": url if rating >= 4 and url else None}   # happy patients are asked for a Google review
 
 
 @route("GET", "/api/feedback", "reports")

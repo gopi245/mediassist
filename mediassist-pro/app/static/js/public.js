@@ -63,7 +63,11 @@ if ($p("#fbForm")) {
     e.preventDefault();
     const v = Object.fromEntries(new FormData(f));
     if (!v.rating) { msg.textContent = "Choose a rating from 1 to 5."; return; }
-    try { await call("/api/public/feedback", { t: tok, rating: +v.rating, comment: v.comment }); f.innerHTML = "<h2>Thank you</h2><p>Your feedback helps us improve.</p>"; }
+    try {
+      const r = await call("/api/public/feedback", { t: tok, rating: +v.rating, comment: v.comment });
+      f.innerHTML = "<h2>Thank you</h2><p>Your feedback helps us improve.</p>" + (r.review_url && /^https:\/\//.test(r.review_url)
+        ? `<p>Glad you had a good visit. Would you share it on Google? It helps other patients find us.</p><a class="btn wide" href="${escP(r.review_url)}" target="_blank" rel="noopener">Write a Google review</a>` : "");
+    }
     catch (err) { msg.textContent = err.message; }
   });
 }
