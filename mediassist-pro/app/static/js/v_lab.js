@@ -7,12 +7,14 @@ RENDER.lab = async (main, [mode, id]) => {
   if (mode === "o" && id) return labOrder(main, +id);
   if (mode === "catalog" && can("lab_admin")) return labCatalog(main, id ? +id : null);
   const st = App.cache.labSt || "open";
+  let pre = "";   // "new/<patient id>" from the patient's Labs tab: fill the patient in
+  if (mode === "new" && id) { try { const p = await api("/api/patients/" + id); pre = `${p.code} ${p.name}`; } catch (e) { /* unknown patient: leave blank */ } }
   const [list, tests] = await Promise.all([api("/api/lab/orders?status=" + st + "&since=" + localDay(-7)), api("/api/lab/tests")]);
   App.cache.labTests = tests;
   main.innerHTML = `<div class="g-main"><div class="card"><div class="card-h"><div><h2>Worklist</h2><p>STAT and urgent orders first</p></div>${can("lab_admin") ? `<button class="btn sm ghost" data-act="go" data-v="lab" data-p="catalog">Tests & ranges</button>` : ""}</div>
     ${subtabs([["open", "Open"], ["resulted", "Needs verification"], ["verified", "Verified (7 days)"], ["cancelled", "Cancelled"]], st, "labTab")}
     ${tbl(["Order", "Patient", "Tests", "Priority", "Status", ""], list.map(o => `<tr class="click" data-act="go" data-v="lab" data-p="o/${o.id}"><td class="mono">LAB${o.id}<div class="small muted">${o.created_at.slice(5)}</div></td><td>${esc(o.pname)} <span class="small muted">${o.code} · ${o.age ?? "?"}${(o.gender || " ")[0]}</span></td><td class="small">${esc(o.tests)}</td><td>${o.priority === "routine" ? "Routine" : pill(o.priority.toUpperCase(), "p-crit")}</td><td>${pill(...LAB_ST[o.status])}${!o.inv_no && !o.admission_id && o.status !== "cancelled" ? ` ${pill("Not billed", "p-warn")}` : ""}</td><td><button class="btn sm ghost">Open</button></td></tr>`).join(""), "No orders here.")}</div>
-    ${can("visit_create") || can("lab") ? card("New lab order", "Walk-in tests or a doctor's paper prescription", `<form data-submit="labNew" class="stack"><div class="fields">${patInput()}<div><label>Priority</label><select name="priority"><option value="routine">Routine</option><option value="urgent">Urgent</option><option value="stat">STAT</option></select></div></div>
+    ${can("visit_create") || can("lab") ? card("New lab order", "Walk-in tests or a doctor's paper prescription", `<form data-submit="labNew" class="stack"><div class="fields">${patInput("patient", pre)}<div><label>Priority</label><select name="priority"><option value="routine">Routine</option><option value="urgent">Urgent</option><option value="stat">STAT</option></select></div></div>
       <input data-input="labTestFilter" placeholder="Search tests (${tests.length})" autocomplete="off">
       <div class="stack" style="gap:2px;max-height:340px;overflow:auto">${tests.map(t_ => `<label class="check" style="margin:0" data-name="${esc((t_.name + " " + t_.code).toLowerCase())}"><input type="checkbox" name="t${t_.id}"> ${esc(t_.name)} <span class="muted small">${t_.rate_p ? money(P2R(t_.rate_p)) : ""} · ${t_.sample || ""}</span></label>`).join("")}</div>
       <div class="btns"><button class="btn">Create order</button></div></form>`) : ""}</div>`;
