@@ -1,6 +1,6 @@
 """Laboratory: test catalogue with reference ranges, orders from OPD/IPD, sample collection,
 result entry with automatic H/L/critical flags, verification, delivery to doctor and patient."""
-from .core import (ApiError, R, as_int, audit, can, clean, get_settings, in_tx, need, need_branch, now_str, one, opt_num, pcode, qget, route, rows, today)
+from .core import (ApiError, P, R, as_int, audit, can, clean, get_settings, in_tx, need, need_branch, now_str, one, opt_num, pcode, qget, route, rows, rs, today)
 from .lab_explain import interpret
 
 STATUSES = ("ordered", "collected", "resulted", "verified", "cancelled")
@@ -113,6 +113,29 @@ def check_formula(formula, param_names):
         raise ApiError(400, f"Formula: {e}")
 
 
+def order_amount_p(c, oid):
+    """What the ordered tests cost at today's rates (paise), and any test without a rate."""
+    rs_ = rows(c.execute("SELECT t.name, s.id sid, s.rate_p FROM lab_order_items i JOIN lab_tests t ON t.id=i.test_id LEFT JOIN services s ON s.id=t.service_id "
+                         "WHERE i.order_id=?", (oid,)))
+    return sum(r["rate_p"] or 0 for r in rs_), [r["name"] for r in rs_ if not r["sid"]]
+
+
+def pay_state(c, o):
+    """Payment status of one lab order for every screen: paid, partial, due, unbilled, inpatient (on the IP bill), insurance."""
+    if o["admission_id"]:
+        return {"pay": "inpatient", "label": "On inpatient bill", "due": 0}
+    inv = one(c, "SELECT * FROM invoices WHERE id=? AND cancelled_at IS NULL", (o["invoice_id"],)) if o["invoice_id"] else None
+    if inv:
+        from .m_billing import inv_state
+        st = inv_state(c, inv)
+        lab = {"paid": "Paid", "partial": "Part paid", "due": "Not paid", "insurance": "Insurance"}.get(st["status"], st["status"].title())
+        return {"pay": st["status"], "label": lab, "due": R(st["due_p"]), "inv_no": inv["inv_no"], "invoice_id": inv["id"]}
+    if o["status"] == "cancelled":
+        return {"pay": "cancelled", "label": "Cancelled", "due": 0}
+    amt, _ = order_amount_p(c, o["id"])
+    return {"pay": "unbilled", "label": "Not paid", "due": R(amt)}
+
+
 def order_detail(c, oid):
     o = one(c, "SELECT o.*, p.name pname, p.age, p.gender, p.phone, p.whatsapp_ok, u.name dname, br.name bname, br.address baddr, br.phone bphone, "
                "cu.name collected_name, ru.name resulted_name, vu.name verified_name, vu.reg_no verified_reg FROM lab_orders o JOIN patients p ON p.id=o.patient_id "
@@ -142,6 +165,7 @@ def order_detail(c, oid):
         o["billing"] = {"inv_no": inv["inv_no"], "invoice_id": inv["id"], "at": inv["created_at"], "status": st["status"], "due": R(st["due_p"]), "total": R(inv["total_p"]), "kind": inv["kind"]}
     else:
         o["billing"] = None
+    o["payment"] = pay_state(c, o)
     sent = one(c, "SELECT at, ok, channel FROM messages WHERE kind='lab_report' AND body LIKE ? ORDER BY id DESC LIMIT 1", (f"%LAB{o['id']}%",))
     o["sent"] = dict(sent) if sent else None
     o["ack"] = one(c, "SELECT u.name, o2.crit_ack_at FROM lab_orders o2 LEFT JOIN users u ON u.id=o2.crit_ack_by WHERE o2.id=? AND o2.crit_ack_at IS NOT NULL", (o["id"],))
@@ -265,7 +289,42 @@ def api_orders(h, c, b, q):
     out = rows(c.execute(sql + " ORDER BY CASE o.priority WHEN 'stat' THEN 0 WHEN 'urgent' THEN 1 ELSE 2 END, o.id", args))
     for o in out:
         o["code"] = pcode(o["patient_id"])
+        o["payment"] = pay_state(c, o)
     return out
+
+
+@route("POST", r"/api/lab/orders/(\d+)/pay", "any")
+def api_order_pay(h, c, b, q, oid):
+    """Collect the money for a lab order and mark it paid. Bills exactly the ordered tests on a hospital invoice (so it is in
+    receipts, GST and the day's cash closing), or takes the balance on the invoice already raised."""
+    need(can(h, "lab_admin") or can(h, "hbilling"), "Only the lab in-charge or the billing desk can collect payment", 403)
+    mode, ref = clean(b, "mode", 10) or "cash", clean(b, "ref", 40)
+    need(mode in ("cash", "upi", "card"), "Invalid payment mode")
+    need(mode == "cash" or ref, "Enter the UPI or card transaction reference")
+
+    def run():
+        o = one(c, "SELECT * FROM lab_orders WHERE id=? AND branch_id=?", (int(oid), h.branch))
+        need(o, "Lab order not found at this branch", 404)
+        need(o["status"] != "cancelled", "This order was cancelled")
+        need(not o["admission_id"], "This patient is admitted: the tests go on the inpatient bill and are paid at discharge")
+        inv = one(c, "SELECT * FROM invoices WHERE id=? AND cancelled_at IS NULL", (o["invoice_id"],)) if o["invoice_id"] else None
+        if not inv:
+            amt, no_rate = order_amount_p(c, o["id"])
+            need(not no_rate, f"No price set for {', '.join(no_rate)}. Set it in Laboratory > Tests & ranges.")
+            from .m_billing import create_invoice
+            items = [{"service_id": r[0], "ref": f"LAB{o['id']}"} for r in c.execute(
+                "SELECT t.service_id FROM lab_order_items i JOIN lab_tests t ON t.id=i.test_id WHERE i.order_id=?", (o["id"],))]
+            inv = create_invoice(c, h, o["patient_id"], items, o["doctor_id"], o["visit_id"], None, "lab")
+        from .m_billing import inv_state
+        due = inv_state(c, inv)["due_p"]
+        need(due > 0, f"Already paid ({inv['inv_no']})")
+        amount = P(b.get("amount"), "amount") if b.get("amount") not in (None, "") else due
+        need(0 < amount <= due, f"Amount must be between Rs 1 and {rs(due)}")
+        c.execute("INSERT INTO payments(branch_id,invoice_id,at,mode,amount_p,ref,user_id,kind) VALUES(?,?,?,?,?,?,?,?)",
+                  (inv["branch_id"], inv["id"], now_str(), mode, amount, ref, h.user["id"], "payment"))
+        audit(c, h, "lab.pay", f"LAB{o['id']} {inv['inv_no']} {rs(amount)} {mode} {ref}")
+        return dict(pay_state(c, dict(o, invoice_id=inv["id"])), collected=R(amount))
+    return in_tx(c, run)
 
 
 @route("GET", r"/api/lab/orders/(\d+)", "patients_read")

@@ -1517,3 +1517,51 @@ class T36InpatientPaysNow(unittest.TestCase):
         d = doc.ok(f"/api/admissions/{aid}/discharge", {"final_diagnosis": "ok", "discharge_type": "normal", "ignore_pending": True, "items": [], "override": True})
         inv = rec.ok(f"/api/invoices/{d.get('invoice_id') or doc.ok(f'/api/admissions/{aid}')['invoice_id']}")
         self.assertFalse([i for i in inv["items"] if "Pharmacy" in i["name"]], "nothing billed twice")
+
+
+class T37LabPayment(unittest.TestCase):
+    """Lab tech enters results; lab in-charge verifies (no doctor needed), sends and collects; every role sees paid/not paid."""
+    def test_lab_incharge_collects(self):
+        own = Client("owner")
+        own.ok("/api/users", {"username": "labhead.ch", "name": "Lab Head", "role": "lab_incharge", "branch_id": 1, "password": PW})
+        head, tech, rec = Client("labhead.ch"), Client("lab.ch"), Client("reception.ch")
+        tests = {t["code"]: t for t in tech.ok("/api/lab/tests")}
+        pid = rec.ok("/api/patients", {"name": "Lab Pay Test", "phone": "9000037371", "age": 35, "gender": "Female", "consent": True, "force": True})["id"]
+        oid = tech.ok("/api/lab/orders", {"patient_id": pid, "tests": [tests["CBC"]["id"]]})["id"]
+        o = tech.ok(f"/api/lab/orders/{oid}")
+        self.assertEqual((o["payment"]["pay"], o["payment"]["label"]), ("unbilled", "Not paid"))
+        due = o["payment"]["due"]; self.assertGreater(due, 0)
+        # everyone who sees the patient sees the status
+        for who in ("reception.ch", "nurse.ch", "dr.rao", "pharma.ch"):
+            labs = Client(who).ok(f"/api/patients/{pid}")["labs"]
+            self.assertEqual(labs[0]["payment"]["label"], "Not paid", who)
+        # lab tech: results only
+        tech.ok(f"/api/lab/orders/{oid}/collect", {})
+        vals = {f"{t['item_id']}:{p['id']}": "12" for t in tech.ok(f"/api/lab/orders/{oid}")["tests"] for p in t["params"]}
+        tech.ok(f"/api/lab/orders/{oid}/results", {"values": vals, "submit": True})
+        self.assertEqual(tech.post(f"/api/lab/orders/{oid}/pay", {"mode": "cash"})[0], 403, "lab tech does not collect money")
+        self.assertEqual(tech.post(f"/api/lab/orders/{oid}/verify", {})[0], 403, "lab tech does not release reports")
+        self.assertEqual(Client("nurse.ch").post(f"/api/lab/orders/{oid}/pay", {"mode": "cash"})[0], 403)
+        # lab in-charge releases the report without a doctor, and collects
+        head.ok(f"/api/lab/orders/{oid}/verify", {})
+        self.assertEqual(head.post(f"/api/lab/orders/{oid}/pay", {"mode": "upi"})[0], 400, "UPI needs a reference")
+        part = head.ok(f"/api/lab/orders/{oid}/pay", {"mode": "cash", "amount": 100})
+        self.assertEqual((part["pay"], part["label"], part["collected"]), ("partial", "Part paid", 100))
+        full = head.ok(f"/api/lab/orders/{oid}/pay", {"mode": "upi", "ref": "UPI777"})
+        self.assertEqual((full["pay"], full["due"], full["collected"]), ("paid", 0, due - 100))
+        self.assertEqual(head.post(f"/api/lab/orders/{oid}/pay", {"mode": "cash"})[0], 400, "already paid")
+        for who in ("reception.ch", "nurse.ch", "dr.rao", "pharma.ch"):
+            self.assertEqual(Client(who).ok(f"/api/patients/{pid}")["labs"][0]["payment"]["label"], "Paid", who)
+        row = next(x for x in head.ok("/api/lab/orders?status=verified") if x["id"] == oid)
+        self.assertEqual(row["payment"]["pay"], "paid")
+        # the money is in the hospital's receipts and no longer waits at the billing desk
+        self.assertFalse(rec.ok(f"/api/patients/{pid}/unbilled")["labs"], "paid lab tests don't show as unbilled")
+        cl = rec.ok("/api/closing")
+        mine = [r for r in cl["receipts"] if r["ref"] == full["inv_no"]]
+        self.assertEqual(sorted((r["mode"], r["amount"], r["user"]) for r in mine), [("cash", 100, "labhead.ch"), ("upi", due - 100, "labhead.ch")])
+        # inpatient tests are not collected at the lab
+        doc = Client("dr.rao")
+        aid = doc.ok("/api/admissions", {"patient_id": pid, "bed_id": next(b for b in rec.ok("/api/beds") if b["status"] == "free")["id"], "reason": "Obs"})["id"]
+        ip = doc.ok("/api/lab/orders", {"patient_id": pid, "admission_id": aid, "tests": [tests["CBC"]["id"]]})["id"]
+        self.assertEqual(head.ok(f"/api/lab/orders/{ip}")["payment"]["label"], "On inpatient bill")
+        self.assertEqual(head.post(f"/api/lab/orders/{ip}/pay", {"mode": "cash"})[0], 400)

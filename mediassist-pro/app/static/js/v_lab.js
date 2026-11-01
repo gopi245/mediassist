@@ -13,12 +13,29 @@ RENDER.lab = async (main, [mode, id]) => {
   App.cache.labTests = tests;
   main.innerHTML = `<div class="g-main"><div class="card"><div class="card-h"><div><h2>Worklist</h2><p>STAT and urgent orders first</p></div>${can("lab_admin") ? `<button class="btn sm ghost" data-act="go" data-v="lab" data-p="catalog">Tests & ranges</button>` : ""}</div>
     ${subtabs([["open", "Open"], ["resulted", "Needs verification"], ["verified", "Verified (7 days)"], ["cancelled", "Cancelled"]], st, "labTab")}
-    ${tbl(["Order", "Patient", "Tests", "Priority", "Status", ""], list.map(o => `<tr class="click" data-act="go" data-v="lab" data-p="o/${o.id}"><td class="mono">LAB${o.id}<div class="small muted">${o.created_at.slice(5)}</div></td><td>${esc(o.pname)} <span class="small muted">${o.code} · ${o.age ?? "?"}${(o.gender || " ")[0]}</span></td><td class="small">${esc(o.tests)}</td><td>${o.priority === "routine" ? "Routine" : pill(o.priority.toUpperCase(), "p-crit")}</td><td>${pill(...LAB_ST[o.status])}${!o.inv_no && !o.admission_id && o.status !== "cancelled" ? ` ${pill("Not billed", "p-warn")}` : ""}</td><td><button class="btn sm ghost">Open</button></td></tr>`).join(""), "No orders here.")}</div>
+    ${tbl(["Order", "Patient", "Tests", "Priority", "Status", "Payment", ""], list.map(o => `<tr class="click" data-act="go" data-v="lab" data-p="o/${o.id}"><td class="mono">LAB${o.id}<div class="small muted">${o.created_at.slice(5)}</div></td><td>${esc(o.pname)} <span class="small muted">${o.code} · ${o.age ?? "?"}${(o.gender || " ")[0]}</span></td><td class="small">${esc(o.tests)}</td><td>${o.priority === "routine" ? "Routine" : pill(o.priority.toUpperCase(), "p-crit")}</td><td>${pill(...LAB_ST[o.status])}</td><td>${payPill(o.payment)}</td><td><button class="btn sm ghost">Open</button></td></tr>`).join(""), "No orders here.")}</div>
     ${can("visit_create") || can("lab") ? card("New lab order", "Walk-in tests or a doctor's paper prescription", `<form data-submit="labNew" class="stack"><div class="fields">${patInput("patient", pre)}<div><label>Priority</label><select name="priority"><option value="routine">Routine</option><option value="urgent">Urgent</option><option value="stat">STAT</option></select></div></div>
       <input data-input="labTestFilter" placeholder="Search tests (${tests.length})" autocomplete="off">
       <div class="stack" style="gap:2px;max-height:340px;overflow:auto">${tests.map(t_ => `<label class="check" style="margin:0" data-name="${esc((t_.name + " " + t_.code).toLowerCase())}"><input type="checkbox" name="t${t_.id}"> ${esc(t_.name)} <span class="muted small">${t_.rate_p ? money(P2R(t_.rate_p)) : ""} · ${t_.sample || ""}</span></label>`).join("")}</div>
       <div class="btns"><button class="btn">Create order</button></div></form>`) : ""}</div>`;
 };
+/* ---------- payment: lab in-charge or billing desk collects; everyone with the patient sees whether it is paid ---------- */
+const canCollect = () => can("lab_admin") || can("hbilling");
+function payPill(p) {
+  if (!p) return "";
+  const cls = { paid: "p-ok", inpatient: "p-info", insurance: "p-info", cancelled: "" }[p.pay] || "p-warn";
+  return pill(p.label + (["due", "partial", "unbilled"].includes(p.pay) && p.due ? " · " + money(p.due) : ""), cls);
+}
+on("labPay", async el => {
+  const o = App.cache.labOrder, due = o.payment.due;
+  const v = await dialog(`Collect ${money(due)} for LAB${o.id}`, `<p class="small">${esc(o.pname)} · ${o.tests.map(t_ => esc(t_.name)).join(", ")}</p>
+    <label>Amount ₹</label><input name="amount" type="number" min="1" step="0.01" value="${due}">
+    <label>Mode</label><select name="mode"><option value="cash">Cash</option><option value="upi">UPI</option><option value="card">Card</option></select>
+    <label>UPI / card reference</label><input name="ref" placeholder="needed for UPI and card">`, { ok: "Mark as paid" });
+  if (!v) return;
+  const r = await withBusy(el, () => api(`/api/lab/orders/${o.id}/pay`, v));
+  toast(`Collected ${money(r.collected)} · ${r.label}${r.inv_no ? " · receipt " + r.inv_no : ""}`); go("lab", ["o", o.id]);
+});
 on("labTab", el => { App.cache.labSt = el.dataset.k; go("lab"); });
 on("labNew", async f => {
   const v = vals(f), pid = pidOf(v.patient); if (!pid) return toast("Pick the patient from the list.");
@@ -42,7 +59,7 @@ function labTimeline(o) {
   const tests = o.tests.map(t => esc(t.name)).join(", ");
   return `<h3 style="margin:14px 0 6px">Order timeline</h3><div class="timeline">
     ${step(true, "Ordered", o.created_at, o.dname || "walk-in / reception", `${tests} · ${o.priority}${o.visit_id ? ` · from consultation` : ""}`)}
-    ${step(!!bill, bill ? `Billed · ${esc(bill.inv_no)}` : "Billed", bill && bill.at, "", bill ? `${money(bill.total)} · ${bill.status === "paid" ? pill("Paid", "p-ok") : pill(bill.status === "insurance" ? "Insurance" : "Due " + money(bill.due), "p-warn")}` : (o.admission_id ? "on the inpatient bill at discharge" : `not billed yet${can("hbilling") ? ` · <button type="button" class="btn sm" data-act="go" data-v="hbilling" data-p="new/${o.patient_id}">Bill exactly these tests</button>` : ""}`))}
+    ${step(!!bill, bill ? `Billed · ${esc(bill.inv_no)}` : "Billed", bill && bill.at, "", bill ? `${money(bill.total)} · ${bill.status === "paid" ? pill("Paid", "p-ok") : pill(bill.status === "insurance" ? "Insurance" : "Due " + money(bill.due), "p-warn")}` : (o.admission_id ? "on the inpatient bill at discharge" : `not paid · ${money(o.payment.due)}${canCollect() ? ` <button type="button" class="btn sm" data-act="labPay">Collect payment</button>` : ""}`))}
     ${step(!!o.collected_at, "Sample collected", o.collected_at, o.collected_name, o.rejections ? `${o.rejections} sample(s) rejected before this one` : "")}
     ${step(!!o.resulted_at, "Results entered", o.resulted_at, o.resulted_name, o.amended_at ? `amended ${o.amended_at.slice(0, 16)}: ${esc(o.amend_reason || "")}` : "")}
     ${step(!!o.verified_at, "Reviewed and verified by doctor", o.verified_at, o.verified_name, o.interp_reviewed_at ? "explanation for the patient reviewed" : "")}
@@ -61,6 +78,7 @@ async function labOrder(main, id) {
     <form data-submit="labSave" class="resgrid">${o.tests.map(t_ => `<h3 style="margin:14px 0 6px">${esc(t_.name)} <span class="small muted">${esc(t_.sample || "")}</span></h3>
       ${tbl(["Test", "Result", "Unit", "Normal range", "Flag"], t_.params.map(p => `<tr><td>${esc(p.name)}</td><td>${editable ? `<input name="${t_.item_id}:${p.id}" value="${p.formula ? "" : esc(p.value || "")}" ${p.formula ? `placeholder="${esc(p.value || "auto")}" title="Calculated: ${esc(p.formula)}. Type a value only to override it."` : ""} data-input="labLive" data-p='${esc(JSON.stringify({ low: p.eff_low, high: p.eff_high, crit_low: p.crit_low, crit_high: p.crit_high, ref_text: p.ref_text }))}'>` : `<b>${esc(p.value || "–")}</b>`}</td><td>${esc(p.unit || "")}</td><td class="small">${esc(p.range || "")}</td><td class="flagcell"><span class="flag-${p.flag || ""}">${FLAG_TXT[p.flag] || ""}</span></td></tr>`).join(""))}`).join("")}
     <div class="btns">
+      ${canCollect() && o.payment && ["due", "partial", "unbilled"].includes(o.payment.pay) && o.payment.due > 0 ? `<button type="button" class="btn" data-act="labPay">Collect ${money(o.payment.due)}</button>` : ""}
       ${o.status === "ordered" && can("lab") ? `<button type="button" class="btn" data-act="labCollect">Sample collected</button>` : ""}
       ${editable ? `<button class="btn ghost" name="draft" value="1">Save draft</button><button type="button" class="btn" data-act="labSubmit">Submit results</button>` : ""}
       ${o.status === "resulted" && can("lab_verify") ? `<button type="button" class="btn" data-act="labVerify">Verify and send to patient</button>` : ""}

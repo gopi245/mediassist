@@ -153,6 +153,9 @@ def profile(c, pid):
         visits.append(v)
     labs = rows(c.execute("SELECT o.*, br.code bcode, (SELECT group_concat(t.name, ', ') FROM lab_order_items i JOIN lab_tests t ON t.id=i.test_id WHERE i.order_id=o.id) tests "
                           "FROM lab_orders o JOIN branches br ON br.id=o.branch_id WHERE o.patient_id=? ORDER BY o.id DESC LIMIT 30", (pid,)))
+    from .m_lab import pay_state
+    for o in labs:
+        o["payment"] = pay_state(c, o)
     return {**p, "code": pcode(pid), "visits": visits, "labs": labs,
             "problems": rows(c.execute("SELECT * FROM problems WHERE patient_id=? ORDER BY status, id DESC", (pid,))),
             "vitals": rows(c.execute("SELECT * FROM vitals WHERE patient_id=? ORDER BY at DESC LIMIT 60", (pid,))),
