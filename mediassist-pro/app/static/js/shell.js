@@ -68,7 +68,7 @@ async function start() {
   App.cache = {};
   $("#login").hidden = true; $("#app").hidden = false;
   $("#orgName").textContent = App.me.org_name;
-  $("#whoAv").textContent = initials(App.me.name); $("#whoName").textContent = App.me.name || App.me.username;
+  $("#whoAv").textContent = initials(App.me.name); $("#meBtn").textContent = initials(App.me.name); $("#whoName").textContent = App.me.name || App.me.username;
   $("#whoRole").textContent = App.me.role[0].toUpperCase() + App.me.role.slice(1) + (App.me.reg_no ? " · " + App.me.reg_no : "");
   $("#branchSel").innerHTML = (App.me.all_access && can("all_branches") ? `<option value="0">${t("All branches")}</option>` : "") +
     App.me.branches.map(b => `<option value="${b.id}">${esc(b.code)} · ${esc(b.name)}</option>`).join("");
@@ -84,6 +84,7 @@ async function start() {
   go(VIEWS.some(v => v[0] === h[0] && v[2]()) || h[0] === "me" ? h[0] : start_, h.slice(1));
   if (App.me.suggest_2fa && !sessionStorage.getItem("nag2fa")) { sessionStorage.setItem("nag2fa", 1); toast("Protect the owner account: turn on two-step sign-in in My account."); }
 }
+on("meToggle", () => $(".side").classList.toggle("show-who"));
 function renderNav() {
   $("#nav").innerHTML = VIEWS.filter(v => v[2]()).map(v => `<button data-act="go" data-v="${v[0]}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON[v[0]]}</svg>${esc(t(v[1]))}<span class="badge" data-badge="${v[0]}" hidden></span></button>`).join("");
 }

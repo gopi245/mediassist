@@ -218,6 +218,16 @@ const actionsBar = (btns, keep = 3) => { const b = btns.filter(Boolean); return 
   (b.length > keep ? `<details class="more-menu"><summary class="btn sm ghost">More ▾</summary><div class="more-list">${b.slice(keep).join("")}</div></details>` : ""); };
 /* After a payment: say whether the WhatsApp receipt went out. */
 const waSent = r => !r || !r.sent || !r.sent.length ? "" : r.sent.some(x => x.ok) ? " · receipt sent on WhatsApp" : r.sent[0].wa_link ? " · WhatsApp not set up" : "";
+/* Phones: every table becomes a stack of cards; each cell is labelled with its column name. */
+function labelTables(root) {
+  root.querySelectorAll(".tbl table:not([data-lab])").forEach(t => {
+    t.dataset.lab = 1;
+    const head = t.querySelector("tr"); if (!head || !head.querySelector("th")) return;
+    const names = [...head.children].map(th => th.textContent.trim());
+    [...t.rows].slice(1).forEach(tr => [...tr.cells].forEach((td, i) => { if (td.colSpan === 1 && names[i]) td.dataset.label = names[i]; }));
+  });
+}
+new MutationObserver(() => labelTables(document)).observe(document.documentElement, { childList: true, subtree: true });
 const subtabs = (items, cur, act) => `<div class="sub">${items.map(([k, l]) => `<button data-act="${act}" data-k="${k}" class="${k === cur ? "on" : ""}">${l}</button>`).join("")}</div>`;
 function printHtml(html) { const box = $("#printArea"); box.innerHTML = html; document.body.classList.add("printing"); setTimeout(() => { print(); document.body.classList.remove("printing"); }, 50); }
 

@@ -465,3 +465,39 @@ details.opt{margin:10px 0}details.opt>summary{cursor:pointer;color:var(--accent)
 .ptabs .sub{flex-wrap:wrap}
 
 .newpat{margin:0 0 4px}.newpat-f{margin-top:8px;padding:12px;border:1px dashed var(--line);border-radius:10px;background:var(--surface-2)}
+
+/* ================= Phones ================= */
+.me-btn{display:none}
+@media (max-width:900px){
+  .side{position:sticky;top:0;z-index:35;gap:8px;padding-top:10px;padding-bottom:6px;box-shadow:0 2px 10px rgba(0,0,0,.18)}
+  .brand{display:flex;align-items:center}.brand .me-btn{margin-left:auto}
+  .me-btn{display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:50%;border:0;background:var(--side-accent);color:var(--side);font-weight:700;cursor:pointer}
+  .side .who{display:none}.side.show-who .who{display:grid}
+  #nav button{white-space:nowrap}
+  .kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .kpi{padding:10px 12px 8px}.kpi .val{font-size:24px}
+  .topbar{gap:8px}
+}
+@media (max-width:640px){
+  /* tables as labelled cards: nothing hidden off the right edge */
+  .tbl{overflow:visible;border:0;background:transparent}
+  .tbl table,.tbl tbody,.tbl tr,.tbl td{display:block;width:100%}
+  .tbl tr:first-child:has(th){display:none}
+  .tbl tr{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px 12px;margin-bottom:8px}
+  .tbl tr.click{cursor:pointer}
+  .tbl td{border:0 !important;padding:4px 0 !important;display:flex;gap:10px;align-items:flex-start;text-align:left !important}
+  .tbl td[data-label]::before{content:attr(data-label);flex:0 0 88px;color:var(--muted);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;padding-top:2px}
+  .tbl td[data-label=""]::before{display:none}
+  .tbl td.empty{justify-content:center;color:var(--muted)}
+  .tbl td .row-actions,.tbl td>.btn{flex-wrap:wrap}
+  .tbl td input,.tbl td select{max-width:100%}
+  .mar .slot{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:2px 0}
+  .h1,.topbar h1{font-size:26px}
+}
+@media (max-width:640px){
+  .tbl td{display:grid;grid-template-columns:88px minmax(0,1fr);column-gap:10px;row-gap:2px;overflow-wrap:anywhere}
+  .tbl td:not([data-label]),.tbl td[data-label=""]{grid-template-columns:minmax(0,1fr)}
+  .tbl td>*{grid-column:-2/-1;min-width:0}
+  .tbl td.empty{display:block;text-align:center !important}
+}
+@media (max-width:640px){.tbl td>.btn,.tbl td>button{justify-self:start;width:auto}}

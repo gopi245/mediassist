@@ -79,6 +79,7 @@ async function openPatient(id, tab = "summary") {
     </div>${(() => { const main_ = ["summary", "visits", "labs", "money", "docs", ...(p.admissions.length ? ["ipd"] : [])], a_ = tabs.filter(x => main_.includes(x[0])), b_ = tabs.filter(x => !main_.includes(x[0])), open = b_.some(x => x[0] === tab);
       return `<div class="ptabs">${subtabs(a_, tab, "pTab").replace(/<\/div>$/, `<button type="button" class="ptab-more" data-act="pMore">${open ? "Less ▴" : "More ▾"}</button></div>`)}</div><div class="ptabs-more" ${open ? "" : "hidden"}>${subtabs(b_, tab, "pTab")}</div>`; })()}<div id="pTabBody"></div>`;
   box.dataset.id = id; renderPTab(tab);
+  if (innerWidth < 900) box.scrollIntoView({ behavior: "smooth", block: "start" });   // phones: the patient, not the search list
 }
 on("pTab", el => { $$("#pProfile .sub button").forEach(b => b.classList.toggle("on", b === el)); renderPTab(el.dataset.k); });
 on("pMore", el => { const box = $("#pProfile .ptabs-more"); box.hidden = !box.hidden; el.textContent = box.hidden ? "More ▾" : "Less ▴"; });
