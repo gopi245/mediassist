@@ -179,9 +179,8 @@ class T03Lab(unittest.TestCase):
         flags = {p["name"]: p["flag"] for t in o["tests"] for p in t["params"]}
         self.assertEqual(flags["Haemoglobin"], "LL")
         self.assertEqual(flags["Total WBC"], "H")
-        self.assertEqual(lab.post(f"/api/lab/orders/{oid}/verify", {})[0], 403, "lab tech can't verify")
+        self.assertTrue(r["released"], "submitting finishes the report: no approval step")
         doc = Client("dr.rao")
-        doc.ok(f"/api/lab/orders/{oid}/verify", {})
         self.assertEqual(doc.ok(f"/api/lab/orders/{oid}")["status"], "verified")
         alerts = doc.ok("/api/alerts")
         self.assertTrue(any("CRITICAL" in a["body"] for a in alerts))
@@ -845,14 +844,13 @@ class T20CareRecords(unittest.TestCase):
         doc.ok(f"/api/lab/orders/{o['id']}/ack", {"action": "patient called"})
         self.assertFalse([x for x in doc.ok("/api/lab/critical") if x["id"] == o["id"]])
         self.assertEqual(doc.post(f"/api/lab/orders/{o['id']}/ack", {})[0], 400)
-        doc.ok(f"/api/lab/orders/{o['id']}/verify", {})
+        self.assertEqual(doc.ok(f"/api/lab/orders/{o['id']}")["status"], "verified", "released on submit")
         self.assertEqual(doc.post(f"/api/lab/orders/{o['id']}/amend", {})[0], 400)
         doc.ok(f"/api/lab/orders/{o['id']}/amend", {"reason": "Hb transcription error"})
         d = doc.ok(f"/api/lab/orders/{o['id']}")
         self.assertEqual(d["status"], "resulted")
         vals = {k: ("11.5" if v == "5.5" else v) for k, v in vals.items()}
         lab.ok(f"/api/lab/orders/{o['id']}/results", {"values": vals, "submit": True})
-        doc.ok(f"/api/lab/orders/{o['id']}/verify", {})
         self.assertIn(b"AMENDED", pdf_text(doc.get(f"/api/pdf/lab/{o['id']}")[1]))
 
     def test_discharge_rx_and_credit_bills(self):
@@ -1019,15 +1017,17 @@ class T23LabExplanation(unittest.TestCase):
         self.assertIn("anaemia", hb["text"])
         self.assertIn("2 of 6 results are outside", d["interp"]["summary"])
         self.assertEqual(d["interp"]["source"], "rules")
-        self.assertIsNone(d["interp_reviewed_at"], "not reviewed until the doctor verifies")
+        self.assertIsNone(d["interp_reviewed_at"], "not reviewed until a clinician edits it")
+        self.assertEqual(d["status"], "verified", "report released on submit")
+        self.assertNotIn(b"What this means", pdf_text(doc.get(f"/api/pdf/lab/{o['id']}")[1]), "unreviewed explanation stays off the report")
+        msgs = [m for m in Client("owner").ok("/api/messages?kind=lab_report") if f"LAB{o['id']}" in (m["body"] or "")]
+        self.assertTrue(msgs and "What this means" not in msgs[0]["body"], "the WhatsApp report went out without the unreviewed explanation")
         self.assertEqual(lab.post(f"/api/lab/orders/{o['id']}/interpret", {"summary": "x"})[0], 403, "technician can't edit the wording")
         self.assertEqual(lab.post(f"/api/lab/orders/{o['id']}/interpret", {"ai": True})[0], 400, "no API key: clear message, rules kept")
         doc.ok(f"/api/lab/orders/{o['id']}/interpret", {"findings": [{"param": "Haemoglobin", "text": "Your haemoglobin is a little low. We will check your iron."}], "summary": "Two values need a word with the doctor; nothing urgent."})
         d = doc.ok(f"/api/lab/orders/{o['id']}")
         self.assertEqual(d["interp"]["source"], "doctor")
         self.assertIn("check your iron", [f for f in d["interp"]["findings"] if f["param"] == "Haemoglobin"][0]["text"])
-        self.assertEqual(doc.get(f"/api/pdf/lab/{o['id']}")[0], 409, "no PDF before verification")
-        doc.ok(f"/api/lab/orders/{o['id']}/verify", {})
         d = doc.ok(f"/api/lab/orders/{o['id']}")
         self.assertIsNotNone(d["interp_reviewed_at"])
         txt = pdf_text(doc.get(f"/api/pdf/lab/{o['id']}")[1])
@@ -1035,8 +1035,7 @@ class T23LabExplanation(unittest.TestCase):
         self.assertIn(b"check your iron", txt)
         doc.ok(f"/api/lab/orders/{o['id']}/interpret", {"patient": False})
         self.assertNotIn(b"What this means", pdf_text(doc.get(f"/api/pdf/lab/{o['id']}")[1]), "kept off the patient's report on request")
-        msgs = [m for m in Client("owner").ok("/api/messages?kind=lab_report") if f"LAB{o['id']}" in (m["body"] or "")]
-        self.assertTrue(msgs and "What this means" in msgs[0]["body"], "the WhatsApp text carried the explanation at verification")
+
 
 
 class T24Suppliers(unittest.TestCase):
@@ -1539,13 +1538,12 @@ class T37LabPayment(unittest.TestCase):
         tech.ok(f"/api/lab/orders/{oid}/collect", {})
         vals = {f"{t['item_id']}:{p['id']}": "12" for t in tech.ok(f"/api/lab/orders/{oid}")["tests"] for p in t["params"]}
         tech.ok(f"/api/lab/orders/{oid}/results", {"values": vals, "submit": True})
-        self.assertEqual(tech.post(f"/api/lab/orders/{oid}/pay", {"mode": "cash"})[0], 403, "lab tech does not collect money")
+        self.assertEqual(tech.ok(f"/api/lab/orders/{oid}")["status"], "verified", "submit finishes the report")
         self.assertEqual(tech.post(f"/api/lab/orders/{oid}/verify", {})[0], 403, "lab tech does not release reports")
         self.assertEqual(Client("nurse.ch").post(f"/api/lab/orders/{oid}/pay", {"mode": "cash"})[0], 403)
         # lab in-charge releases the report without a doctor, and collects
-        head.ok(f"/api/lab/orders/{oid}/verify", {})
         self.assertEqual(head.post(f"/api/lab/orders/{oid}/pay", {"mode": "upi"})[0], 400, "UPI needs a reference")
-        part = head.ok(f"/api/lab/orders/{oid}/pay", {"mode": "cash", "amount": 100})
+        part = tech.ok(f"/api/lab/orders/{oid}/pay", {"mode": "cash", "amount": 100})  # the technician collects at the counter
         self.assertEqual((part["pay"], part["label"], part["collected"]), ("partial", "Part paid", 100))
         full = head.ok(f"/api/lab/orders/{oid}/pay", {"mode": "upi", "ref": "UPI777"})
         self.assertEqual((full["pay"], full["due"], full["collected"]), ("paid", 0, due - 100))
@@ -1558,7 +1556,7 @@ class T37LabPayment(unittest.TestCase):
         self.assertFalse(rec.ok(f"/api/patients/{pid}/unbilled")["labs"], "paid lab tests don't show as unbilled")
         cl = rec.ok("/api/closing")
         mine = [r for r in cl["receipts"] if r["ref"] == full["inv_no"]]
-        self.assertEqual(sorted((r["mode"], r["amount"], r["user"]) for r in mine), [("cash", 100, "labhead.ch"), ("upi", due - 100, "labhead.ch")])
+        self.assertEqual(sorted((r["mode"], r["amount"], r["user"]) for r in mine), [("cash", 100, "lab.ch"), ("upi", due - 100, "labhead.ch")])
         # inpatient tests are not collected at the lab
         doc = Client("dr.rao")
         aid = doc.ok("/api/admissions", {"patient_id": pid, "bed_id": next(b for b in rec.ok("/api/beds") if b["status"] == "free")["id"], "reason": "Obs"})["id"]

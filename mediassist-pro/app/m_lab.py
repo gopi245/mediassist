@@ -297,7 +297,7 @@ def api_orders(h, c, b, q):
 def api_order_pay(h, c, b, q, oid):
     """Collect the money for a lab order and mark it paid. Bills exactly the ordered tests on a hospital invoice (so it is in
     receipts, GST and the day's cash closing), or takes the balance on the invoice already raised."""
-    need(can(h, "lab_admin") or can(h, "hbilling"), "Only the lab in-charge or the billing desk can collect payment", 403)
+    need(can(h, "lab") or can(h, "lab_admin") or can(h, "hbilling"), "Only the lab or the billing desk can collect payment", 403)
     mode, ref = clean(b, "mode", 10) or "cash", clean(b, "ref", 40)
     need(mode in ("cash", "upi", "card"), "Invalid payment mode")
     need(mode == "cash" or ref, "Enter the UPI or card transaction reference")
@@ -408,7 +408,10 @@ def api_results(h, c, b, q, oid):
         for uid in ([d["doctor_id"]] if d["doctor_id"] else branch_doctors(c, o["branch_id"])):  # a walk-in order has no doctor: every doctor here is told
             notify_staff(c, uid, text)
         c.execute("UPDATE lab_orders SET crit_ack_at=NULL, crit_ack_by=NULL WHERE id=?", (o["id"],))
-    return dict(out, critical=d["critical"])
+    sent = None
+    if b.get("submit"):  # no approval step: the report is final and goes to the patient now
+        sent = release_report(c, h, one(c, "SELECT * FROM lab_orders WHERE id=?", (o["id"],)), {}, reviewed=False)["sent"]
+    return dict(out, critical=d["critical"], released=bool(b.get("submit")), sent=sent)
 
 
 def draft_interpretation(c, oid):
@@ -437,13 +440,20 @@ def draft_interpretation(c, oid):
 def api_verify(h, c, b, q, oid):
     o = one(c, "SELECT * FROM lab_orders WHERE id=? AND branch_id=?", (int(oid), h.branch))
     need(o and o["status"] == "resulted", "Only resulted orders can be verified")
+    return release_report(c, h, o, b, reviewed=True)
+
+
+def release_report(c, h, o, b, reviewed):
+    """Finish a resulted order: mark it final and send the report to the patient. `reviewed` is True when a lab in-charge or
+    doctor approved it; a report released straight from Submit goes out without the unreviewed plain-language explanation."""
     if "clin_interpretation" in b:   # the verifier's edited (or cleared) interpretation is what goes on the report
         c.execute("UPDATE lab_orders SET clin_interpretation=? WHERE id=?", (clean(b, "clin_interpretation", 2000) or None, o["id"]))
     c.execute("UPDATE lab_orders SET status='verified', verified_at=?, verified_by=? WHERE id=?", (now_str(), h.user["id"], o["id"]))
     if not o["interpretation"]:
         save_interp(c, o["id"], interpret(order_detail(c, o["id"])), reviewed=False)
-    c.execute("UPDATE lab_orders SET interp_reviewed_by=?, interp_reviewed_at=? WHERE id=?", (h.user["id"], now_str(), o["id"]))
-    audit(c, h, "lab.verify", f"LAB{o['id']}" + (" with explanation for the patient" if one(c, "SELECT 1 FROM lab_orders WHERE id=? AND interp_patient=1", (o["id"],)) else ""))
+    if reviewed:
+        c.execute("UPDATE lab_orders SET interp_reviewed_by=?, interp_reviewed_at=? WHERE id=?", (h.user["id"], now_str(), o["id"]))
+    audit(c, h, "lab.verify" if reviewed else "lab.release", f"LAB{o['id']}" + (" with explanation for the patient" if reviewed and one(c, "SELECT 1 FROM lab_orders WHERE id=? AND interp_patient=1", (o["id"],)) else ""))
     d = order_detail(c, o["id"])
     sent = None
     if b.get("send_patient", True) and d["whatsapp_ok"]:
@@ -454,7 +464,7 @@ def api_verify(h, c, b, q, oid):
             for p in t["params"]:
                 fl = {"H": " HIGH", "L": " LOW", "HH": " CRITICAL HIGH", "LL": " CRITICAL LOW", "A": " ABNORMAL"}.get(p["flag"], "")
                 lines.append(f"  {p['name']}: {p['value']} {p['unit'] or ''}{fl} (normal {p['range'] or '-'})")
-        if d["interp"] and d["interp_patient"]:
+        if d["interp"] and d["interp_patient"] and d["interp_reviewed_at"]:
             lines.append("\nWhat this means (reviewed by your doctor):")
             for f in d["interp"]["findings"]:
                 lines.append(f"- {f['text']}")
@@ -496,6 +506,8 @@ def api_interpret(h, c, b, q, oid):
         if "findings" in b or "summary" in b:
             cur["source"] = "doctor"
         save_interp(c, o["id"], cur, reviewed=o["status"] == "verified")
+        if o["status"] == "verified":  # a clinician editing a released report has reviewed the explanation: it now reaches the patient
+            c.execute("UPDATE lab_orders SET interp_reviewed_by=?, interp_reviewed_at=? WHERE id=?", (h.user["id"], now_str(), o["id"]))
         if "patient" in b:
             c.execute("UPDATE lab_orders SET interp_patient=? WHERE id=?", (1 if b.get("patient") else 0, o["id"]))
         audit(c, h, "lab.interpret", f"LAB{o['id']} edited" + ("" if b.get("patient", True) else ", kept off the patient's report"))

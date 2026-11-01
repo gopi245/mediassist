@@ -12,7 +12,7 @@ RENDER.lab = async (main, [mode, id]) => {
   const [list, tests] = await Promise.all([api("/api/lab/orders?status=" + st + "&since=" + localDay(-7)), api("/api/lab/tests")]);
   App.cache.labTests = tests;
   main.innerHTML = `<div class="g-main"><div class="card"><div class="card-h"><div><h2>Worklist</h2><p>STAT and urgent orders first</p></div>${can("lab_admin") ? `<button class="btn sm ghost" data-act="go" data-v="lab" data-p="catalog">Tests & ranges</button>` : ""}</div>
-    ${subtabs([["open", "Open"], ["resulted", "Waiting for approval"], ["verified", "Verified (7 days)"], ["cancelled", "Cancelled"]], st, "labTab")}
+    ${subtabs([["open", "Open"], ["verified", "Done (7 days)"], ["cancelled", "Cancelled"]], st, "labTab")}
     ${tbl(["Order", "Patient", "Tests", "Priority", "Status", "Payment", ""], list.map(o => `<tr class="click" data-act="go" data-v="lab" data-p="o/${o.id}"><td class="mono">LAB${o.id}<div class="small muted">${o.created_at.slice(5)}</div></td><td>${esc(o.pname)} <span class="small muted">${o.code} · ${o.age ?? "?"}${(o.gender || " ")[0]}</span></td><td class="small">${esc(o.tests)}</td><td>${o.priority === "routine" ? "Routine" : pill(o.priority.toUpperCase(), "p-crit")}</td><td>${pill(...LAB_ST[o.status])}</td><td>${payPill(o.payment)}</td><td><button class="btn sm ghost">Open</button></td></tr>`).join(""), "No orders here.")}</div>
     ${can("visit_create") || can("lab") ? card("New lab order", "Walk-in tests or a doctor's paper prescription", `<form data-submit="labNew" class="stack"><div class="fields">${patInput("patient", pre)}<div><label>Priority</label><select name="priority"><option value="routine">Routine</option><option value="urgent">Urgent</option><option value="stat">STAT</option></select></div></div>
       <input data-input="labTestFilter" placeholder="Search tests (${tests.length})" autocomplete="off">
@@ -20,7 +20,7 @@ RENDER.lab = async (main, [mode, id]) => {
       <div class="btns"><button class="btn">Create order</button></div></form>`) : ""}</div>`;
 };
 /* ---------- payment: lab in-charge or billing desk collects; everyone with the patient sees whether it is paid ---------- */
-const canCollect = () => can("lab_admin") || can("hbilling");
+const canCollect = () => can("lab") || can("lab_admin") || can("hbilling");
 function payPill(p) {
   if (!p) return "";
   const cls = { paid: "p-ok", inpatient: "p-info", insurance: "p-info", cancelled: "" }[p.pay] || "p-warn";
@@ -80,7 +80,7 @@ async function labOrder(main, id) {
     <div class="btns">
       ${canCollect() && o.payment && ["due", "partial", "unbilled"].includes(o.payment.pay) && o.payment.due > 0 ? `<button type="button" class="btn" data-act="labPay">Collect ${money(o.payment.due)}</button>` : ""}
       ${o.status === "ordered" && can("lab") ? `<button type="button" class="btn" data-act="labCollect">Sample collected</button>` : ""}
-      ${editable ? `<button class="btn ghost" name="draft" value="1">Save draft</button><button type="button" class="btn" data-act="labSubmit">Submit results</button>` : ""}
+      ${editable ? `<button class="btn ghost" name="draft" value="1">Save draft</button><button type="button" class="btn" data-act="labSubmit">Submit and send report</button>` : ""}
       ${o.status === "resulted" && can("lab_verify") ? `<button type="button" class="btn" data-act="labVerify">Approve and send to patient</button>` : ""}
       ${["ordered", "collected"].includes(o.status) && can("lab") ? `<button type="button" class="btn ghost" data-act="labCancel">Cancel order</button>` : ""}
       ${o.status === "collected" && can("lab") ? `<button type="button" class="btn ghost" data-act="labReject">Reject sample</button>` : ""}
@@ -94,7 +94,7 @@ async function labOrder(main, id) {
 on("labLive", el => { const f = liveFlag(JSON.parse(el.dataset.p), el.value.trim()); el.closest("tr").querySelector(".flagcell").innerHTML = `<span class="flag-${f}">${FLAG_TXT[f] || ""}</span>`; });
 const labValues = () => { const o = {}; $$(".resgrid input[name*=':']").forEach(i => o[i.name] = i.value); return o; };
 on("labSave", async () => { await api(`/api/lab/orders/${App.cache.labOrder.id}/results`, { values: labValues() }); toast("Draft saved"); });
-on("labSubmit", async () => { const r = await api(`/api/lab/orders/${App.cache.labOrder.id}/results`, { values: labValues(), submit: true }); toast(r.critical ? "Submitted. CRITICAL value: doctor alerted." : "Submitted for verification"); go("lab", ["o", App.cache.labOrder.id]); });
+on("labSubmit", async () => { const r = await api(`/api/lab/orders/${App.cache.labOrder.id}/results`, { values: labValues(), submit: true }); toast((r.critical ? "Report done. CRITICAL value: doctor alerted." : "Report done") + (r.sent && r.sent.some && r.sent.some(x => x.ok) ? " · sent to the patient" : "") + (App.cache.labOrder.payment && App.cache.labOrder.payment.due > 0 && App.cache.labOrder.payment.pay !== "inpatient" ? " · collect the payment" : "")); go("lab", ["o", App.cache.labOrder.id]); });
 on("labCollect", async () => { await api(`/api/lab/orders/${App.cache.labOrder.id}/collect`, {}); go("lab", ["o", App.cache.labOrder.id]); });
 /* ---------- plain-language interpretation (rules, AI rewrite, doctor's edit) ---------- */
 const SRC_LABEL = { rules: "Rule-based", ai: "AI-assisted", doctor: "Edited by doctor" };
