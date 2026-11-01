@@ -84,8 +84,9 @@ def api_bed_save(h, c, b, q):
     return {"ok": True, "added": count}
 
 
-@route("POST", r"/api/beds/(\d+)/status", "ipd_nursing")
+@route("POST", r"/api/beds/(\d+)/status", "any")
 def api_bed_status(h, c, b, q, bid):
+    need(can(h, "ipd_nursing") or can(h, "admit"), "Your role can't do this", 403)  # whoever admits can free a cleaned bed
     st = clean(b, "status", 12)
     need(st in ("free", "cleaning", "blocked"), "Status must be free, cleaning or blocked")
     bd = one(c, "SELECT * FROM beds WHERE id=? AND branch_id=?", (int(bid), h.branch))

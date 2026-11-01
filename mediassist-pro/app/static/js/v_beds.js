@@ -16,8 +16,8 @@ function bedCard(b, opts = {}) {
   const stale = mins != null && mins >= STALE_CLEAN_MIN;
   const acts = [];
   if (can("ipd") && b.status === "free") acts.push(`<button class="btn sm" data-act="bedAdmit" data-id="${b.id}" data-b="${b.branch_id}">Admit here</button>`);
-  if (can("ipd_nursing") && b.status !== "free") acts.push(`<button class="btn sm ${stale ? "" : "ghost"}" data-act="bedFree" data-id="${b.id}">Mark free</button>`);
-  if (can("ipd_nursing") && b.status === "free") acts.push(`<button class="btn sm ghost" data-act="bedBlock" data-id="${b.id}" title="Take this bed out of use (repair, isolation, reserved)">Block</button>`);
+  if ((can("ipd_nursing") || can("admit")) && b.status !== "free") acts.push(`<button class="btn sm ${stale ? "" : "ghost"}" data-act="bedFree" data-id="${b.id}">Mark free</button>`);
+  if ((can("ipd_nursing") || can("admit")) && b.status === "free") acts.push(`<button class="btn sm ghost" data-act="bedBlock" data-id="${b.id}" title="Take this bed out of use (repair, isolation, reserved)">Block</button>`);
   return `<div class="bed ${b.status}${stale ? " stale" : ""}">${tag}<b>${BED_LABEL[b.status] || b.status}</b>${mins != null ? `<span class="small ${stale ? "allergy" : "muted"}">${mins < 60 ? mins + " min" : Math.floor(mins / 60) + " h " + (mins % 60) + " min"} ago${stale ? " · needs attention" : ""}</span>` : ""}${acts.length ? `<div class="row-actions">${acts.join("")}</div>` : ""}</div>`;
 }
 

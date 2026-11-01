@@ -383,8 +383,9 @@ def api_reject_sample(h, c, b, q, oid):
     return {"ok": True}
 
 
-@route("POST", r"/api/lab/orders/(\d+)/amend", "lab_verify")
+@route("POST", r"/api/lab/orders/(\d+)/amend", "any")
 def api_amend(h, c, b, q, oid):
+    need(can(h, "lab") or can(h, "lab_verify"), "Your role can't do this", 403)  # the technician corrects their own report
     o = one(c, "SELECT * FROM lab_orders WHERE id=? AND branch_id=?", (int(oid), h.branch))
     need(o and o["status"] == "verified", "Only a verified report can be amended")
     reason = clean(b, "reason", 300)

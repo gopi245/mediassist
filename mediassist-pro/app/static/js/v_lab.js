@@ -1,6 +1,6 @@
 /* Laboratory: worklist, new order, collection, result entry with live flags, verification, report. */
 "use strict";
-const LAB_ST = { ordered: ["Waiting for sample", "p-warn"], collected: ["Sample collected", "p-info"], resulted: ["Needs verification", "p-crit"], verified: ["Verified", "p-ok"], cancelled: ["Cancelled", "p-plain"] };
+const LAB_ST = { ordered: ["Waiting for sample", "p-warn"], collected: ["Sample collected", "p-info"], resulted: ["Results saved", "p-warn"], verified: ["Done", "p-ok"], cancelled: ["Cancelled", "p-plain"] };
 const FLAG_TXT = { H: "High", L: "Low", HH: "Critical high", LL: "Critical low", A: "Abnormal", N: "" };
 
 RENDER.lab = async (main, [mode, id]) => {
@@ -69,7 +69,7 @@ function labTimeline(o) {
 }
 async function labOrder(main, id) {
   const o = await api("/api/lab/orders/" + id); App.cache.labOrder = o;
-  const editable = can("lab") && (o.status === "collected" || o.status === "resulted");
+  const editable = can("lab") && ["ordered", "collected", "resulted"].includes(o.status);
   main.innerHTML = `<div class="card"><div class="card-h"><div><h2>LAB${o.id} · ${esc(o.pname)}</h2><p>${o.code} · ${o.age ?? "?"} yrs · ${esc(o.gender || "")} · ordered ${o.created_at}${o.dname ? " by " + esc(o.dname) : ""} · ${o.priority.toUpperCase()}</p></div>${pill(...LAB_ST[o.status])}</div>
     ${o.critical ? alertRow("high", `<b>Critical value.</b> ${o.crit_ack_at ? `Acknowledged ${o.crit_ack_at}.` : "The doctor has been alerted and must acknowledge it. Inform them by phone as well."}`) : ""}
     ${o.amended_at ? alertRow("", `<b>Amended report.</b> ${o.amended_at}: ${esc(o.amend_reason || "")}`) : ""}${o.rejections ? alertRow("", `<b>Sample rejected ${o.rejections} time(s).</b> ${esc(o.reject_note || "")}`) : ""}
@@ -79,12 +79,12 @@ async function labOrder(main, id) {
       ${tbl(["Test", "Result", "Unit", "Normal range", "Flag"], t_.params.map(p => `<tr><td>${esc(p.name)}</td><td>${editable ? `<input name="${t_.item_id}:${p.id}" value="${p.formula ? "" : esc(p.value || "")}" ${p.formula ? `placeholder="${esc(p.value || "auto")}" title="Calculated: ${esc(p.formula)}. Type a value only to override it."` : ""} data-input="labLive" data-p='${esc(JSON.stringify({ low: p.eff_low, high: p.eff_high, crit_low: p.crit_low, crit_high: p.crit_high, ref_text: p.ref_text }))}'>` : `<b>${esc(p.value || "–")}</b>`}</td><td>${esc(p.unit || "")}</td><td class="small">${esc(p.range || "")}</td><td class="flagcell"><span class="flag-${p.flag || ""}">${FLAG_TXT[p.flag] || ""}</span></td></tr>`).join(""))}`).join("")}
     <div class="btns">
       ${canCollect() && o.payment && ["due", "partial", "unbilled"].includes(o.payment.pay) && o.payment.due > 0 ? `<button type="button" class="btn" data-act="labPay">Collect ${money(o.payment.due)}</button>` : ""}
-      ${o.status === "ordered" && can("lab") ? `<button type="button" class="btn" data-act="labCollect">Sample collected</button>` : ""}
+      ${o.status === "ordered" && can("lab") ? `<button type="button" class="btn ghost" data-act="labCollect">Sample collected</button>` : ""}
       ${editable ? `<button class="btn ghost" name="draft" value="1">Save draft</button><button type="button" class="btn" data-act="labSubmit">Submit and send report</button>` : ""}
       ${o.status === "resulted" && can("lab_verify") ? `<button type="button" class="btn" data-act="labVerify">Approve and send to patient</button>` : ""}
       ${["ordered", "collected"].includes(o.status) && can("lab") ? `<button type="button" class="btn ghost" data-act="labCancel">Cancel order</button>` : ""}
       ${o.status === "collected" && can("lab") ? `<button type="button" class="btn ghost" data-act="labReject">Reject sample</button>` : ""}
-      ${o.status === "verified" && can("lab_verify") ? `<button type="button" class="btn ghost" data-act="labAmend">Amend report</button>` : ""}
+      ${o.status === "verified" && (can("lab") || can("lab_verify")) ? `<button type="button" class="btn ghost" data-act="labAmend">Amend report</button>` : ""}
       ${o.critical && !o.crit_ack_at && can("consult") ? `<button type="button" class="btn danger" data-act="labAck" data-id="${o.id}">Acknowledge critical result</button>` : ""}
       ${o.status === "verified" ? `<button type="button" class="btn ghost" data-act="labPrint">Print report</button><button type="button" class="btn ghost" data-act="pdfDl" data-p="lab/${o.id}">PDF</button>` : ""}
       <button type="button" class="btn ghost" data-act="go" data-v="lab">Back to worklist</button></div></form>

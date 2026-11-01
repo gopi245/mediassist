@@ -165,9 +165,9 @@ class T03Lab(unittest.TestCase):
             T02Clinical("test_register_consult_safety").test_register_consult_safety()
         lab = Client("lab.ch")
         oid = T02Clinical.order
-        st, _ = lab.post(f"/api/lab/orders/{oid}/results", {"values": {}})
-        self.assertEqual(st, 400, "must collect first")
-        lab.ok(f"/api/lab/orders/{oid}/collect", {})
+        lab.ok(f"/api/lab/orders/{oid}/results", {"values": {}})   # a draft marks the sample collected: no separate click
+        self.assertEqual(lab.ok(f"/api/lab/orders/{oid}")["status"], "collected")
+        self.assertEqual(lab.post(f"/api/lab/orders/{oid}/collect", {})[0], 400, "already collected")
         o = lab.ok(f"/api/lab/orders/{oid}")
         vals = {}
         for t in o["tests"]:
@@ -989,8 +989,8 @@ class T22BedBoard(unittest.TestCase):
         b = [x for x in rec.ok("/api/beds") if x["id"] == free["id"]][0]
         self.assertEqual(b["status"], "cleaning")
         self.assertEqual(Client("nurse.ch").post(f"/api/beds/{free['id']}/status", {"status": "blocked", "reason": "repair"})[0], 200)
-        self.assertEqual(rec.post(f"/api/beds/{free['id']}/status", {"status": "free"})[0], 403, "reception can see but not change beds")
-        Client("nurse.ch").ok(f"/api/beds/{free['id']}/status", {"status": "free"})
+        rec.ok(f"/api/beds/{free['id']}/status", {"status": "free"})   # reception frees a cleaned bed without waiting for a nurse
+        self.assertEqual(Client("pharma.ch").post(f"/api/beds/{free['id']}/status", {"status": "blocked"})[0], 403, "pharmacy can't change beds")
         self.assertEqual([x for x in rec.ok("/api/beds") if x["id"] == free["id"]][0]["status"], "free")
         d = rec.ok("/api/dashboard")
         self.assertIn("free", d["beds"])

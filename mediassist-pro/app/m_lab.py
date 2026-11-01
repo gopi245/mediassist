@@ -344,7 +344,11 @@ def api_collect(h, c, b, q, oid):
 @route("POST", r"/api/lab/orders/(\d+)/results", "lab")
 def api_results(h, c, b, q, oid):
     o = one(c, "SELECT * FROM lab_orders WHERE id=? AND branch_id=?", (int(oid), h.branch))
-    need(o and o["status"] in ("collected", "resulted"), "Collect the sample before entering results")
+    need(o and o["status"] in ("ordered", "collected", "resulted"), "This order can't take results")
+    if o["status"] == "ordered":  # typing results means the sample is in hand: no separate click
+        c.execute("UPDATE lab_orders SET status='collected', collected_at=?, collected_by=? WHERE id=? AND status='ordered'", (now_str(), h.user["id"], o["id"]))
+        audit(c, h, "lab.collect", f"LAB{o['id']} (with results)")
+        o = one(c, "SELECT * FROM lab_orders WHERE id=?", (o["id"],))
     vals = b.get("values") or {}
     pt = one(c, "SELECT age, gender FROM patients WHERE id=?", (o["patient_id"],))
 
