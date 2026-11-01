@@ -1497,3 +1497,23 @@ class T35RoleGaps(unittest.TestCase):
         acc = Client("accounts")
         d = acc.ok("/api/documents", {"doc_type": "other", "mime": "image/png", "data": png, "note": "electricity bill"})
         self.assertTrue(d["id"])
+
+
+class T36InpatientPaysNow(unittest.TestCase):
+    """An inpatient can pay for medicines at the counter; paid bills (now or settled early) never show as owed or bill twice."""
+    def test_pay_now_and_early_settle(self):
+        rec, doc, ph = Client("reception.ch"), Client("dr.rao"), Client("pharma.ch")
+        otc = next(r for r in sorted(ph.ok("/api/stock")["summary"], key=lambda r: -(r["usable"] or 0)) if r["schedule"] == "OTC")
+        line = [{"medicine_id": otc["medicine_id"], "qty": 1, "unit": "strip"}]
+        pid = rec.ok("/api/patients", {"name": "Pays Now", "phone": "9000036362", "age": 40, "gender": "Male", "consent": True, "force": True})["id"]
+        aid = doc.ok("/api/admissions", {"patient_id": pid, "bed_id": next(b for b in rec.ok("/api/beds") if b["status"] == "free")["id"], "reason": "Obs"})["id"]
+        paid = ph.ok("/api/bills", {"patient_id": pid, "items": line, "pay_mode": "upi", "override": True})
+        self.assertTrue(paid["ip_no"])
+        self.assertEqual(doc.ok(f"/api/admissions/{aid}")["bill"]["pharmacy_credit"], 0, "paid now: nothing owed")
+        cr = ph.ok("/api/bills", {"patient_id": pid, "items": line, "pay_mode": "credit", "override": True})
+        self.assertEqual(doc.ok(f"/api/admissions/{aid}")["bill"]["pharmacy_credit"], cr["total"])
+        rec.ok(f"/api/bills/{cr['id']}/settle", {"mode": "cash"})
+        self.assertEqual(doc.ok(f"/api/admissions/{aid}")["bill"]["pharmacy_credit"], 0, "settled early: no longer owed")
+        d = doc.ok(f"/api/admissions/{aid}/discharge", {"final_diagnosis": "ok", "discharge_type": "normal", "ignore_pending": True, "items": [], "override": True})
+        inv = rec.ok(f"/api/invoices/{d.get('invoice_id') or doc.ok(f'/api/admissions/{aid}')['invoice_id']}")
+        self.assertFalse([i for i in inv["items"] if "Pharmacy" in i["name"]], "nothing billed twice")

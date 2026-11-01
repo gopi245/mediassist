@@ -186,7 +186,7 @@ def running_bill(c, a):
     for o in rows(c.execute("SELECT o.id, t.name, s.rate_p, s.id sid FROM lab_orders o JOIN lab_order_items i ON i.order_id=o.id JOIN lab_tests t ON t.id=i.test_id "
                             "LEFT JOIN services s ON s.id=t.service_id WHERE o.admission_id=? AND o.status<>'cancelled' AND o.invoice_id IS NULL", (a["id"],))):
         lines.append({"name": f"Lab: {o['name']}", "cat": "Laboratory", "qty": 1, "rate_p": o["rate_p"] or 0, "amount_p": o["rate_p"] or 0, "service_id": o["sid"], "ref": f"LAB{o['id']}"})
-    pharm = c.execute("SELECT COALESCE(SUM(total_p-returned_p),0) FROM bills WHERE admission_id=? AND pay_mode='credit'", (a["id"],)).fetchone()[0]
+    pharm = c.execute("SELECT COALESCE(SUM(total_p-returned_p),0) FROM bills WHERE admission_id=? AND pay_mode='credit' AND settled_at IS NULL", (a["id"],)).fetchone()[0]
     total = sum(x["amount_p"] for x in lines)
     deposits = c.execute("SELECT COALESCE(SUM(amount_p),0) FROM payments WHERE admission_id=? AND kind='deposit'", (a["id"],)).fetchone()[0]
     return {"lines": lines, "days": days, "total": R(total), "total_p": total, "pharmacy_credit": R(pharm), "deposits": R(deposits), "deposits_p": deposits,
