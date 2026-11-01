@@ -37,7 +37,7 @@ ROLES = {
     "pharmacist": {"patients_read", "billing", "stock", "documents"},
     "lab_tech": {"patients_read", "lab", "documents"},
     "lab_incharge": {"patients_read", "lab", "lab_verify", "lab_admin", "reports", "documents"},
-    "accountant": {"patients_read", "reports", "accounts", "hbilling"},
+    "accountant": {"patients_read", "reports", "accounts", "hbilling", "documents"},
 }
 
 

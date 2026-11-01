@@ -432,10 +432,11 @@ def api_settle_bill(h, c, b, q, bid):
 SEVERITIES = ("mild", "moderate", "severe")
 
 
-@route("POST", r"/api/patients/(\d+)/reactions", "patients_write")
+@route("POST", r"/api/patients/(\d+)/reactions", "any")
 def api_reaction_add(h, c, b, q, pid):
     """Record a reaction to a medicine. It shows at every consultation and the prescribing check warns if that
     drug (or anything containing the same ingredient) is prescribed again."""
+    need(can(h, "patients_write") or can(h, "ipd_nursing"), "Your role can't do this", 403)  # the nurse who sees the reaction records it
     pid = int(pid)
     patient_ok(c, h, pid)
     mid = opt_num(b.get("medicine_id"), int, "medicine")

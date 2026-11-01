@@ -1482,3 +1482,18 @@ class T34PharmacyInpatientBilling(unittest.TestCase):
         self.assertIn(f"Pharmacy bill {r['bill_no']} (credit)", names)
         self.assertIn(f"Pharmacy bill {r2['bill_no']} (credit)", names)
         self.assertFalse(ph.ok(f"/api/patients/{pid}/inpatient")["admitted"])
+
+
+class T35RoleGaps(unittest.TestCase):
+    """Nurses register night emergencies and record reactions (but don't edit records); accountants file documents."""
+    def test_nurse_and_accountant(self):
+        nurse = Client("nurse.ch")
+        pid = nurse.ok("/api/patients", {"name": "Night Emergency", "phone": "9000035351", "age": 61, "gender": "Male", "consent": True, "force": True})["id"]
+        nurse.ok(f"/api/patients/{pid}/reactions", {"drug": "Ceftriaxone", "reaction": "rash", "severity": "moderate"})
+        self.assertEqual(nurse.post(f"/api/patients/{pid}", {"name": "Changed"})[0], 403, "editing details stays with reception/doctor")
+        self.assertEqual(nurse.post(f"/api/patients/{pid}/problems", {"title": "x"})[0], 403, "problem list stays with doctors")
+        self.assertEqual(Client("pharma.ch").post("/api/patients", {"name": "No", "phone": "9000035352", "age": 30})[0], 403)
+        png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+        acc = Client("accounts")
+        d = acc.ok("/api/documents", {"doc_type": "other", "mime": "image/png", "data": png, "note": "electricity bill"})
+        self.assertTrue(d["id"])

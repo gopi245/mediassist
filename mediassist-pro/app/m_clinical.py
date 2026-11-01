@@ -102,8 +102,9 @@ def api_patients(h, c, b, q):
     return [dict(r, code=pcode(r["id"])) for r in rs_]
 
 
-@route("POST", "/api/patients", "patients_write")
+@route("POST", "/api/patients", "any")
 def api_add_patient(h, c, b, q):
+    need(can(h, "patients_write") or can(h, "ipd_nursing"), "Your role can't do this", 403)  # nurses register night emergencies
     f = patient_fields(b)
     need(b.get("consent"), "Record the patient's consent to store their health data (DPDP Act) before registering")
     if not b.get("force"):
