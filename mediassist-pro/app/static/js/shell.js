@@ -74,7 +74,7 @@ async function start() {
     App.me.branches.map(b => `<option value="${b.id}">${esc(b.code)} · ${esc(b.name)}</option>`).join("");
   $("#branchSel").value = App.me.branch ? App.me.branch.id : 0; $("#branchSel").disabled = !App.me.all_access;
   $$("[data-i18n]").forEach(el => el.textContent = t(el.dataset.i18n));
-  renderNav(); renderSync(); flushOutbox(); refreshAlerts();
+  renderNav(); renderBnav(); renderSync(); flushOutbox(); refreshAlerts();
   ["#askFab", "#askPanel"].forEach(s => { const el = $(s); if (el) el.remove(); });
   if (typeof assistantBoot === "function") assistantBoot();
   const h = location.hash.slice(1).split("/");
@@ -85,6 +85,17 @@ async function start() {
   if (App.me.suggest_2fa && !sessionStorage.getItem("nag2fa")) { sessionStorage.setItem("nag2fa", 1); toast("Protect the owner account: turn on two-step sign-in in My account."); }
 }
 on("meToggle", () => $(".side").classList.toggle("show-who"));
+/* phones: the sections each role uses most, in the bottom bar */
+const BNAV = { reception: ["opd", "patients", "hbilling", "tracker"], nurse: ["ipd", "tracker", "patients", "opd"], doctor: ["consult", "patients", "ipd", "lab"],
+  pharmacist: ["billing", "stock", "patients", "hbilling"], lab_tech: ["lab", "patients", "tracker", "docs"], lab_incharge: ["lab", "patients", "tracker", "reports"],
+  accountant: ["hbilling", "accounts", "reports", "patients"], manager: ["dashboard", "patients", "tracker", "reports"], owner: ["dashboard", "patients", "tracker", "reports"] };
+const SHORT = { opd: "OPD", hbilling: "Billing", billing: "Pharmacy", consult: "Consult", ipd: "Inpatients", tracker: "Tracker", dashboard: "Home", docs: "Docs" };
+function renderBnav() {
+  const vis = VIEWS.filter(v => v[2]()), pick = (BNAV[App.me.role] || []).map(k => vis.find(v => v[0] === k)).filter(Boolean);
+  for (const v of vis) { if (pick.length >= 4) break; if (!pick.includes(v)) pick.push(v); }
+  $("#bnav").innerHTML = pick.slice(0, 4).map(v => `<button data-act="go" data-v="${v[0]}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON[v[0]] || ""}</svg><span>${esc(t(SHORT[v[0]] || v[1]))}</span></button>`).join("")
+    + `<button data-act="meToggle" class="bnav-more"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>${t("More")}</span></button>`;
+}
 function renderNav() {
   $("#nav").innerHTML = VIEWS.filter(v => v[2]()).map(v => `<button data-act="go" data-v="${v[0]}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON[v[0]]}</svg>${esc(t(v[1]))}<span class="badge" data-badge="${v[0]}" hidden></span></button>`).join("");
 }
@@ -96,7 +107,8 @@ async function go(view, params = []) {
   App.view = view; App.params = params;
   const label = view === "me" ? "My account" : (VIEWS.find(v => v[0] === view) || [, "Dashboard"])[1];
   history.replaceState(null, "", "#" + [view, ...params].join("/"));
-  $$("#nav button").forEach(b => b.classList.toggle("on", b.dataset.v === view));
+  $$("#nav button, #bnav button").forEach(b => b.classList.toggle("on", b.dataset.v === view));
+  $(".side").classList.remove("show-who");   // phones: close the menu sheet after choosing
   $("#pageTitle").textContent = t(label);
   $("#crumb").textContent = `${App.me.org_name} / ${App.me.branch ? App.me.branch.name : t("All branches")}`;
   const main = $("#view"); main.innerHTML = '<p class="empty">Loading…</p>';

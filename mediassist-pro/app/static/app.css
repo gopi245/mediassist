@@ -528,3 +528,26 @@ details.opt{margin:10px 0}details.opt>summary{cursor:pointer;color:var(--accent)
   .resgrid .tbl td:nth-child(5):empty{display:none !important}
 }
 @media (max-width:640px){.resgrid .tbl tr:first-child:has(th){display:none !important}}
+
+/* ================= Phones: bottom tab bar + menu sheet ================= */
+.bnav{display:none}
+@media (max-width:900px){
+  .bnav{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));position:fixed;left:0;right:0;bottom:0;z-index:40;background:var(--side);
+    padding:6px max(6px,env(safe-area-inset-left,0px)) calc(6px + env(safe-area-inset-bottom,0px));box-shadow:0 -2px 12px rgba(0,0,0,.2)}
+  .bnav button{display:flex;flex-direction:column;align-items:center;gap:3px;border:0;background:none;color:var(--side-muted);font:600 11px/1.1 var(--f-body);padding:6px 2px;border-radius:10px;cursor:pointer;min-height:52px}
+  .bnav button svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  .bnav button.on{color:var(--side-accent);background:var(--side-2)}
+  .bnav button span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+  body{padding-bottom:calc(76px + env(safe-area-inset-bottom,0px))}
+  #toast{bottom:calc(84px + env(safe-area-inset-bottom,0px)) !important}
+  /* slim header; the full menu, branch and sign-out open as a sheet from More or the avatar */
+  .side{padding-top:8px;padding-bottom:8px}
+  .side #nav{display:none}
+  .side.show-who{max-height:calc(100vh - 80px);overflow-y:auto}
+  .side.show-who #nav{display:flex;flex-direction:column;overflow:visible;padding-bottom:6px}
+  .side.show-who #nav button{padding:12px 10px;font-size:15px;box-shadow:none}
+  .side.show-who #nav button.on{background:var(--side-2);color:var(--side-ink)}
+  .crumb{display:none}
+  .topbar h1{font-size:24px}
+}
+@media (max-width:900px){.ask-panel{bottom:calc(84px + env(safe-area-inset-bottom,0px)) !important;height:min(600px,calc(100vh - 110px)) !important}}
