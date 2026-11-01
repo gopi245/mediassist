@@ -1,7 +1,7 @@
 /* Inpatients: bed board, admission, notes and vitals, MAR, charges and running bill, discharge. */
 "use strict";
-RENDER.ipd = async (main, [mode, id]) => {
-  if (mode === "a" && id) return admission(main, +id);
+RENDER.ipd = async (main, [mode, id, tab]) => {
+  if (mode === "a" && id) { if (tab) App.cache.admTab = tab; return admission(main, +id); }   // a/<id>/<tab>: open on that tab
   const [beds, docs] = await Promise.all([api("/api/beds"), staff("doctor")]);
   let pre = "";
   App.cache.assign = null; App.cache.ipdDocs = docs;
