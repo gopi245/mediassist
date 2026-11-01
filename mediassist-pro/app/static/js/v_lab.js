@@ -59,7 +59,7 @@ function labTimeline(o) {
   const tests = o.tests.map(t => esc(t.name)).join(", ");
   return `<h3 style="margin:14px 0 6px">Order timeline</h3><div class="timeline">
     ${step(true, "Ordered", o.created_at, o.dname || "walk-in / reception", `${tests} · ${o.priority}${o.visit_id ? ` · from consultation` : ""}`)}
-    ${step(!!bill, bill ? `Billed · ${esc(bill.inv_no)}` : "Billed", bill && bill.at, "", bill ? `${money(bill.total)} · ${bill.status === "paid" ? pill("Paid", "p-ok") : pill(bill.status === "insurance" ? "Insurance" : "Due " + money(bill.due), "p-warn")}` : (o.admission_id ? "on the inpatient bill at discharge" : `not paid · ${money(o.payment.due)}${canCollect() ? ` <button type="button" class="btn sm" data-act="labPay">Collect payment</button>` : ""}`))}
+    ${step(!!bill, bill ? `Billed · ${esc(bill.inv_no)}` : "Billed", bill && bill.at, "", bill ? `${money(bill.total)} · ${bill.status === "paid" ? pill("Paid", "p-ok") : pill(bill.status === "insurance" ? "Insurance" : "Due " + money(bill.due), "p-warn")}` : (o.admission_id ? "on the inpatient bill at discharge" : `not paid · ${money(o.payment.due)}`))}
     ${step(!!o.collected_at, "Sample collected", o.collected_at, o.collected_name, o.rejections ? `${o.rejections} sample(s) rejected before this one` : "")}
     ${step(!!o.resulted_at, "Results entered", o.resulted_at, o.resulted_name, o.amended_at ? `amended ${o.amended_at.slice(0, 16)}: ${esc(o.amend_reason || "")}` : "")}
     ${step(!!o.verified_at, "Report finished and sent", o.verified_at, o.verified_name, o.interp_reviewed_at ? "explanation for the patient reviewed" : "")}

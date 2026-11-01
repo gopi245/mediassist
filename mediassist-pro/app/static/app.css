@@ -501,3 +501,30 @@ details.opt{margin:10px 0}details.opt>summary{cursor:pointer;color:var(--accent)
   .tbl td.empty{display:block;text-align:center !important}
 }
 @media (max-width:640px){.tbl td>.btn,.tbl td>button{justify-self:start;width:auto}}
+
+.only-phone{display:none}
+@media (max-width:900px){
+  .only-phone{display:block}.not-phone{display:none}
+  .cx-grid>.cx-side{order:2}
+  /* one row: medicine search + AI button as an icon */
+  .top-r{flex-wrap:nowrap !important;width:100%}.top-r .lookup{flex:1;width:auto !important;min-width:0}
+  .top-r .ask-fab span{display:none}.top-r .ask-fab{padding:10px;border-radius:50%}
+  .topbar{flex-wrap:wrap}
+  /* small inline buttons get a proper touch area */
+  .linkbtn{padding:8px 6px;min-height:36px}
+  .micbtn{min-width:36px;min-height:36px;font-size:18px}
+}
+@media (max-width:640px){
+  /* lab result entry: test name, then result + unit, then the normal range */
+  .resgrid .tbl tr{display:grid !important;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;align-items:center;padding:10px 12px}
+  .resgrid .tbl td{display:block !important}
+  .resgrid .tbl td::before{display:none !important}
+  .resgrid .tbl td:nth-child(1){grid-column:1/-1;font-weight:600}
+  .resgrid .tbl td:nth-child(2) input{width:100%;min-height:44px;font-size:16px}
+  .resgrid .tbl td:nth-child(3){color:var(--muted);font-size:13px}
+  .resgrid .tbl td:nth-child(4){grid-column:1/-1;font-size:12px;color:var(--muted)}
+  .resgrid .tbl td:nth-child(4)::after{content:" normal";}
+  .resgrid .tbl td:nth-child(5){grid-column:1/-1}
+  .resgrid .tbl td:nth-child(5):empty{display:none !important}
+}
+@media (max-width:640px){.resgrid .tbl tr:first-child:has(th){display:none !important}}
