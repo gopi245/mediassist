@@ -1658,16 +1658,18 @@ class T41NurseVerbalOrder(unittest.TestCase):
         pid = rec.ok("/api/patients", {"name": "Verbal Order", "phone": "9000041411", "age": 45, "gender": "Male", "consent": True, "force": True})["id"]
         aid = doc.ok("/api/admissions", {"patient_id": pid, "bed_id": next(b for b in rec.ok("/api/beds") if b["status"] == "free")["id"], "reason": "Obs"})["id"]
         med = next(m for m in doc.ok("/api/medicines") if m["name"] == "Dolo 650")
-        st, e = nurse.post(f"/api/admissions/{aid}/mar", {"medicine_id": med["id"], "dose": "1", "freq": "TDS", "override": True})
-        self.assertEqual(st, 400, "the nurse must name the ordering doctor")
+        own = nurse.ok(f"/api/admissions/{aid}/mar", {"medicine_id": med["id"], "dose": "1", "freq": "OD", "override": True})  # nurse's own order
+        mine = doc.ok(f"/api/admissions/{aid}")["mar"][0]
+        self.assertEqual((mine["orole"], mine["verbal"]), ("nurse", 0), "shown under the nurse's name, no confirmation needed")
+        nurse.ok(f"/api/mar/{mine['id']}/stop", {})
         nurse.ok(f"/api/admissions/{aid}/mar", {"medicine_id": med["id"], "dose": "1", "freq": "TDS", "ordered_by": 2, "override": True})
         self.assertEqual(rec.post(f"/api/admissions/{aid}/mar", {"medicine_id": med["id"], "ordered_by": 2})[0], 403, "reception can't add medicines")
-        mo = doc.ok(f"/api/admissions/{aid}")["mar"][0]
+        mo = next(m for m in doc.ok(f"/api/admissions/{aid}")["mar"] if m["verbal"])
         self.assertEqual((mo["verbal"], mo["confirmed_at"], mo["ordered_by"]), (1, None, 2))
         self.assertTrue(mo["slots"], "doses are scheduled straight away")
         self.assertEqual(nurse.post(f"/api/mar/{mo['id']}/confirm", {})[0], 403, "only a doctor confirms")
         doc.ok(f"/api/mar/{mo['id']}/confirm", {})
-        self.assertIsNotNone(doc.ok(f"/api/admissions/{aid}")["mar"][0]["confirmed_at"])
+        self.assertIsNotNone(next(m for m in doc.ok(f"/api/admissions/{aid}")["mar"] if m["id"] == mo["id"])["confirmed_at"])
         self.assertEqual(doc.post(f"/api/mar/{mo['id']}/confirm", {})[0], 400, "already confirmed")
         self.assertTrue(any("Verbal order to confirm" in a["body"] for a in doc.ok("/api/alerts")), "the doctor was told")
 
@@ -1680,7 +1682,8 @@ class T42NurseLabOrder(unittest.TestCase):
         pid = rec.ok("/api/patients", {"name": "Ward Lab", "phone": "9000042421", "age": 50, "gender": "Female", "consent": True, "force": True})["id"]
         aid = doc.ok("/api/admissions", {"patient_id": pid, "bed_id": next(b for b in rec.ok("/api/beds") if b["status"] == "free")["id"], "reason": "Obs"})["id"]
         cbc = next(t for t in doc.ok("/api/lab/tests") if t["code"] == "CBC")["id"]
-        self.assertEqual(nurse.post("/api/lab/orders", {"patient_id": pid, "admission_id": aid, "tests": [cbc]})[0], 400, "nurse names the doctor")
+        nurse.ok("/api/lab/orders", {"patient_id": pid, "admission_id": aid, "tests": [cbc]})
+        self.assertTrue(doc.ok(f"/api/admissions/{aid}")["labs"][0]["note"].startswith("Ordered by nurse"))
         nurse.ok("/api/lab/orders", {"patient_id": pid, "admission_id": aid, "tests": [cbc], "doctor_id": 2})
         lab = doc.ok(f"/api/admissions/{aid}")["labs"][0]
         self.assertTrue(lab["note"].startswith("Verbal order, entered by"))

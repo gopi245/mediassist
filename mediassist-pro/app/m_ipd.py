@@ -341,7 +341,7 @@ def mar_today(c, aid, day=None):
     """Dose chart for one day (default today); earlier days show what was given, held or missed."""
     day = day or today()
     out = []
-    for mo in rows(c.execute("SELECT mo.*, m.name, m.generic, u.name oname, eu.name ename FROM mar_orders mo JOIN medicines m ON m.id=mo.medicine_id LEFT JOIN users u ON u.id=mo.ordered_by LEFT JOIN users eu ON eu.id=mo.entered_by "
+    for mo in rows(c.execute("SELECT mo.*, m.name, m.generic, u.name oname, u.role orole, eu.name ename FROM mar_orders mo JOIN medicines m ON m.id=mo.medicine_id LEFT JOIN users u ON u.id=mo.ordered_by LEFT JOIN users eu ON eu.id=mo.entered_by "
                              "WHERE admission_id=? ORDER BY mo.active DESC, mo.id", (aid,))):
         given = rows(c.execute("SELECT ma.*, u.name uname FROM mar_admin ma LEFT JOIN users u ON u.id=ma.user_id WHERE mar_id=? AND ma.at LIKE ? ORDER BY ma.id", (mo["id"], day + "%")))
         ran = mo["start_at"][:10] <= day and (not mo["stop_at"] or mo["stop_at"][:10] >= day)
@@ -355,11 +355,13 @@ def mar_today(c, aid, day=None):
 def api_mar_order(h, c, b, q, aid):
     a = adm_or_404(c, h, int(aid))
     prescriber, verbal = h.user["id"], 0
-    if h.user["role"] not in ("doctor", "owner"):  # a nurse writes down a doctor's verbal or phone order
+    if h.user["role"] not in ("doctor", "owner"):
         need(can(h, "ipd_nursing"), "Only doctors and nurses can add ward medicines", 403)
-        doc = one(c, "SELECT id FROM users WHERE id=? AND role IN ('doctor','owner') AND active=1", (as_int(b.get("ordered_by"), "ordering doctor"),))
-        need(doc, "Choose the doctor who gave this order")
-        prescriber, verbal = doc["id"], 1
+        if b.get("ordered_by"):  # written down from a doctor's verbal or phone order: that doctor confirms it
+            doc = one(c, "SELECT id FROM users WHERE id=? AND role IN ('doctor','owner') AND active=1", (as_int(b.get("ordered_by"), "ordering doctor"),))
+            need(doc, "Choose the doctor who gave this order")
+            prescriber, verbal = doc["id"], 1
+        # otherwise the nurse orders it under their own name
     m = one(c, "SELECT * FROM medicines WHERE id=? AND active=1", (as_int(b.get("medicine_id"), "medicine"),))
     need(m, "Medicine not found", 404)
     freq = clean(b, "freq", 10).upper() or "OD"
@@ -400,11 +402,11 @@ def api_mar_confirm(h, c, b, q, mid):
 
 @route("POST", r"/api/mar/(\d+)/stop", "ipd")
 def api_mar_stop(h, c, b, q, mid):
-    need(h.user["role"] in ("doctor", "owner"), "Only doctors can stop medicines", 403)
+    need(h.user["role"] in ("doctor", "owner") or can(h, "ipd_nursing"), "Only doctors and nurses can stop medicines", 403)
     mo = one(c, "SELECT mo.*, a.branch_id, a.ip_no, m.name FROM mar_orders mo JOIN admissions a ON a.id=mo.admission_id JOIN medicines m ON m.id=mo.medicine_id WHERE mo.id=?", (int(mid),))
     need(mo and (mo["branch_id"] == h.branch or h.user["role"] == "owner"), "Medicine order not found", 404)
     c.execute("UPDATE mar_orders SET active=0, stop_at=? WHERE id=?", (now_str(), mo["id"]))
-    audit(c, h, "mar.stop", f"{mo['ip_no']} {mo['name']} {mo['dose']} {mo['freq']}")
+    audit(c, h, "mar.stop", f"{mo['ip_no']} {mo['name']} {mo['dose']} {mo['freq']}" + (f" stopped by nurse {h.user['name']}" if h.user["role"] == "nurse" else ""))
     return {"ok": True}
 
 
