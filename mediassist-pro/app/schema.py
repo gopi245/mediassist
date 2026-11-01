@@ -315,6 +315,12 @@ r"""
 CREATE TABLE adm_daily(id INTEGER PRIMARY KEY, admission_id INTEGER NOT NULL REFERENCES admissions(id), service_id INTEGER NOT NULL,
   from_at TEXT NOT NULL, to_at TEXT, user_id INTEGER)
 """,
+# 20: ward medicine entered by a nurse on a doctor's verbal / phone order, confirmed by the doctor later
+r"""
+ALTER TABLE mar_orders ADD COLUMN entered_by INTEGER;
+ALTER TABLE mar_orders ADD COLUMN verbal INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE mar_orders ADD COLUMN confirmed_at TEXT
+""",
 ]
 
 

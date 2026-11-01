@@ -1649,3 +1649,24 @@ class T40ScanFixes(unittest.TestCase):
         svc = next(s for s in rec.ok("/api/services") if s["name"] == "OPD consultation, general")
         st, e = rec.post("/api/invoices", {"patient_id": b, "visit_id": v, "items": [{"service_id": svc["id"]}]})
         self.assertEqual(st, 400); self.assertIn("another patient", e["error"])
+
+
+class T41NurseVerbalOrder(unittest.TestCase):
+    """A nurse adds a ward medicine on a named doctor's verbal order; it starts at once and the doctor confirms it."""
+    def test_verbal_order(self):
+        rec, doc, nurse = Client("reception.ch"), Client("dr.rao"), Client("nurse.ch")
+        pid = rec.ok("/api/patients", {"name": "Verbal Order", "phone": "9000041411", "age": 45, "gender": "Male", "consent": True, "force": True})["id"]
+        aid = doc.ok("/api/admissions", {"patient_id": pid, "bed_id": next(b for b in rec.ok("/api/beds") if b["status"] == "free")["id"], "reason": "Obs"})["id"]
+        med = next(m for m in doc.ok("/api/medicines") if m["name"] == "Dolo 650")
+        st, e = nurse.post(f"/api/admissions/{aid}/mar", {"medicine_id": med["id"], "dose": "1", "freq": "TDS", "override": True})
+        self.assertEqual(st, 400, "the nurse must name the ordering doctor")
+        nurse.ok(f"/api/admissions/{aid}/mar", {"medicine_id": med["id"], "dose": "1", "freq": "TDS", "ordered_by": 2, "override": True})
+        self.assertEqual(rec.post(f"/api/admissions/{aid}/mar", {"medicine_id": med["id"], "ordered_by": 2})[0], 403, "reception can't add medicines")
+        mo = doc.ok(f"/api/admissions/{aid}")["mar"][0]
+        self.assertEqual((mo["verbal"], mo["confirmed_at"], mo["ordered_by"]), (1, None, 2))
+        self.assertTrue(mo["slots"], "doses are scheduled straight away")
+        self.assertEqual(nurse.post(f"/api/mar/{mo['id']}/confirm", {})[0], 403, "only a doctor confirms")
+        doc.ok(f"/api/mar/{mo['id']}/confirm", {})
+        self.assertIsNotNone(doc.ok(f"/api/admissions/{aid}")["mar"][0]["confirmed_at"])
+        self.assertEqual(doc.post(f"/api/mar/{mo['id']}/confirm", {})[0], 400, "already confirmed")
+        self.assertTrue(any("Verbal order to confirm" in a["body"] for a in doc.ok("/api/alerts")), "the doctor was told")
