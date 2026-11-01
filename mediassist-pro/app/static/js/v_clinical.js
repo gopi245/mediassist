@@ -290,6 +290,7 @@ RENDER.consult = async (main, [vid]) => {
     return;
   }
   const [d, tpl, tests] = await Promise.all([api("/api/visits/" + vid), api("/api/templates"), api("/api/lab/tests"), loadMeds()]);
+  App.cache.cxTests = tests; setTimeout(cxLabDraw, 0);   // draw tests already on this visit once the page is up
   if (d.visit.status === "waiting") setTimeout(() => { const f = $("#cxForm"); if (f) f.addEventListener("input", () => api(`/api/visits/${vid}/start`, {}).catch(() => {}), { once: true }); }, 0);  // claimed on the first thing the doctor writes
   const v = d.visit, p = d.patient;
   CX = { vid: +vid, pid: p.id, items: d.rx.map(r => ({ medicine_id: r.medicine_id, name: r.name, dose: r.dose || "1", freq: r.freq, days: r.days, instructions: r.instructions || "" })), labs: new Set(), tests, tpl, weight: p.weight };
@@ -327,7 +328,9 @@ RENDER.consult = async (main, [vid]) => {
       <h3>Prescription</h3>
       <div class="fields"><div class="span2"><input id="cxMed" list="medOpts" placeholder="Medicine" data-input="cxLook"></div><div><input id="cxDose" value="1" placeholder="Dose (1, 1/2, 250 mg, 5 ml)" title="Tablets or capsules as a count; syrups in mg or ml. Doses in mg are checked against the limits."></div><div><input id="cxFreq" value="1-0-1" placeholder="1-0-1 / OD / BD"></div><div><input id="cxDays" type="number" min="1" value="5" placeholder="Days"></div><div class="span2"><input id="cxIns" placeholder="Instructions, e.g. after food"></div><div><button type="button" class="btn ghost" data-act="cxAdd">Add</button></div></div>
       <div id="cxInfo"></div><div id="cxRx"></div><div id="cxWarn"></div>
-      <h3>Lab tests</h3><div class="row-actions">${tests.map(t_ => `<label class="check" style="margin:0 10px 0 0"><input type="checkbox" data-change="cxLab" value="${t_.id}"> ${esc(t_.name)}</label>`).join("")}</div>
+      <h3>Lab tests</h3><div class="fields"><div class="span2"><input id="cxLabQ" list="labOpts" placeholder="Search a test: CBC, sugar, thyroid, urine…" data-change="cxLabPick" autocomplete="off"></div></div>
+      <datalist id="labOpts">${tests.map(t_ => `<option value="${esc(t_.name)}">${esc(t_.code)}${t_.rate_p ? " · " + money(P2R(t_.rate_p)) : ""}</option>`).join("")}</datalist>
+      <div id="cxLabChips" class="row-actions" style="margin-top:8px"></div>
       <div class="fields"><div><label>Lab priority</label><select name="lab_priority"><option value="routine">Routine</option><option value="urgent">Urgent</option><option value="stat">STAT</option></select></div><div><label>Follow-up</label><input name="followup" type="date" value="${esc(v.followup || "")}"></div></div>
       <label class="check"><input type="checkbox" name="add_problem" checked> Add the diagnosis to the problem list (chronic conditions)</label>
       <div class="btns"><button class="btn">Save and complete</button>${can("admit") ? `<button type="button" class="btn ghost" data-act="cxAdmit">Admit to ward</button>` : ""}<button type="button" class="btn ghost" data-act="printRx" data-id="${v.id}">Print ℞</button><select id="rxLang" style="width:auto" title="Also print patient instructions in" aria-label="Also print patient instructions in"><option value="">English only</option><option value="hi">+ हिन्दी</option><option value="te">+ తెలుగు</option><option value="ta">+ தமிழ்</option></select>${v.status === "done" ? `<button type="button" class="btn ghost" data-act="pdfDl" data-p="rx/${v.id}">PDF</button>` : ""}</div></form></div></div>`;
@@ -378,7 +381,7 @@ on("cxStructure", async el => {
   put("complaint", r.complaint); put("history", r.history); put("examination", r.examination); if (r.diagnosis) f.diagnosis.value = r.diagnosis; if (r.icd) f.icd.value = r.icd; put("notes", r.advice);
   if (r.followup_days) f.followup.value = localDay(r.followup_days);
   r.items.forEach(i => { if (!CX.items.some(x => x.medicine_id === i.medicine_id)) CX.items.push(i); });
-  r.lab_tests.forEach(id => { CX.labs.add(id); const cb = $(`input[data-change=cxLab][value="${id}"]`); if (cb) cb.checked = true; });
+  r.lab_tests.forEach(id => CX.labs.add(id)); cxLabDraw();
   const notes = [r.unknown_medicines.length ? `not in the medicine master: ${r.unknown_medicines.join(", ")}` : "", r.unknown_tests.length ? `tests not in the catalogue: ${r.unknown_tests.join(", ")}` : ""].filter(Boolean).join("; ");
   toast(`Draft filled: ${r.items.length} medicines, ${r.lab_tests.length} tests. Review everything before saving.` + (notes ? " " + notes : "")); drawCx();
 });
@@ -396,13 +399,26 @@ on("adrAdd", async el => {
   await api(`/api/patients/${el.dataset.pid}/reactions`, { ...v, medicine_id: m ? m.id : null, visit_id: el.dataset.vid ? +el.dataset.vid : null });
   toast("Reaction recorded"); if (el.dataset.vid) go("consult", [el.dataset.vid]); else openPatient(+el.dataset.pid);
 });
-on("cxLab", el => { el.checked ? CX.labs.add(+el.value) : CX.labs.delete(+el.value); });
+/* chosen tests as removable chips */
+function cxLabDraw() {
+  const box = $("#cxLabChips"); if (!box) return;
+  const by = Object.fromEntries((App.cache.cxTests || []).map(t_ => [t_.id, t_]));
+  box.innerHTML = [...CX.labs].map(id => by[id] ? `<button type="button" class="btn sm ghost" data-act="cxLabRm" data-id="${id}" title="Remove">${esc(by[id].name)} ✕</button>` : "").join("") || '<span class="small muted">No tests ordered.</span>';
+}
+on("cxLabPick", el => {
+  const q = el.value.trim().toLowerCase(); if (!q) return;
+  const t_ = (App.cache.cxTests || []).find(x => x.name.toLowerCase() === q || x.code.toLowerCase() === q)
+    || (App.cache.cxTests || []).filter(x => (x.name + " " + x.code).toLowerCase().includes(q)).sort((a, b) => a.name.length - b.name.length)[0];
+  if (!t_) return toast("No test by that name. Pick one from the list.");
+  CX.labs.add(t_.id); el.value = ""; cxLabDraw(); el.focus();
+});
+on("cxLabRm", el => { CX.labs.delete(+el.dataset.id); cxLabDraw(); });
 on("applyTpl", el => {
   const t_ = CX.tpl.find(x => x.id === +el.value); if (!t_) return; const f = $("#cxForm");
   f.diagnosis.value = t_.diagnosis || ""; f.icd.value = t_.icd || ""; f.notes.value = t_.advice || "";
   if (t_.followup_days) f.followup.value = localDay(t_.followup_days);
   t_.items.forEach(i => { const m = (App.cache.meds || []).find(x => x.id === i.medicine_id); if (m) CX.items.push({ medicine_id: m.id, name: m.name, dose: i.dose || "1", freq: i.freq, days: i.days, instructions: i.instructions || "" }); });
-  t_.tests.forEach(id => { CX.labs.add(id); const cb = $(`input[data-change=cxLab][value="${id}"]`); if (cb) cb.checked = true; });
+  t_.tests.forEach(id => CX.labs.add(id)); cxLabDraw();
   el.value = ""; drawCx();
 });
 on("saveConsult", async f => {
