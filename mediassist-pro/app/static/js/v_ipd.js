@@ -77,7 +77,7 @@ async function admission(main, id) {
       ${open ? card("Shift handover", "The next shift reads this first", `<form data-submit="handover" class="stack"><input name="situation" placeholder="Situation: why they are here, how they are now"><input name="background" placeholder="Background: diagnosis, key history, allergies"><input name="assessment" placeholder="Assessment: vitals trend, NEWS2, concerns"><input name="recommendation" placeholder="Recommendation: what the next shift must do or watch"><div class="btns"><button class="btn sm">Hand over</button></div></form>`) : ""}
       <div class="stack">${card("Vitals", "", tbl(["When", "Temp", "Pulse", "BP", "RR", "SpO₂", "GCS", "Sugar"], a.vitals.map(v => `<tr><td class="mono">${v.at.slice(5)}</td><td>${v.temp ?? "–"}</td><td>${v.pulse ?? "–"}</td><td>${v.bp_sys ?? "–"}/${v.bp_dia ?? "–"}</td><td>${v.resp_rate ?? "–"}</td><td>${v.spo2 ?? "–"}</td><td>${v.gcs ?? "–"}</td><td>${v.sugar ?? "–"}</td></tr>`).join("")))}
       ${card("Notes", "", `<div class="timeline">${a.notes.map(n => `<div class="tl${n.kind === "handover" ? " done" : ""}"><div class="when">${n.at} · ${esc(n.uname || "")} · ${n.kind === "handover" ? "shift handover" : n.kind}</div>${n.kind === "handover" ? n.text.split("\n").map(l => `<div><b>${esc(l.split(":")[0])}:</b>${esc(l.slice(l.indexOf(":") + 1))}</div>`).join("") : esc(n.text)}</div>`).join("") || '<p class="empty">No notes yet.</p>'}</div>`)}
-      ${card("Lab tests", "", tbl(["Order", "Tests", "Status"], a.labs.map(l => `<tr class="click" data-act="go" data-v="lab" data-p="o/${l.id}"><td class="mono">LAB${l.id}</td><td>${esc(l.tests)}</td><td>${l.status}</td></tr>`).join(""), "None ordered.") + (open ? `<div class="btns"><button class="btn sm ghost" data-act="admLab">Order tests</button></div>` : ""))}</div></div>`;
+      ${card("Lab tests", "", tbl(["Order", "Tests", "Status"], a.labs.map(l => `<tr class="click" data-act="go" data-v="lab" data-p="o/${l.id}"><td class="mono">LAB${l.id}</td><td>${esc(l.tests)}${l.note && /^Verbal order/.test(l.note) ? `<div class="small muted">${esc(l.note)}</div>` : ""}</td><td>${l.status}</td></tr>`).join(""), "None ordered.") + (open ? `<div class="btns"><button class="btn sm ghost" data-act="admLab">Order tests</button></div>` : ""))}</div></div>`;
   } else if (tab === "mar") {
     body.innerHTML = card("Medicines today", "Each dose given is taken from this branch's pharmacy stock and charged to the bill",
       `<div class="tbl mar"><table><tr><th>Medicine</th><th>Dose</th><th>Route</th><th>Freq</th><th>${a.mar_day === localDay() ? "Today" : a.mar_day}</th><th></th></tr>${a.mar.map(m => `<tr><td><b>${esc(m.name)}</b><div class="small muted">by ${esc(m.oname || "")} · ${m.start_at.slice(5)}${m.verbal ? ` · verbal order, entered by ${esc(m.ename || "nurse")}` : ""}</div>${m.verbal && !m.confirmed_at ? ` ${pill("Needs doctor's confirmation", "p-warn")}${isDoc && open ? ` <button class="btn sm" data-act="marConfirm" data-id="${m.id}">Confirm</button>` : ""}` : ""}</td><td>${esc(m.dose)}</td><td>${esc(m.route)}</td><td class="mono">${esc(m.freq)}${m.times ? " " + esc(m.times) : ""}</td>
@@ -135,12 +135,31 @@ on("dailyStart", async f => { const s = svcByName(vals(f).svc); if (!s) return t
 on("dailyStop", async el => { await api(`/api/admissions/${App.cache.adm.id}/daily/${el.dataset.id}/stop`, {}); toast("Stopped"); reAdm(); });
 on("admCharge", async f => { const v = vals(f), s = svcByName(v.svc); if (!s) return toast("Choose a service from the list."); await api(`/api/admissions/${App.cache.adm.id}/charges`, { service_id: s.id, qty: v.qty }); toast("Charge added"); reAdm(); });
 on("admDeposit", async f => { const r = await api(`/api/admissions/${App.cache.adm.id}/deposit`, vals(f)); toast("Deposit recorded" + waSent(r)); reAdm(); });
+/* inpatient tests: search and pick like medicines; a nurse names the doctor who ordered them */
 on("admLab", async () => {
-  const tests = await api("/api/lab/tests");
-  const v = await dialog("Order lab tests", tests.map(t_ => `<label class="check"><input type="checkbox" name="t${t_.id}"> ${esc(t_.name)}</label>`).join("") + `<label>Priority</label><select name="priority"><option value="routine">Routine</option><option value="urgent">Urgent</option><option value="stat">STAT</option></select>`, { ok: "Order" });
-  if (!v) return; const ids = Object.keys(v).filter(k => /^t\d+$/.test(k) && v[k]).map(k => +k.slice(1)); if (!ids.length) return;
-  await api("/api/lab/orders", { patient_id: App.cache.adm.patient_id, admission_id: App.cache.adm.id, tests: ids, priority: v.priority }); toast("Sent to the lab"); reAdm();
+  const tests = await api("/api/lab/tests"), isDoc = ["doctor", "owner"].includes(App.me.role), a = App.cache.adm;
+  App.cache.admLabTests = tests; App.cache.admLabSel = new Set();
+  const v = await dialog("Order lab tests", `${isDoc ? "" : `<label>Ordered by</label>${docSelect(App.cache.ipdDocs || [], "doctor_id", a.doctor_id || "", "")}`}
+    <label>Test</label><input id="admLabQ" list="admLabOpts" placeholder="Search: CBC, sugar, thyroid, urine…" data-change="admLabPick" autocomplete="off">
+    <datalist id="admLabOpts">${tests.map(t_ => `<option value="${esc(t_.name)}">${esc(t_.code)}${t_.rate_p ? " · " + money(P2R(t_.rate_p)) : ""}</option>`).join("")}</datalist>
+    <div id="admLabChips" class="row-actions" style="margin:8px 0"><span class="small muted">No tests yet.</span></div>
+    <label>Priority</label><select name="priority"><option value="routine">Routine</option><option value="urgent">Urgent</option><option value="stat">STAT</option></select>`, { ok: "Send to lab" });
+  const ids = [...App.cache.admLabSel];
+  if (!v) return; if (!ids.length) return toast("Pick at least one test.");
+  await api("/api/lab/orders", { patient_id: a.patient_id, admission_id: a.id, tests: ids, priority: v.priority, doctor_id: v.doctor_id || null });
+  toast(isDoc ? "Sent to the lab" : "Sent to the lab as the doctor's verbal order"); reAdm();
 });
+function admLabDraw() {
+  const by = Object.fromEntries(App.cache.admLabTests.map(t_ => [t_.id, t_]));
+  $("#admLabChips").innerHTML = [...App.cache.admLabSel].map(id => `<button type="button" class="btn sm ghost" data-act="admLabRm" data-id="${id}">${esc(by[id].name)} ✕</button>`).join("") || '<span class="small muted">No tests yet.</span>';
+}
+on("admLabPick", el => {
+  const q = el.value.trim().toLowerCase(); if (!q) return; const L = App.cache.admLabTests;
+  const t_ = L.find(x => x.name.toLowerCase() === q || x.code.toLowerCase() === q) || L.filter(x => (x.name + " " + x.code).toLowerCase().includes(q)).sort((x, y) => x.name.length - y.name.length)[0];
+  if (!t_) return toast("No test by that name. Pick one from the list.");
+  App.cache.admLabSel.add(t_.id); el.value = ""; admLabDraw(); el.focus();
+});
+on("admLabRm", el => { App.cache.admLabSel.delete(+el.dataset.id); admLabDraw(); });
 on("dcDraft", async el => {
   const f = el.closest("form");
   el.disabled = true; el.textContent = "Drafting…";

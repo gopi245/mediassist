@@ -267,9 +267,13 @@ def api_order(h, c, b, q):
     pid = as_int(b.get("patient_id"), "patient")
     need(one(c, "SELECT 1 FROM patients WHERE id=?", (pid,)), "Patient not found", 404)
     tests = [as_int(t, "test") for t in (b.get("tests") or [])[:30]]
+    note, doctor_id = clean(b, "note", 300), opt_num(b.get("doctor_id"), int)
+    if b.get("admission_id") and h.user["role"] == "nurse":  # an inpatient test from a nurse is a doctor's verbal order: name the doctor
+        need(doctor_id and one(c, "SELECT 1 FROM users WHERE id=? AND role IN ('doctor','owner') AND active=1", (doctor_id,)), "Choose the doctor who ordered these tests")
+        note = (f"Verbal order, entered by {h.user['name']}. " + note).strip()
     oid = in_tx(c, lambda: create_order(c, h, pid, tests, opt_num(b.get("visit_id"), int), opt_num(b.get("admission_id"), int),
-                                        opt_num(b.get("doctor_id"), int) or (h.user["id"] if h.user["role"] == "doctor" else None),
-                                        clean(b, "priority", 10) or "routine", clean(b, "note", 300)))
+                                        doctor_id or (h.user["id"] if h.user["role"] == "doctor" else None),
+                                        clean(b, "priority", 10) or "routine", note))
     return {"ok": True, "id": oid}
 
 

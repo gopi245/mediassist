@@ -213,7 +213,7 @@ def api_admission(h, c, b, q, aid):
         valid_day(mar_day, "MAR day")
     a["mar_day"] = mar_day or today()
     a["mar"] = mar_today(c, a["id"], mar_day)
-    a["labs"] = rows(c.execute("SELECT o.id, o.status, o.created_at, (SELECT group_concat(t.name, ', ') FROM lab_order_items i JOIN lab_tests t ON t.id=i.test_id WHERE i.order_id=o.id) tests "
+    a["labs"] = rows(c.execute("SELECT o.id, o.status, o.created_at, o.note, (SELECT group_concat(t.name, ', ') FROM lab_order_items i JOIN lab_tests t ON t.id=i.test_id WHERE i.order_id=o.id) tests "
                                "FROM lab_orders o WHERE admission_id=? ORDER BY o.id DESC", (a["id"],)))
     a["bill"] = running_bill(c, a)
     a["procedures"] = rows(c.execute("SELECT pr.*, u.name surgeon FROM procedures pr LEFT JOIN users u ON u.id=pr.surgeon_id WHERE admission_id=? ORDER BY pr.id DESC", (a["id"],)))
