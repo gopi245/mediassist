@@ -6,6 +6,7 @@ const ICON = {
   consult: '<path d="M6 3v6a4 4 0 0 0 8 0V3"/><path d="M10 13v3a5 5 0 0 0 10 0v-2"/><circle cx="20" cy="12" r="2"/>',
   lab: '<path d="M9 3h6M10 3v6L4 19a2 2 0 0 0 2 3h12a2 2 0 0 0 2-3l-6-10V3"/><path d="M7 15h10"/>',
   ipd: '<path d="M3 18V8M3 14h18v4M21 14v-2a3 3 0 0 0-3-3h-7v5"/><circle cx="7" cy="11" r="2"/>',
+  beds: '<rect x="3" y="4" width="7" height="7" rx="1"/><rect x="14" y="4" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
   billing: '<path d="M6 2h12v20l-3-2-3 2-3-2-3 2z"/><path d="M9 7h6M9 11h6M9 15h4"/>', stock: '<path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/>',
   hbilling: '<path d="M6 4h12M6 9h12M14 20l-7-7h3a4 4 0 0 0 0-8"/>', docs: '<path d="M21 11l-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7"/>',
   accounts: '<path d="M4 19V5M4 19h16"/><path d="M8 15l4-5 3 3 5-6"/>', reports: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>',
@@ -77,7 +78,10 @@ async function start() {
   ["#askFab", "#askPanel"].forEach(s => { const el = $(s); if (el) el.remove(); });
   if (typeof assistantBoot === "function") assistantBoot();
   const h = location.hash.slice(1).split("/");
-  go(VIEWS.some(v => v[0] === h[0] && v[2]()) || h[0] === "me" ? h[0] : "dashboard", h.slice(1));
+  const home = { reception: "opd", nurse: "ipd", doctor: "consult", pharmacist: "billing", lab_tech: "lab", lab_incharge: "lab", accountant: "hbilling" }[App.me.role];
+  const start_ = home && VIEWS.some(v => v[0] === home && v[2]()) ? home : "dashboard";
+  $(".lookup").hidden = !(can("stock") || can("billing") || can("consult"));
+  go(VIEWS.some(v => v[0] === h[0] && v[2]()) || h[0] === "me" ? h[0] : start_, h.slice(1));
   if (App.me.suggest_2fa && !sessionStorage.getItem("nag2fa")) { sessionStorage.setItem("nag2fa", 1); toast("Protect the owner account: turn on two-step sign-in in My account."); }
 }
 function renderNav() {

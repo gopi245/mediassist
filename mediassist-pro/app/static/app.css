@@ -429,3 +429,37 @@ body.display{background:#0b1d20;color:#e8f3f1;min-height:100%}
 @keyframes askpulse{50%{box-shadow:0 0 0 8px var(--crit-soft)}}
 .ask-foot{margin:0;padding:0 12px 10px}
 @media (prefers-reduced-motion:reduce){.ask-mic.on{animation:none}}
+
+/* ================= Simpler, calmer screens (overrides) ================= */
+/* one obvious main button: secondary buttons recede */
+.btn{font-size:14px;padding:10px 16px;min-height:40px}
+.btn.sm{font-size:13px;padding:7px 12px;min-height:34px}
+.btn.ghost{border-color:var(--line);color:var(--ink-2);background:var(--surface)}
+.btn.ghost:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+input,select,textarea{padding:10px 12px;min-height:40px}
+@media (pointer:coarse){.btn{min-height:46px}.btn.sm{min-height:40px}input,select{min-height:46px}.sub button{padding:10px 16px}}
+/* three status colours only: green done, orange waiting, red urgent; everything else neutral */
+.pill{text-transform:none;letter-spacing:0;font-weight:600;font-size:12px;padding:3px 9px}
+.p-info{background:var(--surface-2);color:var(--ink-2);border:1px solid var(--line)}
+/* list rows: one line; details appear when the row is opened */
+#view .tbl tr.click td div.small.muted{display:none}
+/* "More" menu for less-used actions */
+.more-menu{position:relative;display:inline-block}
+.more-menu>summary{list-style:none;cursor:pointer}.more-menu>summary::-webkit-details-marker{display:none}
+.more-list{position:absolute;z-index:30;top:calc(100% + 4px);left:0;min-width:200px;display:flex;flex-direction:column;gap:4px;padding:6px;
+  background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12)}
+.more-list .btn{justify-content:flex-start;width:100%;border-color:transparent}
+/* patient tabs: everyday tabs, then More */
+.ptabs{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.ptabs .sub{margin:0}
+.ptab-more{border:1px dashed var(--line);background:transparent;color:var(--ink-2);padding:7px 14px;border-radius:20px;font:inherit;font-size:13px;cursor:pointer}
+.ptabs-more{margin-top:8px}.ptabs-more .sub{margin:0}
+/* optional fields folded away */
+details.opt{margin:10px 0}details.opt>summary{cursor:pointer;color:var(--accent);font-weight:600;font-size:13px}details.opt[open]>summary{margin-bottom:8px}
+/* AI assistant sits in the top bar instead of floating over the page */
+.top-r .ask-fab{position:static;box-shadow:none;padding:9px 14px;font-size:13px}
+.top-r .ask-fab svg{width:16px;height:16px}
+.adm-part+.adm-part{margin-top:16px}
+
+.top-r{flex-wrap:nowrap}.top-r .lookup{width:min(300px,40vw)}
+@media (max-width:700px){.top-r{flex-wrap:wrap}.top-r .lookup{width:100%}}
+.ptabs .sub{flex-wrap:wrap}

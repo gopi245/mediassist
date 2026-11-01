@@ -213,6 +213,9 @@ const docSelect = (docs, name = "doctor_id", sel = "", none = "Any doctor") => `
 const tbl = (head, rowsHtml, empty = "Nothing here yet.") => `<div class="tbl"><table><tr>${head.map(h => `<th${/^#|₹|Qty|Amount|Total|Due|Paid|Balance|Days|Rate/.test(h) ? ' class="num"' : ""}>${h}</th>`).join("")}</tr>${rowsHtml || `<tr><td colspan="${head.length}" class="empty">${empty}</td></tr>`}</table></div>`;
 const kpi = (lab, val, sub = "", cls = "", spark = "") => `<div class="kpi"><span class="lab">${lab}</span><span class="val ${cls}">${val}</span><span class="sub">${sub}</span>${spark}</div>`;
 const card = (title, sub, body, right = "") => `<div class="card"><div class="card-h"><div><h2>${title}</h2>${sub ? `<p>${sub}</p>` : ""}</div>${right}</div>${body}</div>`;
+/* Actions bar: the first `keep` buttons stay visible, the rest go under "More". Empty entries are skipped. */
+const actionsBar = (btns, keep = 3) => { const b = btns.filter(Boolean); return b.slice(0, keep).join("") +
+  (b.length > keep ? `<details class="more-menu"><summary class="btn sm ghost">More ▾</summary><div class="more-list">${b.slice(keep).join("")}</div></details>` : ""); };
 const subtabs = (items, cur, act) => `<div class="sub">${items.map(([k, l]) => `<button data-act="${act}" data-k="${k}" class="${k === cur ? "on" : ""}">${l}</button>`).join("")}</div>`;
 function printHtml(html) { const box = $("#printArea"); box.innerHTML = html; document.body.classList.add("printing"); setTimeout(() => { print(); document.body.classList.remove("printing"); }, 50); }
 

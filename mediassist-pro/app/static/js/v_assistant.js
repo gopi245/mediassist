@@ -26,7 +26,7 @@ async function assistantBoot() {
   const fab = document.createElement("button");
   fab.id = "askFab"; fab.className = "ask-fab"; fab.dataset.act = "askOpen"; fab.setAttribute("aria-label", "Ask the AI assistant");
   fab.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c4.97 0 9 3.36 9 7.5S16.97 18 12 18c-.9 0-1.77-.1-2.6-.3L4 20l1.4-4.1C3.9 14.6 3 12.6 3 10.5 3 6.36 7.03 3 12 3z"/></svg><span>Ask AI</span>`;
-  document.body.appendChild(fab);
+  ($(".top-r") || document.body).appendChild(fab);
 }
 
 function askPanel() {

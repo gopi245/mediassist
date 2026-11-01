@@ -64,19 +64,23 @@ async function openPatient(id, tab = "summary") {
     ${adm ? `<div class="bedinfo"><span class="bedinfo-ic" aria-hidden="true">🛏</span><div style="flex:1;min-width:0"><b>Admitted · ${esc(adm.ward || "")}${adm.room ? ` · Room ${esc(adm.room)}` : ""} · Bed ${esc(adm.bed || "?")}</b>
       <div class="small">${esc(adm.bed_kind || "")}${adm.ac ? ", AC" : adm.bed_kind ? ", Non-AC" : ""} · <span class="mono">${esc(adm.ip_no)}</span> · ${esc(adm.bname)} · since ${esc(adm.admitted_at)}${adm.dname ? ` · ${esc(adm.dname)}` : ""}</div></div>
       ${(can("ipd") || can("admit")) && App.me.branch && App.me.branch.id === adm.branch_id ? `<button class="btn sm" data-act="go" data-v="ipd" data-p="a/${adm.id}">Open admission</button>` : ""}</div>` : ""}
-    <div class="row-actions" style="margin:12px 0">
-      ${can("visit_create") && H_() ? `<button class="btn sm" data-act="queuePatient" data-id="${p.id}">Add to OPD queue</button>` : ""}
-      ${can("appointments") && H_() ? `<button class="btn sm ghost" data-act="bookFor" data-id="${p.id}">Book appointment</button>` : ""}
-      ${can("admit") && H_() && !adm ? `<button class="btn sm ghost" data-act="go" data-v="ipd" data-p="admit/${p.id}">Admit / assign bed</button>` : ""}
-      ${can("billing") && PH_() ? `<button class="btn sm ghost" data-act="go" data-v="billing" data-p="p/${p.id}">Pharmacy bill</button>` : ""}
-      ${can("hbilling") && H_() ? `<button class="btn sm ghost" data-act="go" data-v="hbilling" data-p="new/${p.id}">Hospital bill</button>` : ""}
-      <button class="btn sm ghost" data-act="portalOpen" data-id="${p.id}">Patient's records link</button>
-      ${can("patients_write") ? `<button class="btn sm ghost" data-act="editPatient">Edit details</button>` : ""}
-      ${can("admin") ? `<button class="btn sm ghost" data-act="exportPatient" data-id="${p.id}">Export records</button><button class="btn sm ghost" data-act="erasePatient" data-id="${p.id}">Erase (DPDP)</button>` : ""}
-    </div>${subtabs(tabs, tab, "pTab")}<div id="pTabBody"></div>`;
+    <div class="row-actions" style="margin:12px 0">${actionsBar([
+      can("billing") && PH_() && App.me.role === "pharmacist" ? `<button class="btn sm" data-act="go" data-v="billing" data-p="p/${p.id}">Pharmacy bill</button>` : "",
+      can("visit_create") && H_() ? `<button class="btn sm" data-act="queuePatient" data-id="${p.id}">Add to OPD queue</button>` : "",
+      can("appointments") && H_() ? `<button class="btn sm ghost" data-act="bookFor" data-id="${p.id}">Book appointment</button>` : "",
+      can("admit") && H_() && !adm ? `<button class="btn sm ghost" data-act="go" data-v="ipd" data-p="admit/${p.id}">Admit</button>` : "",
+      can("hbilling") && H_() ? `<button class="btn sm ghost" data-act="go" data-v="hbilling" data-p="new/${p.id}">Hospital bill</button>` : "",
+      can("billing") && PH_() && App.me.role !== "pharmacist" ? `<button class="btn sm ghost" data-act="go" data-v="billing" data-p="p/${p.id}">Pharmacy bill</button>` : "",
+      can("patients_write") ? `<button class="btn sm ghost" data-act="editPatient">Edit details</button>` : "",
+      `<button class="btn sm ghost" data-act="portalOpen" data-id="${p.id}">Patient's records link</button>`,
+      can("admin") ? `<button class="btn sm ghost" data-act="exportPatient" data-id="${p.id}">Export records</button>` : "",
+      can("admin") ? `<button class="btn sm ghost" data-act="erasePatient" data-id="${p.id}">Erase (DPDP)</button>` : ""], 3)}
+    </div>${(() => { const main_ = ["summary", "visits", "labs", "money", "docs", ...(p.admissions.length ? ["ipd"] : [])], a_ = tabs.filter(x => main_.includes(x[0])), b_ = tabs.filter(x => !main_.includes(x[0])), open = b_.some(x => x[0] === tab);
+      return `<div class="ptabs">${subtabs(a_, tab, "pTab").replace(/<\/div>$/, `<button type="button" class="ptab-more" data-act="pMore">${open ? "Less ▴" : "More ▾"}</button></div>`)}</div><div class="ptabs-more" ${open ? "" : "hidden"}>${subtabs(b_, tab, "pTab")}</div>`; })()}<div id="pTabBody"></div>`;
   box.dataset.id = id; renderPTab(tab);
 }
 on("pTab", el => { $$("#pProfile .sub button").forEach(b => b.classList.toggle("on", b === el)); renderPTab(el.dataset.k); });
+on("pMore", el => { const box = $("#pProfile .ptabs-more"); box.hidden = !box.hidden; el.textContent = box.hidden ? "More ▾" : "Less ▴"; });
 function renderPTab(tab) {
   const p = App.cache.patient, el = $("#pTabBody");
   if (tab === "summary") {

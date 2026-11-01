@@ -1,10 +1,15 @@
 /* Admin: branches, staff, settings, import, backups, audit, error log. */
 "use strict";
 RENDER.admin = async (main, [pane]) => {
-  const tabs = [["start", "Getting started"], ["branches", "Branches"], ["staff", "Staff"], ["settings", "Settings"], ["import", "Import data"], ["backups", "Backups"], ["audit", "Audit trail"], ["errors", "Error log"]].filter(x => can("admin") || x[0] === "audit");
-  pane = pane || App.cache.admPane || tabs[0][0]; App.cache.admPane = pane;
-  main.innerHTML = subtabs(tabs, pane, "admTab2") + `<div id="admBody2"></div>`;
-  await ADM[pane]($("#admBody2"));
+  const groups = { start: ["start"], team: ["branches", "staff"], settings: ["settings"], data: ["import", "backups"], logs: ["audit", "errors"] };
+  const tabs = [["start", "Getting started"], ["team", "Branches & staff"], ["settings", "Settings"], ["data", "Data & backups"], ["logs", "Activity log"]].filter(x => can("admin") || x[0] === "logs");
+  const old = { branches: "team", staff: "team", import: "data", backups: "data", audit: "logs", errors: "logs" };
+  pane = old[pane] || pane || old[App.cache.admPane] || App.cache.admPane || tabs[0][0];
+  if (!tabs.some(x => x[0] === pane)) pane = tabs[0][0];
+  App.cache.admPane = pane;
+  const parts = groups[pane].filter(k => can("admin") || k === "audit");
+  main.innerHTML = subtabs(tabs, pane, "admTab2") + parts.map(k => `<div id="adm_${k}" class="adm-part"></div>`).join("");
+  for (const k of parts) await ADM[k]($("#adm_" + k));
 };
 on("admTab2", el => go("admin", [el.dataset.k]));
 const ADM = {};
@@ -102,6 +107,6 @@ ADM.audit = async el => {
   App.cache.auRows = off ? (App.cache.auRows || []).concat(page) : page; const l = App.cache.auRows;
   el.innerHTML = card("Audit trail", "Every action with who, when and where", `<input data-input="auQ" value="${esc(App.cache.auQ || "")}" placeholder="Search action, detail or user (e.g. OVERRIDE, refund, erase)">` + tbl(["When", "User", "Branch", "Action", "Detail"], l.map(a => `<tr><td class="mono">${a.at}</td><td>${esc(a.username || "public")}</td><td>${esc(a.code || "")}</td><td class="mono">${esc(a.action)}</td><td class="small">${/OVERRIDE/.test(a.detail || "") ? pill("override", "p-crit") + " " : ""}${esc(a.detail || "")}</td></tr>`).join("")), `<button class="btn sm ghost" data-act="auMore">Load 200 more</button>`);
 };
-on("auQ", debounce(el => { App.cache.auQ = el.value; App.cache.auOff = 0; ADM.audit($("#admBody2")); }, 400));
-on("auMore", () => { App.cache.auOff = (App.cache.auOff || 0) + 200; ADM.audit($("#admBody2")); });
+on("auQ", debounce(el => { App.cache.auQ = el.value; App.cache.auOff = 0; ADM.audit($("#adm_audit")); }, 400));
+on("auMore", () => { App.cache.auOff = (App.cache.auOff || 0) + 200; ADM.audit($("#adm_audit")); });
 ADM.errors = async el => { const l = await api("/api/errors"); el.innerHTML = card("Server errors", "Share these with your developer if something breaks", tbl(["When", "Request", "Error"], l.map(e => `<tr><td class="mono">${e.at}</td><td class="mono small">${esc(e.method)} ${esc(e.path)}</td><td class="small">${esc(e.error)}</td></tr>`).join(""), "No errors logged.")); };
