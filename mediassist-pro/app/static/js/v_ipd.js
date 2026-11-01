@@ -132,7 +132,7 @@ on("marStop", async el => { await api(`/api/mar/${el.dataset.id}/stop`, {}); reA
 on("dailyStart", async f => { const s = svcByName(vals(f).svc); if (!s) return toast("Choose a service from the list."); await api(`/api/admissions/${App.cache.adm.id}/daily`, { service_id: s.id }); toast("Started. It will be billed each day."); reAdm(); });
 on("dailyStop", async el => { await api(`/api/admissions/${App.cache.adm.id}/daily/${el.dataset.id}/stop`, {}); toast("Stopped"); reAdm(); });
 on("admCharge", async f => { const v = vals(f), s = svcByName(v.svc); if (!s) return toast("Choose a service from the list."); await api(`/api/admissions/${App.cache.adm.id}/charges`, { service_id: s.id, qty: v.qty }); toast("Charge added"); reAdm(); });
-on("admDeposit", async f => { await api(`/api/admissions/${App.cache.adm.id}/deposit`, vals(f)); toast("Deposit recorded"); reAdm(); });
+on("admDeposit", async f => { const r = await api(`/api/admissions/${App.cache.adm.id}/deposit`, vals(f)); toast("Deposit recorded" + waSent(r)); reAdm(); });
 on("admLab", async () => {
   const tests = await api("/api/lab/tests");
   const v = await dialog("Order lab tests", tests.map(t_ => `<label class="check"><input type="checkbox" name="t${t_.id}"> ${esc(t_.name)}</label>`).join("") + `<label>Priority</label><select name="priority"><option value="routine">Routine</option><option value="urgent">Urgent</option><option value="stat">STAT</option></select>`, { ok: "Order" });

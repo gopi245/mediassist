@@ -16,7 +16,7 @@ RENDER.tracker = async (main) => {
         <div class="trk-now ${r.stuck.length ? "bad" : r.done ? "ok" : ""}">${esc(r.now)}</div></div>
       <ol class="trk-steps">${r.steps.map(s => `<li class="s-${s.state}" title="${esc(s.note)}"><span class="dot">${TRK_ICON[s.state]}</span><span class="lbl">${esc(s.label)}${s.at ? ` <span class="mono">${s.at}</span>` : ""}</span>${s.note ? `<span class="small muted">${esc(s.note)}</span>` : ""}</li>`).join("")}</ol>
       ${r.stuck.length ? `<div class="trk-why">${r.stuck.map(x => `<span>⚠ ${esc(x)}</span>`).join("")}</div>` : ""}
-      <div class="row-actions"><button class="btn sm ghost" data-act="go" data-v="patients" data-p="${r.patient_id}">Patient</button>${r.kind === "ipd" ? `<button class="btn sm ghost" data-act="go" data-v="ipd" data-p="a/${r.id}">Admission</button>` : ""}
+      <div class="row-actions">${can("hbilling") && r.kind !== "ipd" && (r.steps || []).some(s => s.key === "bill" && s.state === "late") ? `<button class="btn sm" data-act="go" data-v="hbilling" data-p="new/${r.patient_id}">Collect payment</button>` : ""}<button class="btn sm ghost" data-act="go" data-v="patients" data-p="${r.patient_id}">Patient</button>${r.kind === "ipd" ? `<button class="btn sm ghost" data-act="go" data-v="ipd" data-p="a/${r.id}">Admission</button>` : ""}
         ${r.phone ? `<span class="small muted mono">${esc(r.phone)}</span>` : ""}</div></div>`).join("") || `<div class="card"><p class="empty">${f === "stuck" ? "Nobody is stuck. All moving." : "No patients here."}</p></div>`}</div>`;
 };
 on("trkTab", el => { App.cache.trkTab = el.dataset.k; go("tracker"); });

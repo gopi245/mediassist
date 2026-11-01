@@ -323,8 +323,11 @@ def api_order_pay(h, c, b, q, oid):
         c.execute("INSERT INTO payments(branch_id,invoice_id,at,mode,amount_p,ref,user_id,kind) VALUES(?,?,?,?,?,?,?,?)",
                   (inv["branch_id"], inv["id"], now_str(), mode, amount, ref, h.user["id"], "payment"))
         audit(c, h, "lab.pay", f"LAB{o['id']} {inv['inv_no']} {rs(amount)} {mode} {ref}")
-        return dict(pay_state(c, dict(o, invoice_id=inv["id"])), collected=R(amount))
-    return in_tx(c, run)
+        return dict(pay_state(c, dict(o, invoice_id=inv["id"])), collected=R(amount), _amount=amount)
+    out = in_tx(c, run)
+    from .m_billing import invoice_receipt
+    out["sent"] = invoice_receipt(c, h, {"id": out["invoice_id"]}, out.pop("_amount"), mode)
+    return out
 
 
 @route("GET", r"/api/lab/orders/(\d+)", "patients_read")

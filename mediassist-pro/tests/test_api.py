@@ -1450,8 +1450,7 @@ class T34PharmacyInpatientBilling(unittest.TestCase):
         self.assertEqual(doc.ok(f"/api/admissions/{aid}")["bill"]["pharmacy_credit"], r["total"], "credit shows on the running inpatient bill")
         b = ph.ok(f"/api/bills/{r['id']}")
         self.assertEqual((b["ip_no"], b["stay_open"]), (ip_no, True))
-        st, e = ph.post(f"/api/bills/{r['id']}/settle", {"mode": "cash"})
-        self.assertEqual(st, 400, "an open stay's credit is collected at discharge"); self.assertIn(ip_no, e["error"])
+        self.assertEqual(Client("lab.ch").post(f"/api/bills/{r['id']}/settle", {"mode": "cash"})[0], 403, "no billing access, no collection")
 
         # Schedule H: needs the doctor's ward order; then the admitting doctor is the prescriber on the bill
         st, e = ph.post("/api/bills", {"patient_id": pid, "items": line(h_med), "pay_mode": "credit", "override": True})
@@ -1563,3 +1562,26 @@ class T37LabPayment(unittest.TestCase):
         ip = doc.ok("/api/lab/orders", {"patient_id": pid, "admission_id": aid, "tests": [tests["CBC"]["id"]]})["id"]
         self.assertEqual(head.ok(f"/api/lab/orders/{ip}")["payment"]["label"], "On inpatient bill")
         self.assertEqual(head.post(f"/api/lab/orders/{ip}/pay", {"mode": "cash"})[0], 400)
+
+
+class T38PaymentsAnywhere(unittest.TestCase):
+    """The pharmacist can collect the consultation fee like reception, and every payment sends the patient a WhatsApp receipt."""
+    def test_pharmacist_collects_and_receipts_go_out(self):
+        rec, doc, ph, own = Client("reception.ch"), Client("dr.rao"), Client("pharma.ch"), Client("owner")
+        pid = rec.ok("/api/patients", {"name": "Receipt Test", "phone": "9000038381", "age": 30, "gender": "Male", "consent": True, "force": True})["id"]
+        v = rec.ok("/api/visits", {"patient_id": pid, "complaint": "headache"})["id"]
+        doc.ok(f"/api/visits/{v}/start", {})
+        doc.ok(f"/api/visits/{v}/complete", {"diagnosis": "Tension headache", "items": []})
+        u = ph.ok(f"/api/patients/{pid}/unbilled")
+        self.assertEqual([x["id"] for x in u["visits"]], [v], "the pharmacist sees the unbilled consultation")
+        svc = next(s for s in ph.ok("/api/services") if s["name"] == "OPD consultation, general")
+        inv = ph.ok("/api/invoices", {"patient_id": pid, "visit_id": v, "items": [{"service_id": svc["id"]}], "pay_now": svc["rate_p"] / 200, "mode": "cash"})
+        self.assertEqual(inv["status"], "partial")
+        pay = rec.ok(f"/api/invoices/{inv['id']}/pay", {"amount": svc["rate_p"] / 200, "mode": "upi", "ref": "UPI38"})
+        self.assertEqual(pay["status"], "paid")
+        msgs = [m["body"] for m in own.ok("/api/messages?kind=portal") if inv["inv_no"] in (m["body"] or "")]
+        self.assertTrue(any("received Rs" in m and "Balance due" in m for m in msgs), "receipt after the first part payment")
+        self.assertTrue(any("received Rs" in m and "Fully paid" in m for m in msgs), "receipt after the final payment")
+        trk = ph.ok("/api/tracker")
+        row = next((r for r in trk["opd"] if r["patient_id"] == pid), None)
+        self.assertTrue(row and any(s["key"] == "bill" and s["state"] == "done" for s in row["steps"]), "tracker shows it paid")

@@ -93,6 +93,33 @@ def create_invoice(c, h, pid, items, doctor_id=None, visit_id=None, admission_id
     return one(c, "SELECT * FROM invoices WHERE id=?", (cur.lastrowid,))
 
 
+def send_receipt(c, h, pid, text, pdf=None):
+    """WhatsApp the patient a payment receipt (with their records link and the bill PDF when the portal is on).
+    Never raises: a message problem must not undo a payment. Returns the delivery results, or [] when not sent."""
+    if not pid:
+        return []
+    try:
+        from .core import get_settings
+        if get_settings(c).get("portal_auto", "1") == "1":
+            from .m_portal import share
+            return share(c, pid, text, h.user["id"], pdf=pdf) or []
+        from .notify import send_patient
+        return send_patient(c, pid, "receipt", text)
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def invoice_receipt(c, h, inv, amount_p, mode):
+    """'Received Rs X by UPI for bill ... Fully paid / Balance Rs Y.' for one invoice payment."""
+    inv = one(c, "SELECT * FROM invoices WHERE id=?", (inv["id"],))
+    st = inv_state(c, inv)
+    br = one(c, "SELECT name FROM branches WHERE id=?", (inv["branch_id"],))["name"]
+    bal = st["patient_due_p"] if "patient_due_p" in st else st["due_p"]
+    text = (f"{br}: received Rs {R(amount_p):.2f} ({mode.upper()}) for bill {inv['inv_no']}. "
+            + ("Fully paid. Thank you." if bal <= 0 else f"Balance due Rs {R(bal):.2f}."))
+    return send_receipt(c, h, inv["patient_id"], text, pdf=("invoice", inv["id"]))
+
+
 # ---------------------------------------------------------------- services
 @route("GET", "/api/services", "patients_read")
 def api_services(h, c, b, q):
@@ -171,9 +198,12 @@ def api_invoice(h, c, b, q):
         audit(c, h, "invoice.create", f"{inv['inv_no']} {pcode(pid)} {rs(inv['total_p'])}" + (f" paid {rs(pay)} {mode}" if pay else "") + (f" claim {ins.get('tpa')}" if ins else ""))
         return inv
     inv = in_tx(c, run)
-    from .m_portal import share
-    share(c, pid, f"{one(c, 'SELECT name FROM branches WHERE id=?', (inv['branch_id'],))['name']}: your bill {inv['inv_no']} for Rs {R(inv['total_p']):.2f} is ready.", h.user["id"], pdf=("invoice", inv["id"]))
-    return {"ok": True, "id": inv["id"], "inv_no": inv["inv_no"], **{k: R(v) if k.endswith("_p") else v for k, v in inv_state(c, inv).items()}}
+    if pay:
+        sent = invoice_receipt(c, h, inv, pay, mode)
+    else:
+        br_name = one(c, "SELECT name FROM branches WHERE id=?", (inv["branch_id"],))["name"]
+        sent = send_receipt(c, h, pid, f"{br_name}: your bill {inv['inv_no']} for Rs {R(inv['total_p']):.2f} is ready.", ("invoice", inv["id"]))
+    return {"ok": True, "id": inv["id"], "inv_no": inv["inv_no"], "sent": sent, **{k: R(v) if k.endswith("_p") else v for k, v in inv_state(c, inv).items()}}
 
 
 @route("GET", "/api/invoices", "hbilling")
@@ -230,7 +260,8 @@ def api_pay(h, c, b, q, iid):
         c.execute("INSERT INTO payments(branch_id,invoice_id,at,mode,amount_p,ref,user_id,kind) VALUES(?,?,?,?,?,?,?,?)", (h.branch, inv["id"], now_str(), mode, amt, ref, h.user["id"], "payment"))
         audit(c, h, "invoice.payment", f"{inv['inv_no']} {rs(amt)} {mode} {ref}")
     in_tx(c, run)
-    return {"ok": True, **{k: R(v) if k.endswith("_p") else v for k, v in inv_state(c, inv).items()}}
+    sent = invoice_receipt(c, h, inv, amt, mode)
+    return {"ok": True, "sent": sent, **{k: R(v) if k.endswith("_p") else v for k, v in inv_state(c, inv).items()}}
 
 
 @route("POST", r"/api/invoices/(\d+)/cancel", "hbilling")

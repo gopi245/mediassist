@@ -34,7 +34,7 @@ ROLES = {
                "ipd", "admit", "certificates", "documents"},
     "nurse": {"patients_read", "visit_create", "ipd", "ipd_nursing", "admit", "appointments", "documents"},
     "reception": {"patients_read", "patients_write", "visit_create", "hbilling", "admit", "appointments", "documents"},
-    "pharmacist": {"patients_read", "billing", "stock", "documents"},
+    "pharmacist": {"patients_read", "billing", "stock", "documents", "hbilling"},
     "lab_tech": {"patients_read", "lab", "documents"},
     "lab_incharge": {"patients_read", "lab", "lab_verify", "lab_admin", "reports", "documents"},
     "accountant": {"patients_read", "reports", "accounts", "hbilling", "documents"},

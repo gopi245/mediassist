@@ -426,7 +426,11 @@ def api_settle_bill(h, c, b, q, bid):
         c.execute("UPDATE bills SET settled_at=?, settled_mode=?, settled_invoice_id=NULL WHERE id=?", (now_str(), mode, bl["id"]))
         audit(c, h, "bill.settle", f"{bl['bill_no']} {rs(bl['total_p'] - bl['returned_p'])} {mode} {ref}")
         return R(bl["total_p"] - bl["returned_p"])
-    return {"ok": True, "amount": in_tx(c, run)}
+    amount = in_tx(c, run)
+    bl = one(c, "SELECT b.*, br.name bname FROM bills b JOIN branches br ON br.id=b.branch_id WHERE b.id=?", (int(bid),))
+    from .m_billing import send_receipt
+    sent = send_receipt(c, h, bl["patient_id"], f"{bl['bname']}: received Rs {amount:.2f} ({mode.upper()}) for pharmacy bill {bl['bill_no']}. Fully paid. Thank you.", ("bill", bl["id"]))
+    return {"ok": True, "amount": amount, "sent": sent}
 
 
 # ---------------------------------------------------------------- adverse drug reactions

@@ -34,7 +34,7 @@ on("labPay", async el => {
     <label>UPI / card reference</label><input name="ref" placeholder="needed for UPI and card">`, { ok: "Mark as paid" });
   if (!v) return;
   const r = await withBusy(el, () => api(`/api/lab/orders/${o.id}/pay`, v));
-  toast(`Collected ${money(r.collected)} · ${r.label}${r.inv_no ? " · receipt " + r.inv_no : ""}`); go("lab", ["o", o.id]);
+  toast(`Collected ${money(r.collected)} · ${r.label}${r.inv_no ? " · receipt " + r.inv_no : ""}${waSent(r)}`); go("lab", ["o", o.id]);
 });
 on("labTab", el => { App.cache.labSt = el.dataset.k; go("lab"); });
 on("labNew", async f => {

@@ -216,6 +216,8 @@ const card = (title, sub, body, right = "") => `<div class="card"><div class="ca
 /* Actions bar: the first `keep` buttons stay visible, the rest go under "More". Empty entries are skipped. */
 const actionsBar = (btns, keep = 3) => { const b = btns.filter(Boolean); return b.slice(0, keep).join("") +
   (b.length > keep ? `<details class="more-menu"><summary class="btn sm ghost">More ▾</summary><div class="more-list">${b.slice(keep).join("")}</div></details>` : ""); };
+/* After a payment: say whether the WhatsApp receipt went out. */
+const waSent = r => !r || !r.sent || !r.sent.length ? "" : r.sent.some(x => x.ok) ? " · receipt sent on WhatsApp" : r.sent[0].wa_link ? " · WhatsApp not set up" : "";
 const subtabs = (items, cur, act) => `<div class="sub">${items.map(([k, l]) => `<button data-act="${act}" data-k="${k}" class="${k === cur ? "on" : ""}">${l}</button>`).join("")}</div>`;
 function printHtml(html) { const box = $("#printArea"); box.innerHTML = html; document.body.classList.add("printing"); setTimeout(() => { print(); document.body.classList.remove("printing"); }, 50); }
 

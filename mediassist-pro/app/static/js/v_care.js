@@ -153,7 +153,7 @@ async function criticalCard(main) {
 on("settleBill", async el => {
   const v = await dialog(`Collect ${money(el.dataset.amt)} for ${el.dataset.no}`, `<label>Mode</label><select name="mode"><option value="cash">Cash</option><option value="upi">UPI</option><option value="card">Card</option></select><label>Reference</label><input name="ref">`, { ok: "Record payment" });
   if (!v) return;
-  const r = await api(`/api/bills/${el.dataset.id}/settle`, v); toast(`Collected ${money(r.amount)}`);
+  const r = await api(`/api/bills/${el.dataset.id}/settle`, v); toast(`Collected ${money(r.amount)}${waSent(r)}`);
   const inp = $("[data-input=hbPat]"); if (inp) ACTIONS.hbPat(inp);
   if (App.view === "billing" && App.cache.bill && App.cache.bill.id === +el.dataset.id) ACTIONS.viewBill({ dataset: { id: el.dataset.id } });
 });

@@ -59,7 +59,7 @@ on("hSave", async f => {
   if (!INV.length) return toast("Add at least one service.");
   const body = { patient_id: pid, doctor_id: $("[name=doctor_id]").value || null, visit_id: App.cache.hVisit || null, discount: v.discount, pay_now: v.pay_now, mode: v.mode, ref: v.ref, notes: v.notes,
     items: INV.map(l => ({ service_id: l.service_id, qty: l.qty, rate: l.rate, disc: l.disc, ref: l.ref })), insurance: v.ins_on ? { tpa: v.tpa, policy: v.policy, claim_no: v.claim_no, requested: v.requested, icd: v.icd } : null };
-  const r = await api("/api/invoices", body); INV = []; App.cache.hVisit = null; toast(`Invoice ${r.inv_no} saved · ${INV_ST[r.status][0]}`); go("hbilling", ["inv", r.id]);
+  const r = await api("/api/invoices", body); INV = []; App.cache.hVisit = null; toast(`Invoice ${r.inv_no} saved · ${INV_ST[r.status][0]}${waSent(r)}`); go("hbilling", ["inv", r.id]);
 });
 HB.list = async el => {
   const flt = App.cache.invFlt || "open", q = App.cache.invQ || "", off = App.cache.invOff || 0;
@@ -104,7 +104,7 @@ async function payCard(kind, id, box) {
 on("payRequest", async el => { try { const r = await withBusy(el, () => api(`/api/invoices/${el.dataset.id}/paylink`, { send: true })); const s = (r.sent || [])[0]; toast(s ? (s.ok ? "Payment request sent on WhatsApp" : "WhatsApp isn't set up: see Reports > Messages to send by hand") : "Nothing sent"); } catch (e) { toast(e.message); } });
 new MutationObserver(() => { const box = $("#payBox"); if (box && !box.dataset.done && App.cache.inv) { box.dataset.done = 1; payCard("invoice", App.cache.inv.id, box); } const bb = $("#payBoxBill"); if (bb && !bb.dataset.done && App.cache.bill) { bb.dataset.done = 1; payCard("bill", App.cache.bill.id, bb); } }).observe(document.documentElement, { childList: true, subtree: true });
 on("dlPack", el => download(`/api/claims/${el.dataset.id}/pack`));
-on("invPay", async f => { const r = await api(`/api/invoices/${App.cache.inv.id}/pay`, vals(f)); toast(`Received · ${INV_ST[r.status][0]}`); reInv(); });
+on("invPay", async f => { const r = await api(`/api/invoices/${App.cache.inv.id}/pay`, vals(f)); toast(`Received · ${INV_ST[r.status][0]}${waSent(r)}`); reInv(); });
 on("refundExcess", async el => { const v = await dialog("Refund the excess", `<p>Pay back <b>${money(+el.dataset.a)}</b> to the patient.</p><label>Mode</label><select name="mode"><option value="cash">Cash</option><option value="upi">UPI</option><option value="card">Card</option></select>`, { ok: "Refund" }); if (!v) return; const r = await api(`/api/invoices/${App.cache.inv.id}/refund`, { ...v, amount: el.dataset.a, reason: "Excess deposit returned", excess: true }); toast(`Refunded · credit note ${r.credit_note}`); reInv(); });
 on("invRefund", async f => { if (!await dialog("Issue refund?", "<p>A credit note will be created and the invoice total reduced.</p>", { ok: "Refund", danger: true })) return; const r = await api(`/api/invoices/${App.cache.inv.id}/refund`, vals(f)); toast(`Credit note ${r.credit_note}`); reInv(); });
 on("invCancel", async () => { const v = await dialog("Cancel invoice", `<label>Reason</label><input name="reason" placeholder="e.g. billed to wrong patient">`, { ok: "Cancel invoice", danger: true, cancel: "Keep" }); if (v) { await api(`/api/invoices/${App.cache.inv.id}/cancel`, v); reInv(); } });

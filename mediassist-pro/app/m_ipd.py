@@ -316,7 +316,10 @@ def api_deposit(h, c, b, q, aid):
                   (h.branch, a["id"], now_str(), mode, amt, clean(b, "ref", 40), h.user["id"], "deposit"))
         audit(c, h, "ipd.deposit", f"{a['ip_no']} {rs(amt)} {mode}")
     in_tx(c, run)
-    return {"ok": True}
+    from .m_billing import send_receipt
+    br = one(c, "SELECT name FROM branches WHERE id=?", (a["branch_id"],))["name"]
+    sent = send_receipt(c, h, a["patient_id"], f"{br}: received Rs {R(amt):.2f} ({mode.upper()}) as deposit for admission {a['ip_no']}. Thank you.")
+    return {"ok": True, "sent": sent}
 
 
 # ---------------------------------------------------------------- medication orders & MAR
