@@ -300,7 +300,7 @@ def api_order_pay(h, c, b, q, oid):
     need(can(h, "lab") or can(h, "lab_admin") or can(h, "hbilling"), "Only the lab or the billing desk can collect payment", 403)
     mode, ref = clean(b, "mode", 10) or "cash", clean(b, "ref", 40)
     need(mode in ("cash", "upi", "card"), "Invalid payment mode")
-    need(mode == "cash" or ref, "Enter the UPI or card transaction reference")
+    need(mode != "card" or ref, "Enter the card transaction reference")
 
     def run():
         o = one(c, "SELECT * FROM lab_orders WHERE id=? AND branch_id=?", (int(oid), h.branch))

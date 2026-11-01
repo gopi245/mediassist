@@ -18,7 +18,7 @@ def patient_or_404(c, pid):
 def current_meds(c, pid, exclude_visit=None):
     out, seen = [], set()
     for r in c.execute("SELECT m.*, v.completed_at vdate, r.days FROM rx_items r JOIN visits v ON v.id=r.visit_id JOIN medicines m ON m.id=r.medicine_id "
-                       "WHERE v.patient_id=? AND v.status='done' AND v.id IS NOT ?", (pid, exclude_visit)):
+                       "WHERE v.patient_id=? AND v.status IN ('done','admitted') AND v.id IS NOT ?", (pid, exclude_visit)):
         r = dict(r)
         if r["vdate"] and add_days(r["vdate"], r["days"] or 30) >= today() and r["id"] not in seen:
             seen.add(r["id"])
@@ -104,7 +104,7 @@ def api_patients(h, c, b, q):
 
 @route("POST", "/api/patients", "any")
 def api_add_patient(h, c, b, q):
-    need(can(h, "patients_write") or can(h, "ipd_nursing"), "Your role can't do this", 403)  # nurses register night emergencies
+    need(can(h, "patients_write") or can(h, "ipd_nursing") or can(h, "lab") or can(h, "billing") or can(h, "hbilling"), "Your role can't do this", 403)  # any front desk registers a new arrival
     f = patient_fields(b)
     need(b.get("consent"), "Record the patient's consent to store their health data (DPDP Act) before registering")
     if not b.get("force"):
@@ -487,7 +487,7 @@ def api_rx_pending(h, c, b, q):
     pid = as_int(qget(q, "patient_id"), "patient")
     out = []
     for v in rows(c.execute("SELECT v.*, u.name dname, br.name bname FROM visits v LEFT JOIN users u ON u.id=v.doctor_id JOIN branches br ON br.id=v.branch_id "
-                            "WHERE v.patient_id=? AND v.status='done' AND v.completed_at>=? ORDER BY v.id DESC", (pid, add_days(today(), -30)))):
+                            "WHERE v.patient_id=? AND v.status IN ('done','admitted') AND v.completed_at>=? ORDER BY v.id DESC", (pid, add_days(today(), -30)))):
         items = rows(c.execute("SELECT r.*, m.name, m.schedule, m.pack_size FROM rx_items r JOIN medicines m ON m.id=r.medicine_id WHERE visit_id=? AND dispensed<qty", (v["id"],)))
         if items:
             out.append({"visit_id": v["id"], "date": v["completed_at"], "doctor": v["dname"], "branch": v["bname"], "diagnosis": v["diagnosis"],

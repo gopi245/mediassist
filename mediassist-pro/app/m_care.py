@@ -414,7 +414,7 @@ def api_settle_bill(h, c, b, q, bid):
     need(can(h, "hbilling") or can(h, "billing"), "Your role can't do this", 403)  # hospital billing desk or the pharmacy counter
     mode, ref = clean(b, "mode", 10) or "cash", clean(b, "ref", 40)
     need(mode in ("cash", "upi", "card"), "Invalid payment mode")
-    need(mode == "cash" or ref, "Enter the transaction reference")
+    need(mode != "card" or ref, "Enter the card transaction reference")
 
     def run():
         bl = one(c, "SELECT * FROM bills WHERE id=? AND branch_id=?", (int(bid), h.branch))

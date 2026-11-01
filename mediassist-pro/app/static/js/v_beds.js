@@ -10,12 +10,12 @@ function bedCard(b, opts = {}) {
     const who = b.pname ? `<b>${esc(b.pname)}</b><span class="small muted">${b.age ?? "?"}${(b.gender || " ")[0]} · ${esc(b.diagnosis || "")}</span>` : `<b>Occupied</b>`;
     const soon = b.planned_discharge ? `<span class="small ${b.planned_discharge <= localDay() ? "allergy" : "muted"}">${b.planned_discharge <= localDay() ? "Discharge expected today" : "Discharge planned " + b.planned_discharge.slice(5)}</span>` : "";
     const inner = `${tag}${who}<span class="small muted">${esc(b.dname || "")}${b.admitted_at ? " · since " + b.admitted_at.slice(5, 10) : ""}</span>${soon}`;
-    return b.adm_id && can("ipd") ? `<button class="bed occupied" data-act="go" data-v="ipd" data-p="a/${b.adm_id}">${inner}</button>` : `<div class="bed occupied">${inner}</div>`;
+    return b.adm_id && (can("ipd") || can("admit")) ? `<button class="bed occupied" data-act="go" data-v="ipd" data-p="a/${b.adm_id}">${inner}</button>` : `<div class="bed occupied">${inner}</div>`;
   }
   const mins = b.status === "cleaning" && b.minutes != null ? b.minutes : null;
   const stale = mins != null && mins >= STALE_CLEAN_MIN;
   const acts = [];
-  if (can("ipd") && b.status === "free") acts.push(`<button class="btn sm" data-act="bedAdmit" data-id="${b.id}" data-b="${b.branch_id}">Admit here</button>`);
+  if (can("admit") && b.status === "free") acts.push(`<button class="btn sm" data-act="bedAdmit" data-id="${b.id}" data-b="${b.branch_id}">Admit here</button>`);
   if ((can("ipd_nursing") || can("admit")) && b.status !== "free") acts.push(`<button class="btn sm ${stale ? "" : "ghost"}" data-act="bedFree" data-id="${b.id}">Mark free</button>`);
   if ((can("ipd_nursing") || can("admit")) && b.status === "free") acts.push(`<button class="btn sm ghost" data-act="bedBlock" data-id="${b.id}" title="Take this bed out of use (repair, isolation, reserved)">Block</button>`);
   return `<div class="bed ${b.status}${stale ? " stale" : ""}">${tag}<b>${BED_LABEL[b.status] || b.status}</b>${mins != null ? `<span class="small ${stale ? "allergy" : "muted"}">${mins < 60 ? mins + " min" : Math.floor(mins / 60) + " h " + (mins % 60) + " min"} ago${stale ? " · needs attention" : ""}</span>` : ""}${acts.length ? `<div class="row-actions">${acts.join("")}</div>` : ""}</div>`;

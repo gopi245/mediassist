@@ -70,12 +70,16 @@ def create_invoice(c, h, pid, items, doctor_id=None, visit_id=None, admission_id
         need(o["patient_id"] == pid, f"LAB{oid} belongs to another patient")
         need(o["status"] != "cancelled", f"LAB{oid} was cancelled")
         need(not o["invoice_id"] or o["inv_cancelled"], f"LAB{oid} is already billed")
-        ordered = {r[0]: r[1] for r in c.execute("SELECT t.service_id, t.name FROM lab_order_items i JOIN lab_tests t ON t.id=i.test_id WHERE i.order_id=?", (oid,))}
-        missing = [n for s_, n in ordered.items() if s_ not in sids]
-        extra = sids.count(None) + sum(1 for s_ in sids if s_ is not None and s_ not in ordered)
-        dup = len(sids) - len(set(sids))
+        from collections import Counter
+        rows_ = c.execute("SELECT t.service_id, t.name FROM lab_order_items i JOIN lab_tests t ON t.id=i.test_id WHERE i.order_id=?", (oid,)).fetchall()
+        want, have = Counter(r[0] for r in rows_), Counter(sids)
+        names = {}
+        for s_, n in rows_:
+            names.setdefault(s_, []).append(n)
+        missing = [n for s_, k in (want - have).items() for n in names[s_][:k]]
+        extra = sum((have - want).values())
         need(not missing, f"LAB{oid}: ordered but not on this bill: {', '.join(missing)}. Use 'Add lab tests' so the bill matches the order.")
-        need(not extra and not dup, f"LAB{oid}: this bill has tests the doctor did not order. Bill only what was ordered.")
+        need(not extra, f"LAB{oid}: this bill has tests the doctor did not order. Bill only what was ordered.")
     if h:
         check_discount(c, h, discount_p + sum(ln[5] for ln in lines), sum(round(ln[3] * ln[4]) for ln in lines))
     n = c.execute("SELECT COUNT(*) FROM invoices WHERE branch_id=?", (br["id"],)).fetchone()[0] + 1
@@ -150,7 +154,7 @@ def api_service_save(h, c, b, q):
 def api_unbilled(h, c, b, q, pid):
     pid = int(pid)
     visits = rows(c.execute("SELECT v.id, v.completed_at, v.diagnosis, v.doctor_id, u.name dname FROM visits v LEFT JOIN users u ON u.id=v.doctor_id "
-                            "WHERE v.patient_id=? AND v.branch_id=? AND v.status='done' AND v.completed_at>=? AND NOT EXISTS "
+                            "WHERE v.patient_id=? AND v.branch_id=? AND v.status IN ('done','admitted') AND v.completed_at>=? AND NOT EXISTS "
                             "(SELECT 1 FROM invoices i WHERE i.visit_id=v.id AND i.cancelled_at IS NULL) AND v.complaint<>'Discharge'",
                             (pid, h.branch, add_days(today(), -7))))
     labs = rows(c.execute("SELECT o.id, o.created_at, t.name, t.id test_id, s.id service_id, s.rate_p FROM lab_orders o JOIN lab_order_items i ON i.order_id=o.id "
@@ -181,8 +185,12 @@ def api_invoice(h, c, b, q):
                       "rate_p": rate, "disc_p": P(it.get("disc"), "discount"), "ref": clean(it, "ref", 20) or None})
     pay, mode, ref = P(b.get("pay_now"), "payment"), clean(b, "mode", 10) or "cash", clean(b, "ref", 40)
     need(mode in ("cash", "upi", "card"), "Invalid payment mode")
-    need(not pay or mode == "cash" or ref, "Enter the UPI or card transaction reference")
+    need(not pay or mode != "card" or ref, "Enter the card transaction reference")
     ins = b.get("insurance")
+
+    if b.get("visit_id"):
+        vv = one(c, "SELECT patient_id FROM visits WHERE id=?", (as_int(b["visit_id"], "visit"),))
+        need(vv and vv["patient_id"] == pid, "That consultation belongs to another patient. Pick the patient again.")
 
     def run():
         inv = create_invoice(c, h, pid, items, opt_num(b.get("doctor_id"), int), opt_num(b.get("visit_id"), int), None,
@@ -253,7 +261,7 @@ def api_pay(h, c, b, q, iid):
     amt, mode, ref = P(b.get("amount"), "amount"), clean(b, "mode", 10), clean(b, "ref", 40)
     need(mode in ("cash", "upi", "card"), "Invalid payment mode")
     need(amt > 0, "Enter an amount")
-    need(mode == "cash" or ref, "Enter the transaction reference")
+    need(mode != "card" or ref, "Enter the card transaction reference")
     def run():
         st = inv_state(c, inv)  # inside the write lock so two cashiers can't both take the last due amount
         need(amt <= st["patient_due_p"], f"The patient owes at most {rs(st['patient_due_p'])}")
@@ -384,6 +392,11 @@ def day_receipts(c, bid, day):
     for bl in rows(c.execute("SELECT b.*, u.username FROM bills b LEFT JOIN users u ON u.id=b.user_id WHERE b.branch_id=? AND b.created_at LIKE ?", (bid, day + "%"))):
         if bl["pay_mode"] != "credit":
             rec.append({"at": bl["created_at"], "src": "Pharmacy", "ref": bl["bill_no"], "who": bl["customer"], "mode": bl["pay_mode"], "amount_p": bl["total_p"], "user": bl["username"]})
+    for bl in rows(c.execute("SELECT b.* FROM bills b WHERE b.branch_id=? AND b.settled_at LIKE ? AND b.settled_mode IN ('cash','upi','card')", (bid, day + "%"))):
+        rec.append({"at": bl["settled_at"], "src": "Pharmacy credit paid", "ref": bl["bill_no"], "who": bl["customer"], "mode": bl["settled_mode"],
+                    # what was paid at settlement: the bill less returns made before it was paid (later returns are refunds below)
+                    "amount_p": bl["total_p"] - c.execute("SELECT COALESCE(SUM(amount_p),0) FROM credit_notes WHERE bill_id=? AND mode='credit'", (bl["id"],)).fetchone()[0],
+                    "user": None})
     for cn in rows(c.execute("SELECT cn.*, b.bill_no, b.customer, u.username FROM credit_notes cn JOIN bills b ON b.id=cn.bill_id LEFT JOIN users u ON u.id=cn.user_id "
                              "WHERE cn.branch_id=? AND cn.at LIKE ? AND cn.mode='cash'", (bid, day + "%"))):
         rec.append({"at": cn["at"], "src": "Pharmacy refund", "ref": cn["cn_no"], "who": cn["customer"], "mode": "cash", "amount_p": -cn["amount_p"], "user": cn["username"]})

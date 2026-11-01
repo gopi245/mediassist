@@ -120,7 +120,7 @@ def api_admit(h, c, b, q):
     deposit = P(b.get("deposit"), "deposit")
     mode = clean(b, "mode", 10) or "cash"
     need(mode in ("cash", "upi", "card"), "Invalid payment mode")
-    need(not deposit or mode == "cash" or clean(b, "ref", 40), "Enter the UPI or card reference for the deposit")
+    need(not deposit or mode != "card" or clean(b, "ref", 40), "Enter the card transaction reference for the deposit")
 
     def run():
         n = c.execute("SELECT COUNT(*) FROM admissions WHERE branch_id=?", (br["id"],)).fetchone()[0] + 1
@@ -135,6 +135,8 @@ def api_admit(h, c, b, q):
             c.execute("INSERT INTO payments(branch_id,admission_id,at,mode,amount_p,ref,user_id,kind) VALUES(?,?,?,?,?,?,?,?)",
                       (br["id"], aid, now_str(), mode, deposit, clean(b, "ref", 40), h.user["id"], "deposit"))
         audit(c, h, "ipd.admit", f"{ip} {pcode(pid)} bed {bed['ward']}-{bed['number']}{' deposit ' + rs(deposit) if deposit else ''}")
+        c.execute("UPDATE appointments SET status='done' WHERE id IN (SELECT appointment_id FROM visits WHERE patient_id=? AND branch_id=? "
+                  "AND status IN ('waiting','in_consult') AND appointment_id IS NOT NULL)", (pid, br["id"]))
         c.execute("UPDATE visits SET status='admitted', completed_at=?, diagnosis=COALESCE(diagnosis, ?), notes=TRIM(COALESCE(notes,'') || ' Admitted ' || ?) "
                   "WHERE patient_id=? AND branch_id=? AND status IN ('waiting','in_consult')", (now_str(), clean(b, "diagnosis", 200) or None, ip, pid, br["id"]))
         return {"ok": True, "id": aid, "ip_no": ip}
@@ -267,8 +269,9 @@ def api_note(h, c, b, q, aid):
     return {"ok": True}
 
 
-@route("POST", r"/api/admissions/(\d+)/charges", "ipd")
+@route("POST", r"/api/admissions/(\d+)/charges", "any")
 def api_charge(h, c, b, q, aid):
+    need(can(h, "ipd") or can(h, "hbilling"), "Your role can't do this", 403)  # ward staff or the billing desk
     a = adm_or_404(c, h, int(aid))
     need(a["status"] == "admitted", "Patient is already discharged")
     s = one(c, "SELECT * FROM services WHERE id=? AND active=1", (as_int(b.get("service_id"), "service"),))
@@ -281,8 +284,9 @@ def api_charge(h, c, b, q, aid):
     return {"ok": True}
 
 
-@route("POST", r"/api/admissions/(\d+)/daily", "ipd")
+@route("POST", r"/api/admissions/(\d+)/daily", "any")
 def api_daily_start(h, c, b, q, aid):
+    need(can(h, "ipd") or can(h, "hbilling"), "Your role can't do this", 403)  # ward staff or the billing desk
     """Start a recurring daily charge (monitor, oxygen, ventilator...). It is billed each calendar day until stopped or discharge."""
     a = adm_or_404(c, h, int(aid))
     need(a["status"] == "admitted", "The patient is discharged")
@@ -294,8 +298,9 @@ def api_daily_start(h, c, b, q, aid):
     return {"ok": True}
 
 
-@route("POST", r"/api/admissions/(\d+)/daily/(\d+)/stop", "ipd")
+@route("POST", r"/api/admissions/(\d+)/daily/(\d+)/stop", "any")
 def api_daily_stop(h, c, b, q, aid, did):
+    need(can(h, "ipd") or can(h, "hbilling"), "Your role can't do this", 403)  # ward staff or the billing desk
     a = adm_or_404(c, h, int(aid))
     d = one(c, "SELECT * FROM adm_daily WHERE id=? AND admission_id=? AND to_at IS NULL", (int(did), a["id"]))
     need(d, "This daily charge isn't running", 404)
@@ -310,7 +315,7 @@ def api_deposit(h, c, b, q, aid):
     amt, mode = P(b.get("amount"), "amount"), clean(b, "mode", 10) or "cash"
     need(amt > 0, "Enter an amount")
     need(mode in ("cash", "upi", "card"), "Invalid payment mode")
-    need(mode == "cash" or clean(b, "ref", 40), "Enter the transaction reference")
+    need(mode != "card" or clean(b, "ref", 40), "Enter the card transaction reference")
 
     def run():
         need(one(c, "SELECT 1 FROM admissions WHERE id=? AND status='admitted'", (a["id"],)), "Patient is already discharged")

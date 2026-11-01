@@ -885,7 +885,7 @@ class T20CareRecords(unittest.TestCase):
         u = rec.ok("/api/patients/7/unbilled")
         self.assertTrue(any(x["bill_id"] == cb2["id"] for x in u["credit_bills"]))
         before = rec.ok("/api/dashboard")["report"]
-        self.assertEqual(rec.post(f"/api/bills/{cb2['id']}/settle", {"mode": "upi"})[0], 400, "reference needed")
+        self.assertEqual(rec.post(f"/api/bills/{cb2['id']}/settle", {"mode": "card"})[0], 400, "card needs a reference (UPI by QR does not)")
         s = rec.ok(f"/api/bills/{cb2['id']}/settle", {"mode": "cash"})
         self.assertEqual(s["amount"], cb2["total"])
         self.assertEqual(rec.post(f"/api/bills/{cb2['id']}/settle", {"mode": "cash"})[0], 400, "not twice")
@@ -1490,7 +1490,7 @@ class T35RoleGaps(unittest.TestCase):
         nurse.ok(f"/api/patients/{pid}/reactions", {"drug": "Ceftriaxone", "reaction": "rash", "severity": "moderate"})
         self.assertEqual(nurse.post(f"/api/patients/{pid}", {"name": "Changed"})[0], 403, "editing details stays with reception/doctor")
         self.assertEqual(nurse.post(f"/api/patients/{pid}/problems", {"title": "x"})[0], 403, "problem list stays with doctors")
-        self.assertEqual(Client("pharma.ch").post("/api/patients", {"name": "No", "phone": "9000035352", "age": 30})[0], 403)
+        self.assertEqual(Client("pharma.ch").post("/api/patients", {"name": "No", "phone": "9000035352", "age": 30})[0], 400, "front desk may register; consent still required")
         png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
         acc = Client("accounts")
         d = acc.ok("/api/documents", {"doc_type": "other", "mime": "image/png", "data": png, "note": "electricity bill"})
@@ -1541,7 +1541,7 @@ class T37LabPayment(unittest.TestCase):
         self.assertEqual(tech.post(f"/api/lab/orders/{oid}/verify", {})[0], 403, "lab tech does not release reports")
         self.assertEqual(Client("nurse.ch").post(f"/api/lab/orders/{oid}/pay", {"mode": "cash"})[0], 403)
         # lab in-charge releases the report without a doctor, and collects
-        self.assertEqual(head.post(f"/api/lab/orders/{oid}/pay", {"mode": "upi"})[0], 400, "UPI needs a reference")
+        self.assertEqual(head.post(f"/api/lab/orders/{oid}/pay", {"mode": "card"})[0], 400, "card needs a reference")
         part = tech.ok(f"/api/lab/orders/{oid}/pay", {"mode": "cash", "amount": 100})  # the technician collects at the counter
         self.assertEqual((part["pay"], part["label"], part["collected"]), ("partial", "Part paid", 100))
         full = head.ok(f"/api/lab/orders/{oid}/pay", {"mode": "upi", "ref": "UPI777"})
@@ -1600,4 +1600,52 @@ class T39AdmitFromOpd(unittest.TestCase):
         row = next(r for r in rec.ok("/api/tracker")["opd"] if r["patient_id"] == pid)
         self.assertEqual((row["now"], row["stuck"], row["done"]), ("Admitted", [], True))
         self.assertIn(a["ip_no"], [s for s in row["steps"] if s["key"] == "admit"][0]["note"])
-        self.assertFalse(rec.ok(f"/api/patients/{pid}/unbilled")["visits"], "not waiting at the billing desk")
+        self.assertEqual([x["id"] for x in rec.ok(f"/api/patients/{pid}/unbilled")["visits"]], [vid], "the consultation before admission can still be billed")
+
+
+class T40ScanFixes(unittest.TestCase):
+    """Bugs found in the full scan: settled credit in day closing, returns after payment, unpriced inpatient lab at discharge,
+    appointment closed on admission, wrong consultation on an invoice."""
+    def test_settled_credit_and_returns(self):
+        rec, ph = Client("reception.ch"), Client("pharma.ch")
+        otc = next(r for r in sorted(ph.ok("/api/stock")["summary"], key=lambda r: -(r["usable"] or 0)) if r["schedule"] == "OTC")
+        pid = rec.ok("/api/patients", {"name": "Credit Close", "phone": "9000040401", "age": 40, "gender": "Male", "consent": True, "force": True})["id"]
+        bl = ph.ok("/api/bills", {"patient_id": pid, "items": [{"medicine_id": otc["medicine_id"], "qty": 2, "unit": "unit"}], "pay_mode": "credit", "override": True})
+        before = rec.ok("/api/closing")["expected_cash"]
+        ph.ok(f"/api/bills/{bl['id']}/settle", {"mode": "cash"})
+        self.assertAlmostEqual(rec.ok("/api/closing")["expected_cash"], before + bl["total"], 2, "settled credit is cash received today")
+        item = ph.ok(f"/api/bills/{bl['id']}")["items"][0]
+        r = ph.ok(f"/api/bills/{bl['id']}/return", {"items": [{"bill_item_id": item["id"], "qty": 2}], "reason": "unused"})
+        self.assertAlmostEqual(rec.ok("/api/closing")["expected_cash"], before + bl["total"] - r["refund"], 2, "refund of a paid credit bill leaves the drawer")
+
+    def test_unpriced_lab_discharge_and_appointment(self):
+        own, rec, doc = Client("owner"), Client("reception.ch"), Client("dr.rao")
+        own.branch(1)
+        own.ok("/api/import/lab-tests", {"csv": "code,test,sample,rate,tat_hours,param,unit,low,high,crit_low,crit_high,ref_text\nZZNP,Unpriced test,Serum,,24,Value,u,1,10,,,\n"})
+        t = next(x for x in doc.ok("/api/lab/tests") if x["code"] == "ZZNP")
+        import sqlite3  # the import gives every test a price; make this one unpriced as a real catalogue might
+        db = sqlite3.connect(core.DB_PATH); db.execute("UPDATE lab_tests SET service_id=NULL WHERE id=?", (t["id"],)); db.commit(); db.close()
+        pid = rec.ok("/api/patients", {"name": "Appt To Ward", "phone": "9000040402", "age": 60, "gender": "Female", "consent": True, "force": True})["id"]
+        day = core.today()
+        slots = rec.ok(f"/api/appointments/slots?doctor_id=2&day={day}")
+        if slots:
+            a = rec.ok("/api/appointments", {"patient_id": pid, "doctor_id": 2, "day": day, "slot": slots[0]})
+            rec.ok(f"/api/appointments/{a['id']}/checkin", {})
+        bed = next(b for b in rec.ok("/api/beds") if b["status"] == "free")
+        adm = doc.ok("/api/admissions", {"patient_id": pid, "bed_id": bed["id"], "reason": "Obs"})
+        if slots:
+            st = next(x for x in rec.ok(f"/api/appointments?day={day}") if x["id"] == a["id"])["status"]
+            self.assertEqual(st, "done", "appointment closed when admitted")
+        doc.ok("/api/lab/orders", {"patient_id": pid, "admission_id": adm["id"], "tests": [t["id"]]})
+        d = doc.ok(f"/api/admissions/{adm['id']}/discharge", {"final_diagnosis": "ok", "discharge_type": "normal", "ignore_pending": True, "items": [], "override": True})
+        self.assertTrue(d.get("ok") or d.get("invoice_id"), "discharge is not blocked by an unpriced lab test")
+
+    def test_invoice_visit_must_match_patient(self):
+        rec, doc = Client("reception.ch"), Client("dr.rao")
+        a = rec.ok("/api/patients", {"name": "Visit Owner", "phone": "9000040403", "age": 30, "gender": "Male", "consent": True, "force": True})["id"]
+        b = rec.ok("/api/patients", {"name": "Other Payer", "phone": "9000040404", "age": 30, "gender": "Male", "consent": True, "force": True})["id"]
+        v = rec.ok("/api/visits", {"patient_id": a, "complaint": "x"})["id"]
+        doc.ok(f"/api/visits/{v}/start", {}); doc.ok(f"/api/visits/{v}/complete", {"diagnosis": "x", "items": []})
+        svc = next(s for s in rec.ok("/api/services") if s["name"] == "OPD consultation, general")
+        st, e = rec.post("/api/invoices", {"patient_id": b, "visit_id": v, "items": [{"service_id": svc["id"]}]})
+        self.assertEqual(st, 400); self.assertIn("another patient", e["error"])

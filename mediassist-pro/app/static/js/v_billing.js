@@ -15,7 +15,7 @@ HB.new = async (el, pid) => {
   await loadServices(); const docs = await staff("doctor"); INV = [];
   let pre = ""; if (pid) { const p = await api("/api/patients/" + pid); pre = `${p.code} · ${p.name} · ${p.phone}`; }
   el.innerHTML = `<div class="g-form"><div class="card"><div class="card-h"><div><h2>Patient and services</h2><p>Unbilled consultations and lab tests appear when you pick the patient</p></div></div>
-    <div class="fields">${patInput("patient", pre).replace("<input ", '<input id="hPat" data-change="hbPat" ')}<div><label>Doctor</label>${docSelect(docs, "doctor_id", "", "None")}</div></div>
+    <div class="fields">${patInput("patient", pre).replace("<input ", '<input id="hPat" data-change="hbPat" ')}<div><label>Doctor</label>${docSelect(docs, "doctor_id", "", "None")}</div></div>${newPatBlock()}
     <div id="hUnb" style="margin-top:10px"></div>
     <div class="fields" style="margin-top:10px"><div class="span2"><label>Service</label><input id="hSvc" list="svcOpts"></div><div><label>Qty / days</label><input id="hQty" type="number" min="1" value="1"></div><div style="align-self:end"><button class="btn ghost" data-act="hAdd" style="width:100%;justify-content:center">Add</button></div></div>
     <div id="hLines" style="margin-top:12px"></div></div>
@@ -24,7 +24,7 @@ HB.new = async (el, pid) => {
     <label class="check"><input type="checkbox" name="ins_on" data-change="hDraw"> Insurance / TPA cashless</label>
     <div id="hIns" hidden class="fields"><div><label>Insurer / TPA</label><select name="tpa">${TPAS.map(x => `<option>${x}</option>`).join("")}</select></div><div><label>Policy no.</label><input name="policy"></div><div><label>Pre-auth / claim no.</label><input name="claim_no"></div><div><label>Requested ₹</label><input name="requested" type="number" data-input="hDraw"></div><div><label>ICD-10</label><input name="icd" list="icdOpts" data-input="icdSearch"></div></div>
     <div class="totals" id="hTot"></div>
-    <div class="fields"><div><label>Paid now ₹</label><input name="pay_now" type="number" min="0"></div><div><label>Mode</label><select name="mode"><option value="cash">Cash</option><option value="upi">UPI</option><option value="card">Card</option></select></div><div><label>Reference</label><input name="ref"></div></div>
+    <div class="fields"><div><label>Paid now ₹</label><input name="pay_now" type="number" min="0" step="0.01" data-input="hPayTyped"></div><div><label>Mode</label><select name="mode"><option value="cash">Cash</option><option value="upi">UPI</option><option value="card">Card</option></select></div><div><label>Reference</label><input name="ref"></div></div>
     <div style="margin-top:8px"><label>Note</label><input name="notes"></div><p class="small muted">Anything not paid becomes a due you can collect later.</p>
     <div class="btns"><button class="btn">Save invoice</button></div></form></div>`;
   if (pre) ACTIONS.hbPat($("#hPat"));
@@ -37,13 +37,15 @@ function hDraw() {
   const v = vals(f), disc = Math.min(sub, +v.discount || 0), total = sub - disc, ins = v.ins_on ? Math.min(total, +v.requested || total) : 0;
   $("#hIns").hidden = !v.ins_on;
   $("#hTot").innerHTML = `<div><span>Subtotal</span><b>${money(sub)}</b></div><div><span>Discount</span><b>− ${money(disc)}</b></div>${ins ? `<div><span>Insurance share (requested)</span><b>− ${money(ins)}</b></div>` : ""}<div class="grand"><span>Patient pays</span><b>${money(total - ins)}</b></div>`;
+  if (!f.pay_now.dataset.typed) f.pay_now.value = total - ins > 0 ? (Math.round((total - ins) * 100) / 100) : "";
 }
+on("hPayTyped", el => { el.dataset.typed = el.value === "" ? "" : "1"; });
 on("hDraw", () => hDraw());
 on("hDisc", el => { INV[+el.dataset.i].disc = Math.max(0, +el.value || 0); hDraw(); });
 on("hRm", el => { INV.splice(+el.dataset.i, 1); hDraw(); });
 on("hAdd", () => { const s = svcByName($("#hSvc").value); if (!s) return toast("Choose a service from the list."); INV.push({ service_id: s.id, name: s.name, cat: s.cat, qty: +$("#hQty").value || 1, rate: P2R(s.rate_p), disc: 0 }); $("#hSvc").value = ""; $("#hQty").value = 1; hDraw(); });
 on("hbPat", async el => {
-  const pid = pidOf(el.value); if (!pid) return;
+  App.cache.hVisit = null; const pid = pidOf(el.value); if (!pid) return;
   const u = await api(`/api/patients/${pid}/unbilled`); App.cache.unb = u;
   const cons = svcByName("OPD consultation, general");
   $("#hUnb").innerHTML = (u.dues.length ? alertRow("", `<b>Previous dues:</b> ${u.dues.map(d => `<a href="#hbilling/inv/${d.id}">${d.inv_no}</a> ${money(d.due)}`).join(", ")}`) : "") +
@@ -55,7 +57,7 @@ on("hbPat", async el => {
 on("hVisit", el => { const s = App.cache.consSvc; INV = INV.filter(l => l.cat !== "Consultation"); INV.unshift({ service_id: s.id, name: s.name, cat: s.cat, qty: 1, rate: P2R(s.rate_p), disc: 0 }); App.cache.hVisit = +el.dataset.id; const ds = $("form[data-submit=hSave]") && $("[name=doctor_id]"); if (ds && el.dataset.doc) ds.value = el.dataset.doc; hDraw(); });
 on("hLabs", () => { App.cache.unb.labs.forEach(l => { if (!INV.some(x => x.ref === "LAB" + l.id && x.service_id === l.service_id)) INV.push({ service_id: l.service_id, name: "Lab: " + l.name, cat: "Laboratory", qty: 1, rate: P2R(l.rate_p), disc: 0, ref: "LAB" + l.id }); }); hDraw(); });
 on("hSave", async f => {
-  const v = vals(f), pid = pidOf($("#hPat").value); if (!pid) return toast("Pick the patient.");
+  const v = vals(f), pid = pidOf($("#hPat").value) || await opdPatient($("#hPat").closest(".card")); if (!pid) return;
   if (!INV.length) return toast("Add at least one service.");
   const body = { patient_id: pid, doctor_id: $("[name=doctor_id]").value || null, visit_id: App.cache.hVisit || null, discount: v.discount, pay_now: v.pay_now, mode: v.mode, ref: v.ref, notes: v.notes,
     items: INV.map(l => ({ service_id: l.service_id, qty: l.qty, rate: l.rate, disc: l.disc, ref: l.ref })), insurance: v.ins_on ? { tpa: v.tpa, policy: v.policy, claim_no: v.claim_no, requested: v.requested, icd: v.icd } : null };

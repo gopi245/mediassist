@@ -21,13 +21,14 @@ function patientForm(p, act) {
     <div class="span2"><label>Full name</label><input name="name" value="${esc(p.name)}" required></div><div><label>Mobile</label><input name="phone" inputmode="tel" value="${esc(p.phone)}" required></div>
     <div><label>Date of birth</label><input name="dob" type="date" value="${esc(p.dob)}" max="${localDay()}" data-input="dobAge"></div><div><label>Age</label><input name="age" type="number" min="0" max="130" value="${p.age ?? ""}" placeholder="If DOB not known"></div>
     <div><label>Gender</label><select name="gender">${["Male", "Female", "Other"].map(g => `<option ${p.gender === g ? "selected" : ""}>${g}</option>`).join("")}</select></div>
+    </div><details class="opt" ${p.id ? "open" : ""}><summary>More details: allergies, address, ABHA, pregnancy</summary><div class="fields">
     <div><label>Weight (kg)</label><input name="weight" type="number" step=".1" value="${p.weight ?? ""}"></div><div><label>Blood group</label><input name="blood_group" value="${esc(p.blood_group)}"></div>
     <div><label>Language for messages</label><select name="lang">${[["en", "English"], ["hi", "हिन्दी"], ["te", "తెలుగు"], ["ta", "தமிழ்"]].map(([k, l]) => `<option value="${k}" ${(p.lang || "en") === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
     <div><label>ABHA number (14 digits)</label><input name="abha" inputmode="numeric" value="${esc(p.abha)}"></div><div><label>ABHA address</label><input name="abha_address" value="${esc(p.abha_address)}" placeholder="name@abdm"></div><div class="span2"><label>Address</label><input name="address" value="${esc(p.address)}"></div>
     <div class="span2"><label>Allergies</label><input name="allergies" value="${esc(p.allergies)}" placeholder="penicillin, sulfa, nsaid"></div>
     <div class="span2"><label>Conditions</label><input name="conditions" value="${esc(p.conditions)}" placeholder="asthma, kidney disease, ulcer, heart failure"></div>
     <div><label>LMP (if pregnant)</label><input name="lmp" type="date" value="${esc(p.lmp)}"></div>
-    <div><label>Gravida / Para</label><div style="display:flex;gap:6px"><input name="gravida" type="number" min="0" max="20" value="${p.gravida ?? ""}" placeholder="G"><input name="para" type="number" min="0" max="20" value="${p.para ?? ""}" placeholder="P"></div></div></div>
+    <div><label>Gravida / Para</label><div style="display:flex;gap:6px"><input name="gravida" type="number" min="0" max="20" value="${p.gravida ?? ""}" placeholder="G"><input name="para" type="number" min="0" max="20" value="${p.para ?? ""}" placeholder="P"></div></div></div></details>
     ${p.id ? "" : `<label class="check"><input type="checkbox" name="consent"> Patient agrees to their health data being stored and used for treatment and billing</label>
     <label class="check"><input type="checkbox" name="whatsapp_ok" checked> Send reports and reminders on WhatsApp</label>`}
     <div class="btns"><button class="btn">${p.id ? "Save changes" : "Register patient"}</button></div></form>`;
@@ -35,7 +36,7 @@ function patientForm(p, act) {
 on("pSearch", debounce(el => { App.cache.pq = el.value; listPatients(); }, 250));
 async function listPatients() {
   const l = await api("/api/patients?q=" + encodeURIComponent(App.cache.pq || ""));
-  $("#pList").innerHTML = tbl(["Patient", "Mobile", "Allergies"], l.map(p => `<tr class="click" data-act="openPatient" data-id="${p.id}"><td><b>${esc(p.name)}</b><div class="small muted"><span class="mono">${p.code}</span> · ${p.age ?? "?"}${(p.gender || " ")[0]}</div></td><td class="mono">${esc(p.phone)}</td><td class="allergy small">${esc(p.allergies)}</td></tr>`).join(""), "No match. Register them below.");
+  $("#pList").innerHTML = (l.length >= 50 ? `<p class="small muted">Showing the first 50. Type more of the name or the phone number to narrow it.</p>` : "") + tbl(["Patient", "Mobile", "Allergies"], l.map(p => `<tr class="click" data-act="openPatient" data-id="${p.id}"><td><b>${esc(p.name)}</b><div class="small muted"><span class="mono">${p.code}</span> · ${p.age ?? "?"}${(p.gender || " ")[0]}</div></td><td class="mono">${esc(p.phone)}</td><td class="allergy small">${esc(p.allergies)}</td></tr>`).join(""), "No match. Register them below.");
 }
 const welcomeNote = w => !w ? "" : !w.length ? "" : w[0].ok ? ". Welcome message sent on WhatsApp." : ". Welcome message not sent (WhatsApp isn't set up).";
 on("regPatient", async f => {
@@ -229,9 +230,9 @@ function newPatBlock() {
     <label class="check"><input type="checkbox" name="np_whatsapp" checked> Send bills, reports and reminders on WhatsApp</label></div></div>`;
 }
 on("newPatOpen", el => {
-  const f = el.closest("form"), box = f.querySelector(".newpat-f"); box.hidden = !box.hidden;
+  const f = el.closest("form") || el.closest(".card"), box = f.querySelector(".newpat-f"), q = n => f.querySelector(`[name=${n}]`); box.hidden = !box.hidden;
   el.textContent = box.hidden ? "+ New patient" : "Existing patient instead";
-  if (!box.hidden) { const typed = f.patient.value.trim(); if (/^\d{10}$/.test(typed)) f.np_phone.value = typed; else if (typed && !pidOf(typed)) f.np_name.value = typed; f.patient.value = ""; f.np_name.focus(); }
+  if (!box.hidden) { const typed = q("patient").value.trim(); if (/^\d{10}$/.test(typed)) q("np_phone").value = typed; else if (typed && !pidOf(typed)) q("np_name").value = typed; q("patient").value = ""; q("np_name").focus(); }
 });
 /* The patient for an OPD form: the one picked from the list, or a new one registered from the inline fields. */
 async function opdPatient(f) {
@@ -269,7 +270,8 @@ on("book", async f => {
   const r = await api("/api/appointments", { ...v, patient_id: pid }); toast(`Booked. Token ${r.token}`); go("opd");
 });
 on("checkin", async el => { const r = await api(`/api/appointments/${el.dataset.id}/checkin`, {}); toast(`Checked in. Triage ${r.triage}`); go("opd"); });
-on("apptStatus", async el => { await api(`/api/appointments/${el.dataset.id}/status`, { status: el.dataset.s }); go("opd"); });
+on("cxAll", () => { App.cache.cxAll = !App.cache.cxAll; go("consult"); });
+on("apptStatus", async el => { if (el.dataset.s !== "booked" && !await dialog(el.dataset.s === "no_show" ? "Mark as no-show?" : "Cancel this appointment?", "<p>The slot is freed for someone else.</p>", { ok: "Yes", danger: true })) return; await api(`/api/appointments/${el.dataset.id}/status`, { status: el.dataset.s }); go("opd"); });
 on("cancelVisit", async el => { if (await dialog("Remove from queue?", "<p>The patient will be removed from today's waiting list.</p>", { ok: "Remove", danger: true })) { await api(`/api/visits/${el.dataset.id}/cancel`, {}); go("opd"); } });
 
 /* ================= consultation ================= */
@@ -281,12 +283,14 @@ on("cxAdmit", async () => {
 });
 RENDER.consult = async (main, [vid]) => {
   if (!vid) {
-    const w = await api("/api/visits?status=waiting");
-    main.innerHTML = card("Patients waiting", "Pick a patient to start", tbl(["Priority", "Patient", "Complaint", "Since", ""], w.map(v => `<tr><td>${triPill(v.triage)}</td><td>${esc(v.pname)} <span class="small muted">${v.code}</span></td><td>${esc(v.complaint || "")}</td><td class="mono">${v.created_at.slice(11)}</td><td><button class="btn sm" data-act="go" data-v="consult" data-p="${v.id}">Consult</button></td></tr>`).join(""), "Nobody is waiting."));
+    const all = await api("/api/visits?status=waiting"), showAll = App.cache.cxAll;
+    const w = showAll ? all : all.filter(v => !v.doctor_id || v.doctor_id === App.me.id);
+    main.innerHTML = card("Patients waiting", showAll ? "Every doctor's queue" : `Your patients and unassigned ones (${all.length - w.length} with other doctors)`, tbl(["Priority", "Patient", "Complaint", "Since", ""], w.map(v => `<tr><td>${triPill(v.triage)}</td><td>${esc(v.pname)} <span class="small muted">${v.code}</span></td><td>${esc(v.complaint || "")}</td><td class="mono">${v.created_at.slice(11)}</td><td><button class="btn sm" data-act="go" data-v="consult" data-p="${v.id}">Consult</button></td></tr>`).join(""), "Nobody is waiting."),
+      `<button class="btn sm ghost" data-act="cxAll">${showAll ? "Only mine" : "All doctors"}</button>`);
     return;
   }
   const [d, tpl, tests] = await Promise.all([api("/api/visits/" + vid), api("/api/templates"), api("/api/lab/tests"), loadMeds()]);
-  if (d.visit.status === "waiting") api(`/api/visits/${vid}/start`, {}).catch(() => {});
+  if (d.visit.status === "waiting") setTimeout(() => { const f = $("#cxForm"); if (f) f.addEventListener("input", () => api(`/api/visits/${vid}/start`, {}).catch(() => {}), { once: true }); }, 0);  // claimed on the first thing the doctor writes
   const v = d.visit, p = d.patient;
   CX = { vid: +vid, pid: p.id, items: d.rx.map(r => ({ medicine_id: r.medicine_id, name: r.name, dose: r.dose || "1", freq: r.freq, days: r.days, instructions: r.instructions || "" })), labs: new Set(), tests, tpl, weight: p.weight };
   CX_VISITS = p.visits;

@@ -912,6 +912,8 @@ def api_bill_return(h, c, b, q, bid):
     def run():
         bl = one(c, "SELECT * FROM bills WHERE id=? AND branch_id=?", (int(bid), h.branch))
         need(bl, "Bill not found at this branch", 404)
+        need(not (bl["pay_mode"] == "credit" and bl["settled_mode"] == "invoice"),
+             "This bill is already on the patient's discharge invoice. Take the medicines back and refund from Hospital billing on that invoice.")
         refund = 0
         for it in (b.get("items") or []):
             qty = as_int(it.get("qty") or 0, "return quantity", 0)
@@ -930,11 +932,14 @@ def api_bill_return(h, c, b, q, bid):
                 c.execute("UPDATE rx_items SET dispensed=MAX(0,dispensed-?) WHERE id=?", (qty, bi["rx_item_id"]))
         need(refund, "Nothing to return")
         c.execute("UPDATE bills SET returned_p=returned_p+? WHERE id=?", (refund, bl["id"]))
+        # how the money goes back: an unpaid credit bill just owes less; otherwise the way it was paid
+        paid_by = bl["settled_mode"] if bl["pay_mode"] == "credit" else bl["pay_mode"]
+        refund_mode = "credit" if bl["pay_mode"] == "credit" and not bl["settled_at"] else (paid_by if paid_by in ("cash", "upi", "card") else "cash")
         n = c.execute("SELECT COUNT(*) FROM credit_notes WHERE branch_id=?", (h.branch,)).fetchone()[0] + 1
         br = one(c, "SELECT code FROM branches WHERE id=?", (h.branch,))
         cn = f"{br['code']}/CN/{n:05d}"
         c.execute("INSERT INTO credit_notes(branch_id,cn_no,bill_id,amount_p,reason,at,user_id,mode) VALUES(?,?,?,?,?,?,?,?)",
-                  (h.branch, cn, bl["id"], refund, clean(b, "reason", 200), now_str(), h.user["id"], "cash" if bl["pay_mode"] != "credit" else "credit"))
+                  (h.branch, cn, bl["id"], refund, clean(b, "reason", 200), now_str(), h.user["id"], refund_mode))
         audit(c, h, "bill.return", f"{bl['bill_no']} refund {rs(refund)} credit note {cn}")
         return {"ok": True, "refund": R(refund), "credit_note": cn}
     return in_tx(c, run)

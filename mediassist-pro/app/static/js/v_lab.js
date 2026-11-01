@@ -14,7 +14,7 @@ RENDER.lab = async (main, [mode, id]) => {
   main.innerHTML = `<div class="g-main"><div class="card"><div class="card-h"><div><h2>Worklist</h2><p>STAT and urgent orders first</p></div>${can("lab_admin") ? `<button class="btn sm ghost" data-act="go" data-v="lab" data-p="catalog">Tests & ranges</button>` : ""}</div>
     ${subtabs([["open", "Open"], ["verified", "Done (7 days)"], ["cancelled", "Cancelled"]], st, "labTab")}
     ${tbl(["Order", "Patient", "Tests", "Priority", "Status", "Payment", ""], list.map(o => `<tr class="click" data-act="go" data-v="lab" data-p="o/${o.id}"><td class="mono">LAB${o.id}<div class="small muted">${o.created_at.slice(5)}</div></td><td>${esc(o.pname)} <span class="small muted">${o.code} · ${o.age ?? "?"}${(o.gender || " ")[0]}</span></td><td class="small">${esc(o.tests)}</td><td>${o.priority === "routine" ? "Routine" : pill(o.priority.toUpperCase(), "p-crit")}</td><td>${pill(...LAB_ST[o.status])}</td><td>${payPill(o.payment)}</td><td><button class="btn sm ghost">Open</button></td></tr>`).join(""), "No orders here.")}</div>
-    ${can("visit_create") || can("lab") ? card("New lab order", "Walk-in tests or a doctor's paper prescription", `<form data-submit="labNew" class="stack"><div class="fields">${patInput("patient", pre)}<div><label>Priority</label><select name="priority"><option value="routine">Routine</option><option value="urgent">Urgent</option><option value="stat">STAT</option></select></div></div>
+    ${can("visit_create") || can("lab") ? card("New lab order", "Walk-in tests or a doctor's paper prescription", `<form data-submit="labNew" class="stack"><div class="fields">${patInput("patient", pre)}</div>${newPatBlock()}<div class="fields"><div><label>Priority</label><select name="priority"><option value="routine">Routine</option><option value="urgent">Urgent</option><option value="stat">STAT</option></select></div></div>
       <input data-input="labTestFilter" placeholder="Search tests (${tests.length})" autocomplete="off">
       <div class="stack" style="gap:2px;max-height:340px;overflow:auto">${tests.map(t_ => `<label class="check" style="margin:0" data-name="${esc((t_.name + " " + t_.code).toLowerCase())}"><input type="checkbox" name="t${t_.id}"> ${esc(t_.name)} <span class="muted small">${t_.rate_p ? money(P2R(t_.rate_p)) : ""} · ${t_.sample || ""}</span></label>`).join("")}</div>
       <div class="btns"><button class="btn">Create order</button></div></form>`) : ""}</div>`;
@@ -38,10 +38,10 @@ on("labPay", async el => {
 });
 on("labTab", el => { App.cache.labSt = el.dataset.k; go("lab"); });
 on("labNew", async f => {
-  const v = vals(f), pid = pidOf(v.patient); if (!pid) return toast("Pick the patient from the list.");
+  const v = vals(f), pid = await opdPatient(f); if (!pid) return;
   const tests = Object.keys(v).filter(k => /^t\d+$/.test(k) && v[k]).map(k => +k.slice(1));
   if (!tests.length) return toast("Tick at least one test.");
-  const r = await api("/api/lab/orders", { patient_id: pid, tests, priority: v.priority }); toast(`Order LAB${r.id} created. Bill it in Hospital billing.`); go("lab", ["o", r.id]);
+  const r = await api("/api/lab/orders", { patient_id: pid, tests, priority: v.priority }); toast(`Order LAB${r.id} created. Enter results, then collect the payment.`); go("lab", ["o", r.id]);
 });
 
 const NORMAL_WORDS = new Set(["negative", "neg", "-ve", "absent", "not seen", "nil", "none", "non-reactive", "nonreactive", "non reactive", "normal", "not detected", "nad", "within normal limits", "wnl", "clear"]);
@@ -62,10 +62,10 @@ function labTimeline(o) {
     ${step(!!bill, bill ? `Billed · ${esc(bill.inv_no)}` : "Billed", bill && bill.at, "", bill ? `${money(bill.total)} · ${bill.status === "paid" ? pill("Paid", "p-ok") : pill(bill.status === "insurance" ? "Insurance" : "Due " + money(bill.due), "p-warn")}` : (o.admission_id ? "on the inpatient bill at discharge" : `not paid · ${money(o.payment.due)}${canCollect() ? ` <button type="button" class="btn sm" data-act="labPay">Collect payment</button>` : ""}`))}
     ${step(!!o.collected_at, "Sample collected", o.collected_at, o.collected_name, o.rejections ? `${o.rejections} sample(s) rejected before this one` : "")}
     ${step(!!o.resulted_at, "Results entered", o.resulted_at, o.resulted_name, o.amended_at ? `amended ${o.amended_at.slice(0, 16)}: ${esc(o.amend_reason || "")}` : "")}
-    ${step(!!o.verified_at, "Reviewed and verified by doctor", o.verified_at, o.verified_name, o.interp_reviewed_at ? "explanation for the patient reviewed" : "")}
+    ${step(!!o.verified_at, "Report finished and sent", o.verified_at, o.verified_name, o.interp_reviewed_at ? "explanation for the patient reviewed" : "")}
     ${o.critical ? step(!!(o.ack && o.ack.crit_ack_at), "Critical value acknowledged", o.ack && o.ack.crit_ack_at, o.ack && o.ack.name, "") : ""}
     ${step(!!(o.sent && o.sent.ok), o.sent && !o.sent.ok ? "Report sent to patient (not delivered)" : "Report sent to patient", o.sent && o.sent.at, o.sent ? o.sent.channel : "", o.sent && !o.sent.ok ? "WhatsApp isn't set up; see Reports > Messages" : "")}
-  </div>${unbilled && o.status !== "ordered" ? alertRow("", "This order has results but no bill yet. Bill it from Hospital billing: the bill will match the order exactly.") : ""}`;
+  </div>${unbilled && o.status !== "ordered" ? alertRow("", "Results are in but the payment isn't collected yet. Press Collect.") : ""}`;
 }
 async function labOrder(main, id) {
   const o = await api("/api/lab/orders/" + id); App.cache.labOrder = o;
