@@ -195,7 +195,7 @@ RENDER.opd = async (main, [mode, pid]) => {
       <div class="small muted">${v.code} · ${v.age ?? "?"}${(v.gender || " ")[0]} · ${esc(v.complaint || "")}${v.dname ? " · " + esc(v.dname) : ""}</div>
       <div class="vit"><span class="${v.temp >= 38 ? "bad" : ""}">${v.temp ?? "–"}°C</span><span class="${v.pulse > 100 ? "bad" : ""}">P ${v.pulse ?? "–"}</span><span class="${v.bp_sys > 160 ? "bad" : ""}">BP ${v.bp_sys ?? "–"}/${v.bp_dia ?? "–"}</span><span class="${v.spo2 && v.spo2 < 92 ? "bad" : ""}">SpO₂ ${v.spo2 ?? "–"}</span>${v.sugar ? `<span>RBS ${v.sugar}</span>` : ""}</div>
       ${v.allergies ? `<div class="allergy small">Allergic to ${esc(v.allergies)}</div>` : ""}${v.emergency ? pill("Emergency", "p-crit") : ""}${v.mlc ? pill("MLC" + (v.mlc_no ? " " + esc(v.mlc_no) : ""), "p-warn") : ""}${v.status === "in_consult" ? pill("With doctor", "p-info") : ""}
-      <div class="row-actions" style="margin-top:6px">${can("consult") ? `<button class="btn sm ${lvl === "critical" ? "danger" : ""}" data-act="go" data-v="consult" data-p="${v.id}">Consult</button>` : ""}${can("visit_create") ? `<button class="btn sm ghost" data-act="cancelVisit" data-id="${v.id}">Remove</button>` : ""}</div></div>`).join("") || '<p class="empty">Nobody here.</p>'}</div>`; };
+      <div class="row-actions" style="margin-top:6px">${can("consult") ? `<button class="btn sm ${lvl === "critical" ? "danger" : ""}" data-act="go" data-v="consult" data-p="${v.id}">Consult</button>` : ""}${can("admit") ? `<button class="btn sm ghost" data-act="go" data-v="ipd" data-p="admit/${v.patient_id}">Admit</button>` : ""}${can("visit_create") ? `<button class="btn sm ghost" data-act="cancelVisit" data-id="${v.id}">Remove</button>` : ""}</div></div>`).join("") || '<p class="empty">Nobody here.</p>'}</div>`; };
   main.innerHTML = `<div class="g2">
     ${card("Walk-in arrival", "Existing or new patient: add them to today's queue", `<form data-submit="walkin" class="stack"><div class="fields">${patInput("patient", mode === "walkin" ? pre : "", "Patient (type name, phone or ID)")}</div>${newPatBlock()}
       <div class="fields"><div class="span2"><label>Complaint</label><input name="complaint" placeholder="fever 3 days, cough"></div><div><label>Doctor</label>${docSelect(docs)}</div>
@@ -274,6 +274,11 @@ on("cancelVisit", async el => { if (await dialog("Remove from queue?", "<p>The p
 
 /* ================= consultation ================= */
 let CX = null, CX_VISITS = [];
+on("cxAdmit", async () => {
+  if (!await dialog("Admit this patient?", "<p>The consultation notes you typed are saved with the visit. Choose a bed on the next screen.</p>", { ok: "Choose a bed" })) return;
+  const f = $("#cxForm"); if (f) { const v = vals(f); if (v.diagnosis) App.cache.admitDx = v.diagnosis; }
+  go("ipd", ["admit", CX.pid]);
+});
 RENDER.consult = async (main, [vid]) => {
   if (!vid) {
     const w = await api("/api/visits?status=waiting");
@@ -321,7 +326,7 @@ RENDER.consult = async (main, [vid]) => {
       <h3>Lab tests</h3><div class="row-actions">${tests.map(t_ => `<label class="check" style="margin:0 10px 0 0"><input type="checkbox" data-change="cxLab" value="${t_.id}"> ${esc(t_.name)}</label>`).join("")}</div>
       <div class="fields"><div><label>Lab priority</label><select name="lab_priority"><option value="routine">Routine</option><option value="urgent">Urgent</option><option value="stat">STAT</option></select></div><div><label>Follow-up</label><input name="followup" type="date" value="${esc(v.followup || "")}"></div></div>
       <label class="check"><input type="checkbox" name="add_problem" checked> Add the diagnosis to the problem list (chronic conditions)</label>
-      <div class="btns"><button class="btn">Save and complete</button><button type="button" class="btn ghost" data-act="printRx" data-id="${v.id}">Print ℞</button><select id="rxLang" style="width:auto" title="Also print patient instructions in" aria-label="Also print patient instructions in"><option value="">English only</option><option value="hi">+ हिन्दी</option><option value="te">+ తెలుగు</option><option value="ta">+ தமிழ்</option></select>${v.status === "done" ? `<button type="button" class="btn ghost" data-act="pdfDl" data-p="rx/${v.id}">PDF</button>` : ""}</div></form></div></div>`;
+      <div class="btns"><button class="btn">Save and complete</button>${can("admit") ? `<button type="button" class="btn ghost" data-act="cxAdmit">Admit to ward</button>` : ""}<button type="button" class="btn ghost" data-act="printRx" data-id="${v.id}">Print ℞</button><select id="rxLang" style="width:auto" title="Also print patient instructions in" aria-label="Also print patient instructions in"><option value="">English only</option><option value="hi">+ हिन्दी</option><option value="te">+ తెలుగు</option><option value="ta">+ தமிழ்</option></select>${v.status === "done" ? `<button type="button" class="btn ghost" data-act="pdfDl" data-p="rx/${v.id}">PDF</button>` : ""}</div></form></div></div>`;
   drawCx();
 };
 /* shorthand -> words for the doctor's own eyes; the server does the patient's language */

@@ -135,6 +135,8 @@ def api_admit(h, c, b, q):
             c.execute("INSERT INTO payments(branch_id,admission_id,at,mode,amount_p,ref,user_id,kind) VALUES(?,?,?,?,?,?,?,?)",
                       (br["id"], aid, now_str(), mode, deposit, clean(b, "ref", 40), h.user["id"], "deposit"))
         audit(c, h, "ipd.admit", f"{ip} {pcode(pid)} bed {bed['ward']}-{bed['number']}{' deposit ' + rs(deposit) if deposit else ''}")
+        c.execute("UPDATE visits SET status='admitted', completed_at=?, diagnosis=COALESCE(diagnosis, ?), notes=TRIM(COALESCE(notes,'') || ' Admitted ' || ?) "
+                  "WHERE patient_id=? AND branch_id=? AND status IN ('waiting','in_consult')", (now_str(), clean(b, "diagnosis", 200) or None, ip, pid, br["id"]))
         return {"ok": True, "id": aid, "ip_no": ip}
     r = in_tx(c, run)
     from .m_alerts import on_admit

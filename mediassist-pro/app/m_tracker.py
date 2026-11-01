@@ -34,7 +34,7 @@ def opd_rows(c, bid, day, now):
                             "WHERE v.branch_id=? AND v.created_at LIKE ? AND v.status<>'cancelled' AND v.complaint IS NOT 'Discharge' ORDER BY v.id", (bid, day + "%"))):
         steps, stuck = [step("arrived", "Arrived", "done", v["created_at"], f"token {v['token']}" if v["token"] else "")], []
         # doctor
-        if v["status"] == "done":
+        if v["status"] in ("done", "admitted"):
             steps.append(step("doctor", "Seen by doctor", "done", v["completed_at"], v["dname"] or ""))
         elif v["status"] == "in_consult":
             steps.append(step("doctor", "With doctor", "now", None, v["dname"] or ""))
@@ -44,6 +44,12 @@ def opd_rows(c, bid, day, now):
             steps.append(step("doctor", "Waiting for doctor", "late" if late else "pending", None, f"waiting {_ago(m)}"))
             if late:
                 stuck.append(f"waiting {_ago(m)} for the doctor" + (" (CRITICAL triage)" if v["triage"] == "critical" else ""))
+        if v["status"] == "admitted":  # moved to the ward: lab, medicines and bill continue on the inpatient side
+            steps.append(step("admit", "Admitted", "done", v["completed_at"], (v["notes"] or "").split("Admitted ")[-1]))
+            out.append({"kind": "opd", "id": v["id"], "patient_id": v["patient_id"], "name": v["pname"], "code": pcode(v["patient_id"]), "age": v["age"], "gender": v["gender"],
+                        "phone": v["phone"], "doctor": v["dname"], "token": v["token"], "since": v["created_at"][11:16], "triage": v["triage"], "complaint": v["complaint"],
+                        "steps": steps, "stuck": [], "done": True, "now": "Admitted"})
+            continue
         # lab
         orders = rows(c.execute("SELECT * FROM lab_orders WHERE visit_id=? AND status<>'cancelled'", (v["id"],)))
         if not orders:

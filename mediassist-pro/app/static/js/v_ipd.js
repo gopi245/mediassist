@@ -27,7 +27,7 @@ RENDER.ipd = async (main, [mode, id]) => {
   <div class="stack">${can("admit") ? card("Admit a patient", "A deposit can be taken now", `<form data-submit="admit" class="stack"><div class="fields">${patInput("patient", pre)}
       <div class="span2"><label>Bed</label><select name="bed_id">${free.map(b => `<option value="${b.id}" ${App.cache.admitBed === b.id ? "selected" : ""}>${esc(b.ward)} · ${b.room ? `Room ${esc(b.room)} · ` : ""}${esc(b.number)} (${b.kind}${b.ac ? ", AC" : ""})</option>`).join("") || "<option value=''>No free bed</option>"}</select></div>
       <div><label>Doctor</label>${docSelect(docs, "doctor_id", App.me.role === "doctor" ? App.me.id : "", "")}</div><div class="span2"><label>Reason</label><input name="reason"></div>
-      <div class="span2"><label>Provisional diagnosis</label><input name="diagnosis"></div><div><label>ICD-10</label><input name="icd" list="icdOpts" data-input="icdSearch"></div>
+      <div class="span2"><label>Provisional diagnosis</label><input name="diagnosis" value="${esc(App.cache.admitDx || "")}"></div><div><label>ICD-10</label><input name="icd" list="icdOpts" data-input="icdSearch"></div>
       <div><label>Deposit ₹</label><input name="deposit" type="number" min="0"></div><div><label>Mode</label><select name="mode"><option value="cash">Cash</option><option value="upi">UPI</option><option value="card">Card</option></select></div><div><label>Reference</label><input name="ref"></div></div>
       <div class="btns"><button class="btn">Admit</button></div></form>`) : ""}
     ${can("stock_admin") ? card("Add a room", "Room 101 with 3 beds makes 101-A, 101-B, 101-C. With 1 bed it's just 101. Add each room once.", `<form data-submit="addBed" class="fields"><div><label>Ward / floor</label><input name="ward" placeholder="First floor"></div><div><label>Room no.</label><input name="room" placeholder="101" maxlength="8" required></div><div><label>Beds in room</label><input name="count" type="number" min="1" max="26" value="1"></div><div><label>AC</label><select name="ac"><option value="0">Non-AC</option><option value="1">AC</option></select></div><div><label>Type</label><select name="kind"><option value="general">General</option><option value="private">Private</option><option value="icu">ICU</option></select></div><div style="align-self:end"><button class="btn sm">Add</button></div></form>`) : ""}</div></div>`;
@@ -47,7 +47,7 @@ on("mapAdmit", async el => {
   const s = $("form[data-submit=admit] select[name=bed_id]"); if (!s) return; s.value = el.dataset.id; s.closest("form").scrollIntoView({ behavior: "smooth" }); s.closest("form").querySelector("input").focus(); });
 on("admit", async f => {
   const v = vals(f), pid = pidOf(v.patient); if (!pid) return toast("Pick the patient from the list.");
-  const r = await api("/api/admissions", { ...v, patient_id: pid }); App.cache.admitBed = null; toast(`Admitted as ${r.ip_no}`); go("ipd", ["a", r.id]);
+  const r = await api("/api/admissions", { ...v, patient_id: pid }); App.cache.admitBed = null; App.cache.admitDx = null; toast(`Admitted as ${r.ip_no}`); go("ipd", ["a", r.id]);
 });
 
 async function admission(main, id) {

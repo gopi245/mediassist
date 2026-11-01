@@ -1585,3 +1585,19 @@ class T38PaymentsAnywhere(unittest.TestCase):
         trk = ph.ok("/api/tracker")
         row = next((r for r in trk["opd"] if r["patient_id"] == pid), None)
         self.assertTrue(row and any(s["key"] == "bill" and s["state"] == "done" for s in row["steps"]), "tracker shows it paid")
+
+
+class T39AdmitFromOpd(unittest.TestCase):
+    """Admitting a patient who is in the OPD queue takes them out of the queue and the tracker shows Admitted, not 'not billed'."""
+    def test_admit_closes_opd_visit(self):
+        rec, doc = Client("reception.ch"), Client("dr.rao")
+        pid = rec.ok("/api/patients", {"name": "Opd To Ward", "phone": "9000039391", "age": 50, "gender": "Male", "consent": True, "force": True})["id"]
+        vid = rec.ok("/api/visits", {"patient_id": pid, "complaint": "chest pain"})["id"]
+        doc.ok(f"/api/visits/{vid}/start", {})
+        bed = next(b for b in rec.ok("/api/beds") if b["status"] == "free")
+        a = doc.ok("/api/admissions", {"patient_id": pid, "bed_id": bed["id"], "reason": "Chest pain", "diagnosis": "Unstable angina"})
+        self.assertFalse([v for v in doc.ok("/api/visits?status=waiting") if v["patient_id"] == pid], "out of the queue")
+        row = next(r for r in rec.ok("/api/tracker")["opd"] if r["patient_id"] == pid)
+        self.assertEqual((row["now"], row["stuck"], row["done"]), ("Admitted", [], True))
+        self.assertIn(a["ip_no"], [s for s in row["steps"] if s["key"] == "admit"][0]["note"])
+        self.assertFalse(rec.ok(f"/api/patients/{pid}/unbilled")["visits"], "not waiting at the billing desk")
