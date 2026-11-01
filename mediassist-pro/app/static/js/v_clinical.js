@@ -197,14 +197,18 @@ RENDER.opd = async (main, [mode, pid]) => {
       ${v.allergies ? `<div class="allergy small">Allergic to ${esc(v.allergies)}</div>` : ""}${v.emergency ? pill("Emergency", "p-crit") : ""}${v.mlc ? pill("MLC" + (v.mlc_no ? " " + esc(v.mlc_no) : ""), "p-warn") : ""}${v.status === "in_consult" ? pill("With doctor", "p-info") : ""}
       <div class="row-actions" style="margin-top:6px">${can("consult") ? `<button class="btn sm ${lvl === "critical" ? "danger" : ""}" data-act="go" data-v="consult" data-p="${v.id}">Consult</button>` : ""}${can("visit_create") ? `<button class="btn sm ghost" data-act="cancelVisit" data-id="${v.id}">Remove</button>` : ""}</div></div>`).join("") || '<p class="empty">Nobody here.</p>'}</div>`; };
   main.innerHTML = `<div class="g2">
-    ${card("Walk-in arrival", "Vitals decide the triage level", `<form data-submit="walkin" class="stack"><div class="fields">${patInput("patient", mode === "walkin" ? pre : "")}<div class="span2"><label>Complaint</label><input name="complaint" placeholder="fever 3 days, cough"></div>
-      <div><label>Doctor</label>${docSelect(docs)}</div><div><label>Temp °C</label><input name="temp" type="number" step=".1"></div><div><label>Pulse</label><input name="pulse" type="number"></div><div><label>BP systolic</label><input name="bp_sys" type="number"></div><div><label>BP diastolic</label><input name="bp_dia" type="number"></div>
-      <div><label>SpO₂ %</label><input name="spo2" type="number"></div><div><label>Sugar (RBS)</label><input name="sugar" type="number"></div><div><label>Weight kg</label><input name="weight" type="number" step=".1"></div>
+    ${card("Walk-in arrival", "Existing or new patient: add them to today's queue", `<form data-submit="walkin" class="stack"><div class="fields">${patInput("patient", mode === "walkin" ? pre : "", "Patient (type name, phone or ID)")}</div>${newPatBlock()}
+      <div class="fields"><div class="span2"><label>Complaint</label><input name="complaint" placeholder="fever 3 days, cough"></div><div><label>Doctor</label>${docSelect(docs)}</div>
+      <div><label>Temp °C</label><input name="temp" type="number" step=".1"></div><div><label>Pulse</label><input name="pulse" type="number"></div><div><label>BP</label><div style="display:flex;gap:6px"><input name="bp_sys" type="number" placeholder="120"><input name="bp_dia" type="number" placeholder="80"></div></div>
+      <div><label>SpO₂ %</label><input name="spo2" type="number"></div></div>
+      <details class="opt"><summary>More details: sugar, weight, pain, arrival, MLC</summary><div class="fields">
+      <div><label>Sugar (RBS)</label><input name="sugar" type="number"></div><div><label>Weight kg</label><input name="weight" type="number" step=".1"></div>
       <div><label>Resp. rate /min</label><input name="resp_rate" type="number"></div><div><label>GCS (3-15)</label><input name="gcs" type="number" min="3" max="15"></div><div><label>Pain (0-10)</label><input name="pain" type="number" min="0" max="10"></div><div><label>Height cm</label><input name="height" type="number"></div>
-      <div><label>Arrival</label><select name="arrival"><option value="">Walked in</option><option value="ambulance">Ambulance</option><option value="carried">Carried / stretcher</option><option value="wheelchair">Wheelchair</option><option value="police">Brought by police</option></select></div><div><label>Brought by</label><input name="brought_by" placeholder="relative, police, bystander"></div></div>
-      <div class="row-actions"><label class="check"><input type="checkbox" name="emergency" value="1"> <b>Emergency</b> (goes to the top of the queue)</label><label class="check"><input type="checkbox" name="mlc" value="1" data-change="mlcToggle"> Medico-legal case</label><input name="mlc_no" placeholder="MLC / police ref. no." style="width:auto" hidden></div>
+      <div><label>Arrival</label><select name="arrival"><option value="">Walked in</option><option value="ambulance">Ambulance</option><option value="carried">Carried / stretcher</option><option value="wheelchair">Wheelchair</option><option value="police">Brought by police</option></select></div><div><label>Brought by</label><input name="brought_by" placeholder="relative, police, bystander"></div>
+      <div class="row-actions" style="grid-column:1/-1"><label class="check"><input type="checkbox" name="mlc" value="1" data-change="mlcToggle"> Medico-legal case</label><input name="mlc_no" placeholder="MLC / police ref. no." style="width:auto" hidden></div></div></details>
+      <div class="row-actions"><label class="check"><input type="checkbox" name="emergency" value="1"> <b>Emergency</b> (goes to the top of the queue)</label></div>
       <div class="btns"><button class="btn">Add to queue</button></div></form>`)}
-    ${card("Book an appointment", "Patients can also book online at /book", `<form data-submit="book" class="stack"><div class="fields">${patInput("patient", mode === "book" ? pre : "")}<div><label>Doctor</label>${docSelect(docs, "doctor_id", "", "")}</div>
+    ${card("Book an appointment", "Patients can also book online at /book", `<form data-submit="book" class="stack"><div class="fields">${patInput("patient", mode === "book" ? pre : "", "Patient (type name, phone or ID)")}</div>${newPatBlock()}<div class="fields"><div><label>Doctor</label>${docSelect(docs, "doctor_id", "", "")}</div>
       <div><label>Day</label><input name="day" type="date" value="${localDay()}" data-change="loadSlots"></div><div class="span2"><label>Time</label><select name="slot" id="slotSel"><option value="">Pick doctor and day</option></select></div><div class="span2"><label>Note</label><input name="note"></div></div>
       <div class="btns"><button class="btn">Book</button></div></form>`)}
   </div>
@@ -216,8 +220,42 @@ RENDER.opd = async (main, [mode, pid]) => {
   ${card("Seen today", "", tbl(["Time", "Patient", "Diagnosis", "Doctor", ""], done.map(v => `<tr><td class="mono">${v.completed_at.slice(11)}</td><td>${esc(v.pname)}</td><td>${esc(v.diagnosis || "")} <span class="mono small">${esc(v.icd || "")}</span></td><td>${esc(v.dname || "")}</td><td><button class="btn sm ghost" data-act="printRx" data-id="${v.id}">Print ℞</button></td></tr>`).join(""), "No consultations yet today."))}`;
 };
 on("opdDay", el => { App.cache.opdDay = el.value; go("opd"); });
+/* New patient right inside the OPD forms: no trip to the Patients page. */
+function newPatBlock() {
+  return `<div class="newpat"><button type="button" class="btn sm ghost" data-act="newPatOpen">+ New patient</button><div class="newpat-f" hidden>
+    <div class="fields"><div class="span2"><label>Full name</label><input name="np_name"></div><div><label>Mobile</label><input name="np_phone" inputmode="tel"></div>
+    <div><label>Age</label><input name="np_age" type="number" min="0" max="130"></div><div><label>Gender</label><select name="np_gender"><option>Male</option><option>Female</option><option>Other</option></select></div></div>
+    <label class="check"><input type="checkbox" name="np_consent"> Patient agrees to their health data being stored and used for treatment and billing</label>
+    <label class="check"><input type="checkbox" name="np_whatsapp" checked> Send bills, reports and reminders on WhatsApp</label></div></div>`;
+}
+on("newPatOpen", el => {
+  const f = el.closest("form"), box = f.querySelector(".newpat-f"); box.hidden = !box.hidden;
+  el.textContent = box.hidden ? "+ New patient" : "Existing patient instead";
+  if (!box.hidden) { const typed = f.patient.value.trim(); if (/^\d{10}$/.test(typed)) f.np_phone.value = typed; else if (typed && !pidOf(typed)) f.np_name.value = typed; f.patient.value = ""; f.np_name.focus(); }
+});
+/* The patient for an OPD form: the one picked from the list, or a new one registered from the inline fields. */
+async function opdPatient(f) {
+  const v = vals(f), box = f.querySelector(".newpat-f"), pid = pidOf(v.patient);
+  if (pid) return pid;
+  if (box.hidden) {
+    if (!v.patient) { toast("Type the patient's name, phone or ID, or press + New patient."); return null; }
+    ACTIONS.newPatOpen(f.querySelector("[data-act=newPatOpen]")); toast("Not on the list: fill in the new patient's details."); return null;
+  }
+  if (!v.np_name || !v.np_phone) { toast("Enter the new patient's name and mobile."); return null; }
+  if (!v.np_consent) { toast("Tick the consent box after explaining it to the patient."); return null; }
+  const body = { name: v.np_name, phone: v.np_phone, age: v.np_age, gender: v.np_gender, consent: true, whatsapp_ok: !!v.np_whatsapp };
+  try { const r = await api("/api/patients", body); toast(`Registered as ${r.code}`); return r.id; }
+  catch (e) {
+    if (e.status !== 409) throw e;
+    const m = e.data.matches;
+    const same = await dialog("This mobile number is already registered", m.map(x => `<p><b>${x.code}</b> ${esc(x.name)}, ${x.age ?? "?"} yrs</p>`).join("") + `<p class="small muted">Use the existing record for the same person.</p>`, { ok: `Use ${m[0].code}`, cancel: "Different person" });
+    if (same) return m[0].id;
+    if (!await dialog("Register a new record?", `<p>Only for a different person who shares this phone, such as a family member.</p>`, { ok: "Register new" })) return null;
+    const r = await api("/api/patients", { ...body, force: true }); toast(`Registered as ${r.code}`); return r.id;
+  }
+}
 on("walkin", async f => {
-  const v = vals(f), pid = pidOf(v.patient); if (!pid) return toast("Pick the patient from the list. Register them first if new.");
+  const v = vals(f), pid = await opdPatient(f); if (!pid) return;
   const r = await api("/api/visits", { ...v, patient_id: pid }); toast(`Added. Triage: ${r.triage.toUpperCase()}${r.reasons ? " · " + r.reasons : ""}`); go("opd");
 });
 on("loadSlots", async el => {
@@ -227,7 +265,7 @@ on("loadSlots", async el => {
 });
 document.addEventListener("change", e => { if (e.target.name === "doctor_id" && e.target.closest("form[data-submit=book]")) ACTIONS.loadSlots(e.target); });
 on("book", async f => {
-  const v = vals(f), pid = pidOf(v.patient); if (!pid) return toast("Pick the patient from the list.");
+  const v = vals(f), pid = await opdPatient(f); if (!pid) return;
   const r = await api("/api/appointments", { ...v, patient_id: pid }); toast(`Booked. Token ${r.token}`); go("opd");
 });
 on("checkin", async el => { const r = await api(`/api/appointments/${el.dataset.id}/checkin`, {}); toast(`Checked in. Triage ${r.triage}`); go("opd"); });

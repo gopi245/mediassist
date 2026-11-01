@@ -463,3 +463,5 @@ details.opt{margin:10px 0}details.opt>summary{cursor:pointer;color:var(--accent)
 .top-r{flex-wrap:nowrap}.top-r .lookup{width:min(300px,40vw)}
 @media (max-width:700px){.top-r{flex-wrap:wrap}.top-r .lookup{width:100%}}
 .ptabs .sub{flex-wrap:wrap}
+
+.newpat{margin:0 0 4px}.newpat-f{margin-top:8px;padding:12px;border:1px dashed var(--line);border-radius:10px;background:var(--surface-2)}
