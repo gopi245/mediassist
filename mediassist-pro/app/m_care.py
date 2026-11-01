@@ -408,8 +408,9 @@ def api_credit_bills(h, c, b, q):
     return [dict(r, code=pcode(r["patient_id"]) if r["patient_id"] else "", due=R(r["total_p"] - r["returned_p"])) for r in rows(c.execute(sql + " ORDER BY b.id DESC LIMIT 300", args))]
 
 
-@route("POST", r"/api/bills/(\d+)/settle", "hbilling")
+@route("POST", r"/api/bills/(\d+)/settle", "any")
 def api_settle_bill(h, c, b, q, bid):
+    need(can(h, "hbilling") or can(h, "billing"), "Your role can't do this", 403)  # hospital billing desk or the pharmacy counter
     mode, ref = clean(b, "mode", 10) or "cash", clean(b, "ref", 40)
     need(mode in ("cash", "upi", "card"), "Invalid payment mode")
     need(mode == "cash" or ref, "Enter the transaction reference")
@@ -418,6 +419,9 @@ def api_settle_bill(h, c, b, q, bid):
         bl = one(c, "SELECT * FROM bills WHERE id=? AND branch_id=?", (int(bid), h.branch))
         need(bl, "Bill not found", 404)
         need(bl["pay_mode"] == "credit" and not bl["settled_at"], "This bill is not an open credit bill")
+        if bl["admission_id"] and not can(h, "hbilling"):
+            st = one(c, "SELECT ip_no, status FROM admissions WHERE id=?", (bl["admission_id"],))
+            need(not st or st["status"] != "admitted", f"This bill goes on the inpatient bill for {st['ip_no'] if st else 'the stay'}. Collect it at discharge.")
         c.execute("UPDATE bills SET settled_at=?, settled_mode=?, settled_invoice_id=NULL WHERE id=?", (now_str(), mode, bl["id"]))
         audit(c, h, "bill.settle", f"{bl['bill_no']} {rs(bl['total_p'] - bl['returned_p'])} {mode} {ref}")
         return R(bl["total_p"] - bl["returned_p"])

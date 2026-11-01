@@ -1425,3 +1425,60 @@ class T33SpecialtyCataloguesFhir(unittest.TestCase):
         self.assertEqual(st, 200); self.assertEqual(data["resourceType"], "Bundle")
         s = own.ok("/api/abdm/status")
         self.assertFalse(s["configured"]); self.assertGreaterEqual(s["patients_with_abha"], 1); self.assertIn("M2", s["milestones"])
+
+
+class T34PharmacyInpatientBilling(unittest.TestCase):
+    """Pharmacy counter for an admitted patient: bills belong to the stay, ward orders count as the prescription,
+    credit goes on the discharge invoice, and the counter can collect outpatient credit but not an open stay's."""
+    def test_inpatient_and_walkin_counter(self):
+        rec, doc, ph = Client("reception.ch"), Client("dr.rao"), Client("pharma.ch")
+        summ = ph.ok("/api/stock")["summary"]
+        pick = lambda sch: next(r for r in sorted(summ, key=lambda r: -(r["usable"] or 0)) if r["schedule"] == sch and (r["usable"] or 0) >= 40)
+        otc, h_med = pick("OTC"), pick("H")
+        line = lambda r: [{"medicine_id": r["medicine_id"], "qty": 1, "unit": "strip"}]
+        pid = rec.ok("/api/patients", {"name": "Ward Pharmacy Test", "phone": "9000034343", "age": 52, "gender": "Male", "consent": True, "force": True})["id"]
+        bed = next(b for b in rec.ok("/api/beds") if b["status"] == "free")
+        aid = doc.ok("/api/admissions", {"patient_id": pid, "bed_id": bed["id"], "reason": "Observation", "diagnosis": "Chest pain"})["id"]
+        ip_no = doc.ok(f"/api/admissions/{aid}")["ip_no"]
+
+        info = ph.ok(f"/api/patients/{pid}/inpatient")
+        self.assertTrue(info["admitted"]); self.assertEqual(info["ip_no"], ip_no)
+        self.assertEqual(Client("lab.ch").get(f"/api/patients/{pid}/inpatient")[0], 403, "counter lookup is for billing roles")
+
+        # the screen may not send admission_id: the server still ties the bill to the open stay
+        r = ph.ok("/api/bills", {"patient_id": pid, "items": line(otc), "pay_mode": "credit", "override": True})
+        self.assertEqual(r["ip_no"], ip_no)
+        self.assertEqual(doc.ok(f"/api/admissions/{aid}")["bill"]["pharmacy_credit"], r["total"], "credit shows on the running inpatient bill")
+        b = ph.ok(f"/api/bills/{r['id']}")
+        self.assertEqual((b["ip_no"], b["stay_open"]), (ip_no, True))
+        st, e = ph.post(f"/api/bills/{r['id']}/settle", {"mode": "cash"})
+        self.assertEqual(st, 400, "an open stay's credit is collected at discharge"); self.assertIn(ip_no, e["error"])
+
+        # Schedule H: needs the doctor's ward order; then the admitting doctor is the prescriber on the bill
+        st, e = ph.post("/api/bills", {"patient_id": pid, "items": line(h_med), "pay_mode": "credit", "override": True})
+        self.assertEqual(st, 400); self.assertIn("ward orders", e["error"])
+        doc.ok(f"/api/admissions/{aid}/mar", {"medicine_id": h_med["medicine_id"], "dose": "1 tab", "freq": "OD", "override": True})
+        self.assertTrue(any(o["medicine_id"] == h_med["medicine_id"] for o in ph.ok(f"/api/patients/{pid}/inpatient")["orders"]))
+        r2 = ph.ok("/api/bills", {"patient_id": pid, "admission_id": aid, "items": line(h_med), "pay_mode": "credit", "override": True})
+        self.assertEqual(ph.ok(f"/api/bills/{r2['id']}")["doctor_name"], "Dr. Rao")
+
+        # a bill cannot be pinned to someone else's stay, and a walk-in has no stay
+        other = rec.ok("/api/patients", {"name": "Counter Outpatient", "phone": "9000034344", "age": 30, "gender": "Female", "consent": True, "force": True})["id"]
+        self.assertEqual(ph.post("/api/bills", {"patient_id": other, "admission_id": aid, "items": line(otc), "pay_mode": "credit"})[0], 400)
+        self.assertEqual(ph.post("/api/bills", {"admission_id": aid, "items": line(otc), "pay_mode": "cash"})[0], 400)
+        w = ph.ok("/api/bills", {"items": line(otc), "pay_mode": "cash", "customer": "Walk-in"})
+        self.assertIsNone(w["ip_no"])
+
+        # outpatient credit: the pharmacist records the payment; other roles still cannot
+        oc = ph.ok("/api/bills", {"patient_id": other, "items": line(otc), "pay_mode": "credit", "override": True})
+        self.assertIsNone(oc["ip_no"])
+        self.assertEqual(Client("lab.ch").post(f"/api/bills/{oc['id']}/settle", {"mode": "cash"})[0], 403)
+        self.assertEqual(ph.ok(f"/api/bills/{oc['id']}/settle", {"mode": "cash"})["amount"], oc["total"])
+
+        # discharge: both ward credit bills are on the final invoice
+        d = doc.ok(f"/api/admissions/{aid}/discharge", {"final_diagnosis": "Non-cardiac chest pain", "discharge_type": "normal", "ignore_pending": True, "items": [], "override": True})
+        inv_id = d.get("invoice_id") or doc.ok(f"/api/admissions/{aid}")["invoice_id"]
+        names = [l["name"] for l in rec.ok(f"/api/invoices/{inv_id}")["items"]]
+        self.assertIn(f"Pharmacy bill {r['bill_no']} (credit)", names)
+        self.assertIn(f"Pharmacy bill {r2['bill_no']} (credit)", names)
+        self.assertFalse(ph.ok(f"/api/patients/{pid}/inpatient")["admitted"])

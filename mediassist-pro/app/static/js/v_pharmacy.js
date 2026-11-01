@@ -2,6 +2,7 @@
 "use strict";
 let CART = [], CART_VISIT = null;
 let CART_ADM = null;
+let CART_STAY = null;   // the open admission when billing an inpatient: credit bills go on the discharge invoice
 
 /* ================= billing counter ================= */
 RENDER.billing = async (main, [mode, id]) => {
@@ -65,12 +66,23 @@ on("bRedraw", () => drawCart());
 on("bLook", debounce(async el => { const m = medByName(el.value); $("#bInfo").innerHTML = m ? stockCard(await api("/api/stock/lookup?id=" + m.id)) : ""; if (m) $("#bUnit").value = m.pack_size > 1 ? "strip" : "unit"; }, 200));
 on("bAdd", () => { const m = medByName($("#bMed").value); if (!m) return toast("Choose a medicine from the list."); addLine(m, Math.max(1, +$("#bQty").value || 1), $("#bUnit").value); $("#bMed").value = ""; $("#bQty").value = 1; $("#bInfo").innerHTML = ""; $("#bMed").focus(); });
 on("bRm", el => { CART.splice(+el.dataset.i, 1); drawCart(); });
-on("bClear", () => { CART = []; CART_VISIT = null; go("billing"); });
+on("bClear", () => { CART = []; CART_VISIT = null; CART_STAY = null; go("billing"); });
 on("billPat", async el => {
-  const pid = pidOf(el.value); CART = CART.filter(l => !l.rx_item_id); CART_VISIT = null; drawCart(); if (!pid) { $("#bRx").innerHTML = ""; return; }
-  const [p, pend] = await Promise.all([api("/api/patients/" + pid), api("/api/rx/pending?patient_id=" + pid)]);
-  $("#bRx").innerHTML = (p.allergies ? `<div class="banner">Allergic to ${esc(p.allergies)}</div>` : "") + (pend.map((r, i) => alertRow("info", `<b>${r.admission_id ? "Discharge prescription" : "Prescription"}</b> · ${r.date.slice(0, 10)} · ${esc(r.doctor || "")} · ${esc(r.branch)}<br>${esc(r.diagnosis || "")}: ${r.items.map(i => `${esc(i.name)} ×${i.remaining}`).join(", ")}<div class="btns" style="margin-top:6px"><button class="btn sm" data-act="loadRx" data-i="${i}">Add to bill</button></div>`)).join("") || '<p class="small muted">No pending prescriptions.</p>');
+  const pid = pidOf(el.value); CART = CART.filter(l => !l.rx_item_id && !l.ward); CART_VISIT = null; CART_STAY = null; drawCart(); if (!pid) { $("#bRx").innerHTML = ""; return; }
+  const [p, pend, stay] = await Promise.all([api("/api/patients/" + pid), api("/api/rx/pending?patient_id=" + pid), api(`/api/patients/${pid}/inpatient`).catch(() => ({ admitted: false }))]);
+  CART_STAY = stay.admitted ? stay : null; App.cache.wardRx = stay.orders || [];
+  const pm = $("[name=pay_mode]"); if (pm) pm.value = stay.admitted ? "credit" : (pm.value === "credit" ? "cash" : pm.value);
+  const ward = stay.admitted ? alertRow("info", `<b>Inpatient ${esc(stay.ip_no)}</b>${stay.bed ? " · " + esc(stay.bed) : ""} · ${esc(stay.doctor || "")} · since ${esc((stay.admitted_at || "").slice(0, 10))}<br>
+      Bill on <b>Credit</b> and it goes on the inpatient bill at discharge${stay.on_account ? ` (already ${money(stay.on_account)} on account)` : ""}. Paid now in cash or UPI, it is recorded against the stay but not added again.
+      ${stay.orders.length ? `<div style="margin-top:6px"><b>Ward orders:</b> ${stay.orders.map((o, i) => { const m = (App.cache.meds || []).find(x => x.id === o.medicine_id) || {}; return `<button type="button" class="btn sm ghost" data-act="wardAdd" data-i="${i}" title="${esc([o.dose, o.route, o.freq].filter(Boolean).join(" · "))}">+ ${esc(o.name)}${m.stock > 0 ? "" : " (out of stock)"}</button>`; }).join(" ")}</div>` : '<div class="small muted" style="margin-top:4px">No active ward medicine orders. Schedule H medicines need the doctor to add them to the ward orders.</div>'}`) : "";
+  $("#bRx").innerHTML = (p.allergies ? `<div class="banner">Allergic to ${esc(p.allergies)}</div>` : "") + ward + (pend.map((r, i) => alertRow("info", `<b>${r.admission_id ? "Discharge prescription" : "Prescription"}</b> · ${r.date.slice(0, 10)} · ${esc(r.doctor || "")} · ${esc(r.branch)}<br>${esc(r.diagnosis || "")}: ${r.items.map(i => `${esc(i.name)} ×${i.remaining}`).join(", ")}<div class="btns" style="margin-top:6px"><button class="btn sm" data-act="loadRx" data-i="${i}">Add to bill</button></div>`)).join("") || '<p class="small muted">No pending prescriptions.</p>');
   App.cache.pendRx = pend;
+});
+on("wardAdd", el => {
+  const o = App.cache.wardRx[+el.dataset.i], m = (App.cache.meds || []).find(x => x.id === o.medicine_id);
+  if (!m || !(m.stock > 0)) return toast(`${o.name} is out of stock at this branch. Check Stock for other branches or raise a purchase order.`);
+  addLine(m, 1, m.pack_size > 1 ? "strip" : "unit"); const l = CART.find(x => x.medicine_id === m.id && !x.rx_item_id); if (l) l.ward = true;
+  toast(`${o.name} added: set the quantity for the ward supply.`);
 });
 on("loadRx", el => {
   const r = App.cache.pendRx[+el.dataset.i]; CART_VISIT = r.visit_id || null; CART_ADM = r.admission_id || null; CART = CART.filter(l => !l.rx_item_id); const miss = [];
@@ -80,10 +92,10 @@ on("loadRx", el => {
 on("saveBill", async f => {
   if (!CART.length) return toast("Add medicines first.");
   const v = vals(f), pid = pidOf($("#bPat").value);
-  const body = { ...v, patient_id: pid, visit_id: CART.some(l => l.rx_item_id) ? CART_VISIT : null, rx_admission_id: CART.some(l => l.rx_item_id) ? CART_ADM : null, items: CART.map(l => ({ medicine_id: l.medicine_id, qty: l.qty, unit: l.unit, rx_item_id: l.rx_item_id })), created_at: new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 16).replace("T", " ") };
+  const body = { ...v, patient_id: pid, admission_id: CART_STAY && pid ? CART_STAY.admission_id : null, visit_id: CART.some(l => l.rx_item_id) ? CART_VISIT : null, rx_admission_id: CART.some(l => l.rx_item_id) ? CART_ADM : null, items: CART.map(l => ({ medicine_id: l.medicine_id, qty: l.qty, unit: l.unit, rx_item_id: l.rx_item_id })), created_at: new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 16).replace("T", " ") };
   const r = await withOverride((ov, reason) => apiSafe("/api/bills", { ...body, override: ov, override_reason: reason }, "Bill"), "Safety warnings at the counter");
   if (!r) return;
-  if (!r.queued) { toast(`Bill ${r.bill_no} saved · ${money(r.total)}` + waNote(r.shared)); CART = []; CART_VISIT = null; await RENDER.billing($("#view"), []); ACTIONS.viewBill({ dataset: { id: r.id } }); }
+  if (!r.queued) { toast(`Bill ${r.bill_no} saved · ${money(r.total)}` + (r.ip_no && v.pay_mode === "credit" ? ` · on the inpatient bill ${r.ip_no}` : "") + waNote(r.shared)); CART = []; CART_VISIT = null; CART_STAY = null; await RENDER.billing($("#view"), []); ACTIONS.viewBill({ dataset: { id: r.id } }); }
   else { CART = []; drawCart(); }
 });
 const waNote = sent => !sent ? "" : !sent.length ? "" : sent.some(x => x.ok) ? " · sent to the customer on WhatsApp" : sent[0].wa_link ? " · WhatsApp isn't set up here: use Send on WhatsApp on the bill" : " · " + (sent[0].detail || "not sent on WhatsApp");
@@ -104,7 +116,7 @@ on("billShare", async el => {
 on("viewBill", async el => {
   const b = await api("/api/bills/" + el.dataset.id), box = $("#bView"); App.cache.bill = b; box.hidden = false;
   box.innerHTML = `<div class="card-h"><div><h2 class="mono">${b.bill_no}</h2><p>${b.created_at} · ${esc(b.customer)} ${b.patient_code} · ${b.pay_mode.toUpperCase()}${b.doctor_name ? " · Rx " + esc(b.doctor_name) : ""}</p></div><div class="row-actions"><button class="btn sm" data-act="billShare" ${b.patient_id ? "" : 'data-ask="1"'}>Send on WhatsApp</button><button class="btn sm ghost" data-act="printBill">Print receipt</button><button class="btn sm ghost" data-act="pdfDl" data-p="bill/${b.id}">PDF</button></div></div>
-    <p style="margin:4px 0 8px">${waLine(b)}</p>${b.pay_mode === "credit" && !b.settled_at ? `<div id="payBoxBill"></div>` : ""}
+    <p style="margin:4px 0 8px">${waLine(b)}</p>${b.ip_no ? `<p class="small" style="margin:0 0 8px">${pill("Inpatient " + esc(b.ip_no), "p-info")} ${b.pay_mode !== "credit" ? "paid at the counter" : b.settled_at ? "settled" : b.stay_open ? "goes on the inpatient bill at discharge" : "was added to the discharge invoice"}</p>` : ""}${b.pay_mode === "credit" && !b.settled_at && !b.ip_no ? `<div class="row-actions" style="margin:0 0 8px">${can("billing") || can("hbilling") ? `<button class="btn sm" data-act="settleBill" data-id="${b.id}" data-no="${esc(b.bill_no)}" data-amt="${b.total - b.returned}">Record payment ${money(b.total - b.returned)}</button>` : ""}</div><div id="payBoxBill"></div>` : ""}
     <form data-submit="billReturn">${tbl(["Item", "Batch / rack", "Qty", "Amount", "Return"], b.items.map(i => `<tr><td>${esc(i.name)} <span class="small muted">${i.schedule}</span></td><td class="small"><span class="mono">${esc(i.batch)}</span> <span class="rack sm">${esc(i.rack || "–")}</span><div class="muted">exp ${i.expiry.slice(0, 7)}</div></td><td class="num">${i.qty}${i.returned ? `<div class="small muted">ret ${i.returned}</div>` : ""}</td><td class="num">${money(i.net)}</td><td>${i.qty - i.returned ? `<input type="number" min="0" max="${i.qty - i.returned}" value="0" name="r${i.id}" style="width:64px">` : "–"}</td></tr>`).join(""))}
     <div class="totals"><div><span>Subtotal (MRP)</span><b>${money(b.subtotal)}</b></div><div><span>Discount</span><b>− ${money(b.discount)}</b></div><div><span>Taxable value</span><b>${money(b.tax.reduce((a, t) => a + t.taxable, 0))}</b></div>${taxRows(b.tax)}<div class="grand"><span>Total</span><b>${money(b.total)}</b></div><div><span>GST included (CGST ${money(b.cgst)} + SGST ${money(b.sgst)})</span><b>${money(b.gst)}</b></div>${b.returned ? `<div><span>Refunded</span><b>${money(b.returned)}</b></div>` : ""}</div>
     ${can("billing") && b.branch_id === App.me.branch.id ? `<div class="fields"><div class="span2"><input name="reason" placeholder="Return reason"></div><div><button class="btn sm ghost">Process return</button></div></div>` : ""}</form>`;

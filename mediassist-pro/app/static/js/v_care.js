@@ -155,6 +155,7 @@ on("settleBill", async el => {
   if (!v) return;
   const r = await api(`/api/bills/${el.dataset.id}/settle`, v); toast(`Collected ${money(r.amount)}`);
   const inp = $("[data-input=hbPat]"); if (inp) ACTIONS.hbPat(inp);
+  if (App.view === "billing" && App.cache.bill && App.cache.bill.id === +el.dataset.id) ACTIONS.viewBill({ dataset: { id: el.dataset.id } });
 });
 
 /* owner's dashboard: what is still to be set up */

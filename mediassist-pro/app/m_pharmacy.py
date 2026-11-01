@@ -620,6 +620,27 @@ def bill_time(c, bid, s):
     return ts
 
 
+def open_stay(c, pid, branch_id):
+    """The patient's current admission at this branch, with the admitting doctor, or None."""
+    return one(c, "SELECT a.*, u.name dname, u.reg_no dreg FROM admissions a LEFT JOIN users u ON u.id=a.doctor_id "
+                  "WHERE a.patient_id=? AND a.branch_id=? AND a.status='admitted' ORDER BY a.id DESC LIMIT 1", (pid, branch_id))
+
+
+@route("GET", r"/api/patients/(\d+)/inpatient", "billing")
+def api_pharmacy_inpatient(h, c, b, q, pid):
+    """For the pharmacy counter: is this patient admitted here, which bed, and what the doctor has ordered on the ward."""
+    br = need_branch(h, c, "pharmacy")
+    a = open_stay(c, int(pid), br["id"])
+    if not a:
+        return {"admitted": False}
+    bed = one(c, "SELECT ward, room, number FROM beds WHERE id=?", (a["bed_id"],)) if a["bed_id"] else None
+    orders = rows(c.execute("SELECT mo.id, mo.medicine_id, mo.dose, mo.route, mo.freq, mo.start_at, m.name, m.schedule, m.pack_size, m.form FROM mar_orders mo "
+                            "JOIN medicines m ON m.id=mo.medicine_id WHERE mo.admission_id=? AND mo.active=1 ORDER BY mo.id", (a["id"],)))
+    owed = c.execute("SELECT COALESCE(SUM(total_p-returned_p),0) FROM bills WHERE admission_id=? AND pay_mode='credit' AND settled_at IS NULL", (a["id"],)).fetchone()[0]
+    return {"admitted": True, "admission_id": a["id"], "ip_no": a["ip_no"], "doctor": a["dname"], "admitted_at": a["admitted_at"],
+            "bed": " · ".join(x for x in ((bed["ward"], bed["room"], bed["number"]) if bed else ()) if x), "orders": orders, "on_account": R(owed)}
+
+
 def create_bill(c, h, b):
     br = need_branch(h, c, "pharmacy")
     key = clean(b, "offline_key", 64) or None
@@ -643,9 +664,21 @@ def create_bill(c, h, b):
     if b.get("rx_admission_id"):  # a discharge prescription
         adm = one(c, "SELECT a.*, u.name dname, u.reg_no dreg FROM admissions a LEFT JOIN users u ON u.id=a.doctor_id WHERE a.id=?", (as_int(b["rx_admission_id"], "prescription"),))
         need(adm and patient and adm["patient_id"] == patient["id"], "Prescription does not belong to this patient")
+    # an admitted patient's bill belongs to the stay: credit bills land on the discharge invoice
+    stay = None
+    if b.get("admission_id"):
+        stay = one(c, "SELECT a.*, u.name dname, u.reg_no dreg FROM admissions a LEFT JOIN users u ON u.id=a.doctor_id WHERE a.id=?", (as_int(b["admission_id"], "admission"),))
+        need(stay and patient and stay["patient_id"] == patient["id"], "That admission is not this patient's")
+        need(stay["status"] == "admitted", f"{stay['ip_no']} is already discharged. Bill the discharge prescription instead.")
+    elif patient:
+        stay = open_stay(c, patient["id"], br["id"])
+    ward_meds = {r[0] for r in c.execute("SELECT medicine_id FROM mar_orders WHERE admission_id=? AND active=1", (stay["id"],))} if stay else set()
     src = visit or adm
     doc_name = src["dname"] if src else clean(b, "doctor_name", 100)
     doc_reg = src["dreg"] if src else clean(b, "doctor_reg", 40)
+    typed_doc = bool(not src and doc_name and doc_reg)
+    if not src and stay and not typed_doc:  # ward medicines: the admitting doctor's order is the prescription
+        doc_name, doc_reg = stay["dname"], stay["dreg"]
 
     def run():
         if key:  # same check under the write lock: a retried offline bill must never deduct stock twice
@@ -667,7 +700,9 @@ def create_bill(c, h, b):
         for m, _, _ in lines:
             need(m["schedule"] != "X", f"{m['name']} is Schedule X. Sell it through the narcotics register, not here.")
             if m["schedule"] in ("H", "H1"):
-                need(src or (doc_name and doc_reg), f"{m['name']} is Schedule {m['schedule']}. Link the patient's prescription, or enter the prescribing doctor's name and registration number.")
+                need(src or typed_doc or m["id"] in ward_meds,
+                     f"{m['name']} is Schedule {m['schedule']}. Link the patient's prescription"
+                     + (", or ask the doctor to add it to the ward orders" if stay else "") + ", or enter the prescribing doctor's name and registration number.")
             if m["schedule"] == "H1":
                 need(patient, f"{m['name']} is Schedule H1. Register the patient for the H1 register.")
         warnings = []
@@ -703,7 +738,7 @@ def create_bill(c, h, b):
         cur = c.execute("INSERT INTO bills(branch_id,bill_no,created_at,patient_id,customer,visit_id,admission_id,doctor_name,doctor_reg,subtotal_p,discount_p,total_p,pay_mode,user_id,offline_key,customer_phone) "
                         "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         (br["id"], bill_no, bill_time(c, br["id"], clean(b, "created_at", 16)), patient["id"] if patient else None,
-                         patient["name"] if patient else (clean(b, "customer", 100) or "Walk-in"), visit["id"] if visit else None, opt_num(b.get("admission_id"), int),
+                         patient["name"] if patient else (clean(b, "customer", 100) or "Walk-in"), visit["id"] if visit else None, stay["id"] if stay else None,
                          doc_name, doc_reg, sub, disc, sub - disc, pay, h.user["id"], key, cphone))
         bill_id, gst_total, dleft = cur.lastrowid, 0, disc
         for i, (m, bt, take, rx) in enumerate(alloc):
@@ -720,9 +755,9 @@ def create_bill(c, h, b):
             if rx:
                 c.execute("UPDATE rx_items SET dispensed=dispensed+? WHERE id=?", (take, rx["id"]))
         c.execute("UPDATE bills SET gst_p=? WHERE id=?", (gst_total, bill_id))
-        audit(c, h, "bill.create", f"{bill_no} {rs(sub - disc)} {pay}" + (" (synced from offline)" if key else "")
+        audit(c, h, "bill.create", f"{bill_no} {rs(sub - disc)} {pay}" + (f" {stay['ip_no']}" if stay else "") + (" (synced from offline)" if key else "")
               + (" OVERRIDE: " + " ".join(w["text"] for w in warnings) if warnings else ""))
-        return {"ok": True, "id": bill_id, "bill_no": bill_no, "total": R(sub - disc)}
+        return {"ok": True, "id": bill_id, "bill_no": bill_no, "total": R(sub - disc), "ip_no": stay["ip_no"] if stay else None}
     return in_tx(c, run)
 
 
@@ -849,6 +884,9 @@ def bill_detail(c, bid):
                patient_code=pcode(bl["patient_id"]) if bl["patient_id"] else "")
     out["items"] = [dict(i, mrp=R(i["mrp_p"]), net=R(i["net_p"]), gst=R(i["gst_p"]), taxable=R(i["net_p"] - i["gst_p"])) for i in items]
     out["tax"] = tax_breakup(items)
+    if bl["admission_id"]:
+        st = one(c, "SELECT ip_no, status FROM admissions WHERE id=?", (bl["admission_id"],))
+        out["ip_no"], out["stay_open"] = (st["ip_no"], st["status"] == "admitted") if st else (None, False)
     last = one(c, "SELECT at, ok, to_addr, detail, body FROM messages WHERE kind IN ('bill','portal') AND body LIKE ? ORDER BY id DESC LIMIT 1", (f"%{bl['bill_no']}%",))
     if last:
         from urllib.parse import quote
